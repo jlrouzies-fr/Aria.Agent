@@ -1,0 +1,356 @@
+.bgm-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.72);
+    z-index: 9000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(2px);
+    padding: 20px;
+}
+
+.bgm-modal {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-glow);
+    box-shadow: var(--glow-lg), 0 24px 60px rgba(0,0,0,0.7);
+    border-radius: 2px;
+    padding: 32px 36px 28px;
+    max-width: 520px;
+    width: 90%;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+}
+
+.bgm-sigil {
+    font-size: 32px;
+    color: var(--border-glow);
+    text-shadow: var(--glow-md);
+    margin-bottom: 14px;
+    animation: bgm-spin 12s linear infinite;
+}
+
+.bgm-sigil-update {
+    animation: none;
+}
+
+@keyframes bgm-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+.bgm-title {
+    font-size: 15px;
+    font-weight: bold;
+    letter-spacing: 0.14em;
+    color: var(--text-title);
+    text-shadow: var(--glow-sm);
+    text-align: center;
+    margin-bottom: 4px;
+}
+
+.bgm-sub {
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    color: var(--text-dead);
+    text-align: center;
+    margin-bottom: 24px;
+}
+
+.bgm-body {
+    width: 100%;
+    font-size: 12px;
+    color: var(--text-body);
+    line-height: 1.7;
+    margin-bottom: 22px;
+}
+
+.bgm-body p {
+    margin-bottom: 16px;
+    color: var(--text-muted);
+}
+
+.bgm-body strong { color: var(--text-bright); }
+
+.bgm-body code {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-dim);
+    padding: 1px 5px;
+    font-size: 11px;
+    color: var(--text-normal);
+    overflow-wrap: anywhere;
+}
+
+.bgm-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.bgm-step {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+}
+
+.bgm-step-n {
+    font-size: 18px;
+    font-weight: bold;
+    color: var(--border-glow);
+    text-shadow: var(--glow-sm);
+    min-width: 28px;
+    line-height: 1.2;
+}
+
+.bgm-step-title {
+    font-size: 12px;
+    color: var(--text-bright);
+    letter-spacing: 0.06em;
+    margin-bottom: 3px;
+}
+
+.bgm-step-desc {
+    font-size: 11px;
+    color: var(--text-dead);
+    line-height: 1.6;
+}
+
+.bgm-step-wide {
+    flex: 1;
+    min-width: 0;
+}
+
+.bgm-install-tabs {
+    display: flex;
+    gap: 6px;
+    margin: 10px 0 8px;
+}
+
+.bgm-install-tab {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-dim);
+    color: var(--text-dead);
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    padding: 4px 10px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.bgm-install-tab:hover {
+    border-color: var(--border-normal);
+    color: var(--text-muted);
+}
+
+.bgm-install-tab.active {
+    background: var(--border-glow);
+    border-color: var(--border-glow);
+    color: #000;
+    font-weight: 600;
+}
+
+.bgm-install-box {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border-normal);
+    border-radius: 2px;
+    padding: 8px;
+}
+
+.bgm-install-cmd {
+    flex: 1;
+    min-width: 0;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 10px;
+    color: var(--text-bright);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    padding: 4px 2px;
+    background: transparent;
+    border: none;
+}
+
+.bgm-install-copy {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-dim);
+    color: var(--text-muted);
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    padding: 0 10px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+
+.bgm-install-copy:hover {
+    border-color: var(--border-glow);
+    color: var(--text-bright);
+}
+
+.bgm-install-fallback {
+    margin-top: 8px;
+    font-size: 10px;
+    color: var(--text-dead);
+}
+
+.bgm-install-fallback a {
+    color: var(--border-glow);
+    text-decoration: none;
+}
+
+.bgm-install-fallback a:hover {
+    text-decoration: underline;
+}
+
+.bgm-waiting {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    margin-bottom: 20px;
+}
+
+.bgm-pulse {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border-glow);
+    box-shadow: 0 0 8px var(--border-glow);
+    animation: bgm-pulse 2s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+@keyframes bgm-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
+}
+
+.bgm-skip {
+    background: none;
+    border: 1px solid var(--border-dim);
+    color: var(--text-dead);
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    padding: 5px 14px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.bgm-skip:hover {
+    color: var(--text-muted);
+    border-color: var(--border-normal);
+}
+
+/* §12 — session-code unlock inside the gateway modal */
+.bgm-unlock {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-dim);
+    width: 100%;
+    max-width: 420px;
+    text-align: left;
+}
+.bgm-unlock-title {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--border-glow);
+    margin-bottom: 6px;
+}
+
+.bgm-unlock-toggle {
+    background: none;
+    border: none;
+    padding: 0;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.bgm-unlock-toggle:hover {
+    color: var(--border-glow);
+}
+.bgm-unlock-sub {
+    font-size: 11px;
+    color: var(--text-dead);
+    line-height: 1.6;
+    margin-bottom: 10px;
+}
+.bgm-mono {
+    font-family: 'Consolas', 'Courier New', monospace;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.bgm-unlock-row { display: flex; gap: 6px; }
+.bgm-unlock-input {
+    flex: 1;
+    min-width: 0;
+    padding: 7px 9px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    background: rgba(0, 0, 0, 0.3);
+    color: var(--text-bright, #fff);
+    border: 1px solid var(--border-normal);
+    border-radius: 2px;
+}
+.bgm-unlock-input:focus { outline: none; border-color: var(--border-glow); }
+.bgm-unlock-btn {
+    padding: 7px 14px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    cursor: pointer;
+    background: var(--border-glow);
+    color: #000;
+    border: none;
+    border-radius: 2px;
+    font-weight: 600;
+}
+.bgm-unlock-btn:disabled { opacity: 0.5; cursor: default; }
+.bgm-unlock-err {
+    margin-top: 8px;
+    font-size: 10px;
+    color: #d9534f;
+    line-height: 1.5;
+}
+
+/* ── Responsive: keep the modal usable on small viewports / zoomed pages ── */
+@media (max-width: 480px) {
+    .bgm-modal {
+        width: 100%;
+        padding: 22px 18px 18px;
+    }
+
+    .bgm-title {
+        font-size: 13px;
+    }
+
+    .bgm-unlock-row {
+        flex-wrap: wrap;
+    }
+
+    .bgm-unlock-input,
+    .bgm-unlock-btn {
+        flex: 1 1 100%;
+    }
+}

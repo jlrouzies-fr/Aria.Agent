@@ -1,0 +1,6 @@
+@page "/home"
+<PageTitle>ARIA</PageTitle>
+@code {
+    [Inject] NavigationManager Nav { get; set; } = null!;
+    protected override void OnInitialized() => Nav.NavigateTo("/");
+}

@@ -1,0 +1,299 @@
+.mem-canvas-wrap {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    overflow: hidden;
+    /* Desaturated grey-green rather than the same hue as the circuit itself — the backdrop should
+       recede, not compete with the saturated green traces/nodes/labels sitting on top of it. */
+    background-color: #161b18;
+    background-image:
+        repeating-linear-gradient(0deg, rgba(120,140,130,0.05) 0px, rgba(120,140,130,0.05) 1px, transparent 1px, transparent 28px),
+        repeating-linear-gradient(90deg, rgba(120,140,130,0.05) 0px, rgba(120,140,130,0.05) 1px, transparent 1px, transparent 28px),
+        radial-gradient(ellipse at center, rgba(120,140,130,0.05) 0%, transparent 65%);
+    cursor: grab;
+}
+.mem-canvas-wrap:active { cursor: grabbing; }
+.mem-canvas-inner {
+    position: absolute;
+    top: 0; left: 0;
+    transform-origin: 0 0;
+    /* Deliberately NOT will-change: transform. This element is world-sized (~2800×2200); promoting it
+       to its own layer makes the compositor keep a persistent backing texture of the ENTIRE world at
+       (worldSize × zoom × devicePixelRatio). On a Retina display that texture passes the GPU's max
+       texture dimension after a little zoom-in, at which point the compositor discards and repaints the
+       whole layer — the source of the zoom-dependent flicker. Without the hint, the browser paints only
+       the visible viewport on demand, which is cheap now that the content carries no per-element filters. */
+}
+
+/* ── Zoom bar — fixed to the viewport, outside .mem-canvas-inner so it never pans/scales with it ── */
+.mem-zoom-bar {
+    position: absolute;
+    top: 50%;
+    left: 16px;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    z-index: 5;
+    user-select: none;
+}
+.mem-zoom-btn {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-panel, #222);
+    border: 1px solid var(--mem-current-dim);
+    border-radius: 3px;
+    color: var(--mem-current);
+    font-family: var(--font-mono, monospace);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.mem-zoom-btn:hover { background: rgba(63,226,122,0.15); }
+.mem-zoom-track {
+    position: relative;
+    width: 6px;
+    height: 140px;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid var(--border-dim, #2a2a2a);
+    border-radius: 3px;
+    cursor: pointer;
+}
+.mem-zoom-fill {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: var(--mem-current-dim);
+    border-radius: 3px;
+}
+.mem-zoom-thumb {
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    width: 12px;
+    height: 12px;
+    background: var(--mem-current);
+    border-radius: 50%;
+    transform: translate(-50%, 50%);
+    box-shadow: 0 0 6px var(--mem-current);
+    cursor: grab;
+}
+.mem-zoom-pct {
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    color: var(--text-dead, #777);
+    font-family: var(--font-mono, monospace);
+}
+
+.mem-edges-svg {
+    position: absolute;
+    top: 0; left: 0;
+    pointer-events: none;
+    overflow: visible;
+}
+/* Overlay carrying ONLY the selected node's animated pulses. translateZ(0) puts it on its own
+   compositor layer so its per-frame stroke-dashoffset repaint is isolated from the static graph SVG
+   beneath it — the compositor just re-blends the two layers rather than re-rasterizing the whole graph
+   every frame. It holds only a handful of thin paths, so even though it is world-sized its per-frame
+   repaint area is tiny. Only mounted while a node is selected (see MemoryCanvas.razor). */
+.mem-edges-overlay {
+    transform: translateZ(0);
+}
+/* Persistent trace — always visible, the "wire" the signal rides on. Passive edges are plain white:
+   no animation is running on them at all (see MemoryCanvas.razor — the animated signal-rider path is
+   only emitted for edges touching the selected entity), so a bright static stroke is what carries
+   their visibility instead of motion. Animating stroke-dashoffset on every edge in the graph at once,
+   even at a cheap steps() cadence, was the real remaining GPU/flicker cost at scale (hundreds of
+   relations) — passive edges now do zero per-frame work. */
+.mem-edge-base {
+    stroke: var(--mem-passive, rgba(255, 255, 255, 0.55));
+    stroke-width: 1.6;
+    opacity: 0.8;
+    transition: stroke .2s, opacity .2s;
+}
+.mem-edge-base.mem-edge-cross { stroke-dasharray: 2 4; opacity: 0.55; }
+.mem-edge-base.mem-edge-active {
+    /* Brighter + thicker instead of an feGaussianBlur glow: an SVG filter forces the whole animated
+       selected-edge subtree to re-rasterize through an offscreen blur buffer on every frame, which was
+       a big part of the on-select GPU spike. A plain heavier stroke reads as "hot" for near-zero cost. */
+    stroke: var(--mem-current);
+    stroke-width: 2.4;
+    opacity: 1;
+}
+/* Flowing pulse — only ever rendered for the handful of edges touching the selected entity. The dash
+   pattern is what makes the motion visible: stroke-dashoffset animates the gaps along the line, so
+   without a stroke-dasharray the line is solid and the animation is invisible (period 4+14 = 18 matches
+   the -18 keyframe offset for a seamless loop). Pale mint over the green base trace so the "current"
+   reads as brighter sparks travelling the wire. */
+.mem-edge-signal-active {
+    stroke: #eafff2;
+    opacity: 0.95;
+    stroke-width: 2.4;
+    stroke-dasharray: 4 14;
+    animation: mem-current-flow 0.6s linear infinite;
+}
+@keyframes mem-current-flow {
+    to { stroke-dashoffset: -18; }
+}
+
+/* ── Focus mode: when a node is selected, fade everything not in its neighbourhood so the selected
+   node + its direct links/neighbours stand out. This is a one-time opacity change on selection (a
+   static-layer repaint), NOT a per-frame cost. .mem-has-selection is toggled on .mem-canvas-inner. ── */
+.mem-has-selection .mem-edge-base:not(.mem-edge-active) { opacity: 0.12; }
+.mem-has-selection .mem-edge-node { opacity: 0.15; }
+.mem-has-selection .mem-node:not(.mem-node-connected) { opacity: 0.18; }
+/* Flat fill, no drop-shadow: there are ~2 of these per edge (hundreds total), and a per-element SVG
+   filter on each is what turned every layer repaint into a re-rasterization of hundreds of blur buffers. */
+.mem-edge-node {
+    fill: var(--mem-current);
+}
+.mem-edge-label-badge {
+    fill: var(--bg-panel, #1a1a1a);
+    stroke: var(--mem-current-dim);
+    stroke-width: 1;
+}
+.mem-edge-label-active .mem-edge-label-badge { stroke: var(--mem-current); }
+.mem-edge-label {
+    pointer-events: none;
+    letter-spacing: 0.5px;
+    font-size: 9px;
+    font-family: var(--font-mono, monospace);
+    text-anchor: middle;
+    fill: var(--text-normal, #aaa);
+}
+.mem-edge-label-active { fill: var(--mem-current); }
+
+.mem-hull {
+    fill: url(#mem-hull-glow);
+    stroke: var(--mem-current-dim);
+    stroke-width: 1;
+    stroke-dasharray: 4 5;
+}
+.mem-hull-glow-inner { stop-color: var(--mem-current); stop-opacity: 0.12; }
+.mem-hull-glow-mid   { stop-color: var(--mem-current); stop-opacity: 0.03; }
+.mem-hull-glow-outer { stop-color: var(--mem-current); stop-opacity: 0; }
+.mem-hull-label-badge {
+    fill: rgba(0,0,0,0.78);
+    stroke: var(--mem-current-dim);
+    stroke-width: 1.2;
+}
+.mem-hull-label {
+    pointer-events: none;
+    font-size: 13px;
+    font-weight: 700;
+    font-family: var(--font-mono, monospace);
+    letter-spacing: 3px;
+    text-anchor: middle;
+    fill: var(--text-bright, #f0d060);
+    text-transform: uppercase;
+}
+.mem-hull-label text {
+    filter: drop-shadow(0 0 4px currentColor);
+}
+
+.mem-canvas-empty {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    text-align: center;
+}
+.mem-canvas-empty-art {
+    width: 140px;
+    max-width: 40vw;
+    overflow: visible;
+}
+.mem-empty-ring {
+    stroke: var(--mem-current-dim, #235c3f);
+    stroke-width: 1;
+    stroke-dasharray: 3 5;
+    animation: mem-current-flow 3s linear infinite;
+}
+.mem-empty-ring-inner { animation-direction: reverse; animation-duration: 2.2s; }
+.mem-empty-core {
+    fill: var(--mem-current, #3fe27a);
+    filter: drop-shadow(0 0 6px var(--mem-current, #3fe27a));
+    animation: mem-empty-pulse 2.4s ease-in-out infinite;
+}
+.mem-empty-trace {
+    stroke: var(--mem-current-dim, #235c3f);
+    stroke-width: 1;
+    fill: none;
+}
+.mem-empty-node {
+    fill: var(--mem-current-dim, #235c3f);
+}
+@keyframes mem-empty-pulse {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
+}
+.mem-canvas-empty-text {
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--text-dead, #555);
+    white-space: nowrap;
+}
+
+/* ── Entity node ── */
+.mem-node {
+    position: absolute;
+    width: 84px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 6px;
+    background: var(--bg-panel, #222);
+    border: 1px solid var(--border-dim, #2a2a2a);
+    cursor: pointer;
+    user-select: none;
+    z-index: 1;
+    transition: box-shadow .15s, transform .1s, opacity .2s;
+}
+.mem-node:hover {
+    box-shadow: 0 0 8px rgba(0,0,0,0.6);
+    transform: scale(1.04);
+}
+/* Selected node + its direct neighbours sit above the faded rest (see .mem-has-selection dimming). */
+.mem-node-connected { z-index: 3; }
+.mem-node-selected {
+    z-index: 4;
+    box-shadow: 0 0 12px rgba(63,226,122,0.5);
+    border-color: var(--text-bright) !important;
+}
+.mem-node-glyph {
+    font-size: 13px;
+    line-height: 1;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 4px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 32% 28%, #d8d8d8 0%, #9a9a9a 35%, #4a4a4a 75%, #202020 100%);
+    /* The gradient + inset shadow already give the bead its 3D look; the colored drop-shadow halo it
+       used to add was a per-node SVG filter (167 of them) re-rasterized on every canvas repaint. The
+       box-shadow below reproduces a soft colored glow far more cheaply than a filter. */
+    box-shadow: inset 0 0 3px rgba(0,0,0,0.65), 0 0 5px currentColor;
+}
+.mem-node-name {
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    color: var(--text-normal, #aaa);
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 76px;
+}
+.mem-node-count {
+    font-size: 8px;
+    color: var(--text-dead, #555);
+    margin-top: 2px;
+}

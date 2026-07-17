@@ -1,0 +1,47 @@
+/* ── Pixel-art avatar in message prefix ─────────────────── */
+.msg-prefix { display: inline-flex; align-items: center; }
+
+/* Resources strip */
+.wg-resources {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 3px 0 5px;
+}
+.wg-res-val { color: var(--text-bright); font-weight: bold; }
+
+
+/* Victory banner */
+.wg-victory {
+    padding: 6px 10px;
+    background: rgba(40,120,40,0.2);
+    border: 1px solid #2a6a2a;
+    color: #80e080;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+/* Log — now inside right panel */
+.wg-log {
+    flex: 1;
+    overflow-y: auto;
+    margin-top: 8px;
+    min-height: 0;
+}
+.wg-log-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 4px 0;
+    font-size: 11px;
+    border-bottom: 1px solid var(--border-dim);
+    line-height: 1.5;
+}
+.wg-log-turn    { color: var(--text-dead); font-size: 11px; }
+.wg-log-faction { font-weight: bold; letter-spacing: 1px; }
+.wg-log-summary { color: var(--text-muted); word-break: break-word; font-size: 11px; }

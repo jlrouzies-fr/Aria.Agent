@@ -1,0 +1,99 @@
+@using Aria.Agent
+@using Aria.Web.Data
+@using Aria.Tools
+@using Aria.Web.Helpers
+@using Aria.Web.Components.Pages
+@using Aria.Web.Components.Shared
+@using Markdig
+@using System.Text.Json
+@using System.Security.Cryptography
+@namespace Aria.Web.Components.Layout
+
+@code {
+    [CascadingParameter(Name = "NavMenu")]
+    public NavMenu Menu { get; set; } = null!;
+}
+
+@if (true)
+{
+    <div style="padding:6px 10px">
+        <button class="modal-add-btn" style="width:100%"
+                disabled="@(Menu.SessionState.CurrentUser == null)"
+                @onclick="Menu.NewSkill">⊕ NEW SKILL</button>
+    </div>
+    @if (Menu._skills.Count == 0 && Menu.SessionState.CurrentUser != null)
+    {
+        <div class="cog-empty">No skills defined yet.</div>
+    }
+    @foreach (var sk in Menu._skills)
+    {
+        <div class="cog-row" style="cursor:pointer" @onclick="() => Menu.EditSkill(sk)">
+            <span class="cog-title" style="flex:1;overflow:hidden;text-overflow:ellipsis">@sk.Name</span>
+            <span style="font-size:9px;color:var(--text-dead);white-space:nowrap;padding-left:6px">
+                @(sk.MarkdownContent.Length > 0 ? $"{sk.MarkdownContent.Split('\n').Length}L" : "empty")
+            </span>
+        </div>
+    }
+}
+
+
+@* ── Skill Editor Modal ───────────────────────────────────────────────── *@
+@if (Menu._skillEditing)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel modal-panel--skill" @onclick:stopPropagation="true">
+
+            <div class="modal-header">
+                <span class="modal-icon">📋</span>
+                <DebouncedInput id="skill-name-input" class="skill-name-input"
+                                Placeholder="Skill name..."
+                                Value="@Menu._skillName"
+                                ValueChanged="v => Menu._skillName = v" />
+                <span class="skill-shortcut-hints">Ctrl+S · Tab→indent · Esc</span>
+                <button class="modal-close" @onclick="Menu.CancelSkillEdit">✕</button>
+            </div>
+
+            <div class="skill-split-body">
+                <div class="skill-editor-pane">
+                    <div class="skill-pane-header">// MARKDOWN</div>
+                    <DebouncedTextArea id="skill-editor-textarea" class="skill-textarea"
+                                       Placeholder="@("# Section\n\nWrite markdown knowledge base, instructions, or reference material that will be injected into the agent's context when this skill is assigned...")"
+                                       Value="@Menu._skillContent"
+                                       ValueChanged="v => Menu._skillContent = v" />
+                </div>
+                <div class="skill-preview-pane">
+                    <div class="skill-pane-header">// PREVIEW</div>
+                    <div class="skill-preview-scroll">
+                        @if (string.IsNullOrWhiteSpace(Menu._skillContent))
+                        {
+                            <span class="skill-preview-empty">// start typing to see preview</span>
+                        }
+                        else
+                        {
+                            @((MarkupString)Menu.RenderSkillsPreview(Menu._skillContent))
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="modal-apply" @onclick="Menu.SaveSkillAsync">SAVE</button>
+                @if (Menu._skillEditId != null)
+                {
+                    <button class="mcp-delete-btn" @onclick="Menu.DeleteSkillAsync">✕ DELETE</button>
+                }
+                <button class="modal-cancel" @onclick="Menu.CancelSkillEdit">CANCEL</button>
+                @if (Menu._skillError != null)
+                {
+                    <span class="modal-error" style="margin-left:auto;margin-top:0">@Menu._skillError</span>
+                }
+                @if (Menu._skillSaved)
+                {
+                    <span class="modal-saved-msg" style="margin-left:auto">// SAVED //</span>
+                }
+            </div>
+
+        </div>
+    </div>
+}
+

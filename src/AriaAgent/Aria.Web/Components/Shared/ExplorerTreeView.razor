@@ -1,0 +1,36 @@
+@using Aria.Web.Components.Pages
+
+@foreach (var node in Nodes)
+{
+    <div class="explorer-row" style="padding-left:@(6 + Depth * 14)px"
+         @onclick="() => (node.IsDir ? OnToggleDir : OnOpenFile).InvokeAsync(node)">
+        <span class="explorer-row-name">
+            @(node.IsDir ? (Expanded.Contains(node.RelPath) ? "▾ " : "▸ ") : "")@node.Name
+        </span>
+        @if (!node.IsDir && DirtyPaths.Contains(node.RelPath))
+        {
+            <span class="explorer-row-dirty" title="Modified"></span>
+        }
+        @if (!node.IsDir)
+        {
+            <button class="explorer-row-ref" title="Reference in chat"
+                    @onclick="() => OnAddReference.InvokeAsync(node)"
+                    @onclick:stopPropagation="true">#</button>
+        }
+    </div>
+    @if (node.IsDir && Expanded.Contains(node.RelPath))
+    {
+        <ExplorerTreeView Nodes="node.Children" Depth="Depth + 1" Expanded="Expanded" DirtyPaths="DirtyPaths"
+                          OnToggleDir="OnToggleDir" OnOpenFile="OnOpenFile" OnAddReference="OnAddReference" />
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public List<ExplorerNode> Nodes { get; set; } = [];
+    [Parameter] public int Depth { get; set; }
+    [Parameter, EditorRequired] public HashSet<string> Expanded { get; set; } = [];
+    [Parameter] public HashSet<string> DirtyPaths { get; set; } = [];
+    [Parameter] public EventCallback<ExplorerNode> OnToggleDir { get; set; }
+    [Parameter] public EventCallback<ExplorerNode> OnOpenFile { get; set; }
+    [Parameter] public EventCallback<ExplorerNode> OnAddReference { get; set; }
+}

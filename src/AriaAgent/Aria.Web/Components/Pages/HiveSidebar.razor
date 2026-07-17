@@ -1,0 +1,148 @@
+@using Aria.Web.Data
+@using Aria.Web.Services
+@using Aria.Web.Helpers
+@inject UserSessionState SessionState
+
+<div class="hv-sidebar">
+
+    @* Collective list *@
+    <div class="hv-sidebar-section">
+        <div class="hv-section-lbl">COLLECTIVES</div>
+        @if (SessionState.CurrentUser != null)
+        {
+            <button class="hv-new-btn" @onclick="Parent.CreateCollectiveAsync">⊕ NEW COLLECTIVE</button>
+        }
+        @foreach (var c in Parent._collectives)
+        {
+            var isSel = Parent._selectedCollectiveId == c.Id;
+            <div class="hv-collective-row @(isSel ? "active" : "")"
+                 @onclick="() => Parent.SelectCollective(c.Id)">
+                <span class="hv-c-dot">@(isSel ? "●" : "○")</span>
+                <span class="hv-c-name" title="@c.Name">@c.Name</span>
+                <span class="hv-c-status @Hive.StatusClass(c.Status)">@c.Status.ToString()[..3].ToUpper()</span>
+                <button class="hv-del-btn" title="Delete"
+                        @onclick:stopPropagation="true"
+                        @onclick="() => Parent.DeleteCollectiveAsync(c.Id)">✕</button>
+            </div>
+        }
+        @if (Parent._collectives.Count == 0 && SessionState.CurrentUser != null)
+        {
+            <div class="hv-empty">No collectives yet.</div>
+        }
+    </div>
+
+    @* Config panel when a collective is selected *@
+    @if (Parent._collective != null)
+    {
+        <div class="hv-sidebar-section">
+            <div class="hv-section-lbl">CONFIGURATION</div>
+
+            <div class="hv-field">
+                <label class="hv-label">NAME</label>
+                <DebouncedInput class="hv-input"
+                                Value="@Parent._editName"
+                                ValueChanged="Parent.OnNameChanged"
+                                OnBlur="Parent.SaveConfigAsync" />
+            </div>
+
+            <div class="hv-field">
+                <label class="hv-label">OBJECTIVE</label>
+                <DebouncedTextArea class="hv-textarea" rows="4"
+                                   Value="@Parent._editObjective"
+                                   ValueChanged="v => Parent._editObjective = v"
+                                   OnBlur="Parent.SaveConfigAsync"
+                                   Placeholder="Describe the task this collective should accomplish…" />
+            </div>
+
+            <div class="hv-field">
+                <label class="hv-label">MAX ROUNDS</label>
+                <DebouncedInput class="hv-input hv-input-sm" type="number" min="1" max="20"
+                                Value="@Parent._editMaxRounds.ToString()"
+                                ValueChanged="v => { if (int.TryParse(v, out var parsed)) Parent._editMaxRounds = parsed; }"
+                                OnBlur="Parent.SaveConfigAsync" />
+            </div>
+
+            <div class="hv-field">
+                <label class="hv-label">BEHAVIOR<span class="hv-help" data-tip="@Hive.BehaviorTip">?</span></label>
+                <ThemedSelect Value="@(((int)Parent._editBehavior).ToString())"
+                              ValueChanged="Parent.OnBehaviorChanged"
+                              Options="Hive.BehaviorOptions()" ControlClass="hv-input" />
+            </div>
+
+            <div class="hv-section-lbl" style="margin-top:12px">OVERMIND</div>
+            <div class="hv-field">
+                <label class="hv-label">AGENT</label>
+                <ThemedSelect Value="@(Parent._editOvermindSubAgentId?.ToString() ?? "")"
+                              ValueChanged="Parent.OnOvermindAgentChanged"
+                              Options="Parent.AgentOptions()" Placeholder="— Base Aria —" />
+            </div>
+            <div class="hv-field">
+                <label class="hv-label">CHANNEL<span class="hv-help" data-tip="The Overmind (and any drone without its own override) runs on this channel + model. The Hive requires an explicit choice — it never inherits the chat's default.">?</span></label>
+                <ThemedSelect Value="@(Parent._editOvermindSource ?? "")"
+                              ValueChanged="Parent.OnOvermindSourceChanged"
+                              Options="Parent.SourceOptions()" Placeholder="— select a channel —" />
+            </div>
+            @if (!string.IsNullOrEmpty(Parent._editOvermindSource))
+            {
+                var src = Parent._availableSources.FirstOrDefault(s => s.Name == Parent._editOvermindSource);
+                @if (src?.Models.Count > 0)
+                {
+                    <div class="hv-field">
+                        <label class="hv-label">MODEL</label>
+                        <ThemedSelect Value="@(Parent._editOvermindModel ?? "")"
+                                      ValueChanged="Parent.OnOvermindModelChanged"
+                                      Options="Parent.ModelOptions(src)" Placeholder="— select a model —" />
+                    </div>
+                }
+            }
+
+            <div class="hv-section-lbl" style="margin-top:12px">DRONES</div>
+            @foreach (var m in Parent._members)
+            {
+                <div class="hv-drone-row" style="border-left:2px solid @m.SubAgent.AccentColor">
+                    @((MarkupString)AgentSprites.RenderAuto(m.SubAgent.AvatarSpriteKey, m.SubAgent.AccentColor, 24))
+                    <span class="hv-drone-name">@m.SubAgent.DisplayName</span>
+                    @if (!string.IsNullOrEmpty(m.RoleLabel))
+                    {
+                        <span class="hv-drone-role">@m.RoleLabel</span>
+                    }
+                    <button class="hv-del-btn" title="Remove drone"
+                            @onclick="() => Parent.RemoveMemberAsync(m.Id)">✕</button>
+                </div>
+            }
+            <div class="hv-recruit-section">
+                <div class="hv-section-lbl" style="margin-top:8px">RECRUIT</div>
+                @foreach (var a in Parent._recruitableAgents)
+                {
+                    <div class="hv-recruit-row" @onclick="() => Parent.RecruitDroneAsync(a.Id)">
+                        @((MarkupString)AgentSprites.RenderAuto(a.AvatarSpriteKey, a.AccentColor, 20))
+                        <span class="hv-recruit-name">@a.DisplayName</span>
+                        <span class="hv-recruit-add">+ RECRUIT</span>
+                    </div>
+                }
+            </div>
+
+            @if (Parent._configSaved)
+            {
+                <div class="hv-saved-msg">// COMMITTED //</div>
+            }
+
+            <div class="hv-section-lbl" style="margin-top:14px">SYNAPSE MEMORY</div>
+            <div class="hv-synapse-hint">Overmind broadcasts this to all drones before dispatch. Auto-updated after each cogitation.</div>
+            <DebouncedTextArea class="hv-synapse-textarea" rows="6"
+                               Value="@Parent._editSynapseMemory"
+                               ValueChanged="v => Parent._editSynapseMemory = v"
+                               OnBlur="Parent.SaveSynapseMemoryAsync"
+                               Placeholder="No synapse memory yet. Run a COGITATE to populate." />
+            @if (Parent._synapseSaved)
+            {
+                <div class="hv-saved-msg">// SYNAPSE LINK UPDATED //</div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public Hive Parent { get; set; } = default!;
+}

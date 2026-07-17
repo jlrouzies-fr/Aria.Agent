@@ -1,0 +1,124 @@
+name: Release Aria Bridge
+
+on:
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: 'Mark as a prerelease (bridge versions are -beta until stable)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - rid: win-x64
+            zip: aria-bridge-win-x64.zip
+          - rid: linux-x64
+            zip: aria-bridge-linux-x64.zip
+          - rid: osx-x64
+            zip: aria-bridge-osx-x64.zip
+          - rid: osx-arm64
+            zip: aria-bridge-osx-arm64.zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish bridge (${{ matrix.rid }})
+        run: |
+          dotnet publish src/AriaAgent/Aria.Bridge/Aria.Bridge.csproj \
+            -c Release \
+            -r ${{ matrix.rid }} \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -o ./publish/${{ matrix.rid }}
+
+      - name: Zip publish output
+        run: |
+          cd ./publish/${{ matrix.rid }}
+          zip -r ../../${{ matrix.zip }} .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.zip }}
+          path: ${{ matrix.zip }}
+          # These artifacts are only a transport pipe to the `release` job,
+          # which promotes them to a GitHub Release. Keep the quota footprint
+          # minimal; the `release` job also deletes them explicitly on success.
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the release
+      actions: write    # delete this run's transport artifacts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          merge-multiple: true
+
+      - name: Stage install/uninstall scripts
+        run: |
+          cp scripts/install.sh ./artifacts/install.sh
+          cp scripts/install.ps1 ./artifacts/install.ps1
+          cp scripts/uninstall.sh ./artifacts/uninstall.sh
+          cp scripts/uninstall.ps1 ./artifacts/uninstall.ps1
+
+      - name: Resolve bridge version
+        id: ver
+        shell: bash
+        run: |
+          VERSION=$(grep -oP '(?<=<Version>)[^<]+' src/AriaAgent/Aria.Bridge/Aria.Bridge.csproj)
+          if [ -z "$VERSION" ]; then
+            echo "Could not read <Version> from Aria.Bridge.csproj" >&2
+            exit 1
+          fi
+          echo "tag=bridge-v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing bridge-v$VERSION (prerelease=${{ inputs.prerelease }})"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          files: ./artifacts/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ inputs.prerelease }}
+
+      - name: Delete transport artifacts for this run
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          # The zips are now attached to the Release; they no longer need to
+          # occupy the Actions artifact quota. Delete just this run's artifacts.
+          curl -s -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/artifacts?per_page=100" \
+          | python3 -c 'import sys,json; [print(a["id"]) for a in json.load(sys.stdin)["artifacts"]]' \
+          | while read id; do
+              echo "Deleting artifact $id"
+              curl -s -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+                "https://api.github.com/repos/$REPO/actions/artifacts/$id"
+            done

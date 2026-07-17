@@ -1,0 +1,59 @@
+@using Aria.Web.Data
+
+<div class="hv-timeline @(_collapsed ? "hv-timeline-collapsed" : "")">
+    <div class="hv-timeline-header" @onclick="() => _collapsed = !_collapsed" style="cursor:pointer;user-select:none">
+        <span>// TIMELINE</span>
+        @if (Events.Count > 0)
+        {
+            <span style="margin-left:8px;opacity:0.5">(@Events.Count)</span>
+        }
+        <span style="margin-left:auto;font-size:8px;opacity:0.5">@(_collapsed ? "▲ EXPAND" : "▼ COLLAPSE")</span>
+    </div>
+    @if (!_collapsed)
+    {
+        <div class="hv-timeline-body">
+            @if (Events.Count == 0)
+            {
+                <div class="hv-timeline-empty">No activity yet.</div>
+            }
+            @foreach (var ev in Events)
+            {
+                var actorName = GetActorName(ev.ActorMemberId);
+                var evId      = ev.Id;
+                var expanded  = _expandedEvents.Contains(evId);
+                var longText  = (ev.Message?.Length ?? 0) > 80;
+                <div class="hv-event hv-event-@ev.Type.ToString().ToLower() @(expanded ? "hv-event-expanded" : "")">
+                    <span class="hv-event-time">@ev.Timestamp.ToString("HH:mm:ss")</span>
+                    <span class="hv-event-type">@ev.Type.ToString().ToUpperInvariant()</span>
+                    @if (!string.IsNullOrEmpty(actorName))
+                    {
+                        <span class="hv-event-actor">@actorName</span>
+                    }
+                    <span class="hv-event-msg">@ev.Message</span>
+                    @if (longText)
+                    {
+                        <button class="hv-event-expand" @onclick="() => ToggleExpand(evId)"
+                                data-tip="@(expanded ? "Collapse" : "Expand")">@(expanded ? "−" : "+")</button>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public List<CollectiveEvent> Events { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public Func<int?, string> GetActorName { get; set; } = default!;
+
+    private bool _collapsed = true;
+    private readonly HashSet<int> _expandedEvents = [];
+
+    private void ToggleExpand(int eventId)
+    {
+        if (!_expandedEvents.Remove(eventId))
+            _expandedEvents.Add(eventId);
+    }
+}

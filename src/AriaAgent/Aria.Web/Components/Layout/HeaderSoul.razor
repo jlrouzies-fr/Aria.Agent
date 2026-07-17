@@ -1,0 +1,205 @@
+@inject UserSessionState SessionState
+@inject ModelBridgeRegistry BridgeRegistry
+@inject AgentService AgentService
+@inject CircuitAuthService CircuitAuth
+@implements IDisposable
+
+@{
+    var user      = SessionState.CurrentUser;
+    var verified  = user != null && CircuitAuth.IsVerified(user.Id);
+}
+
+@if (verified)
+{
+    @if (SealRemaining() is { } remaining)
+    {
+        var warn = remaining <= WarnThreshold;
+        <span class="header-seal @(warn ? "warn" : "")"
+              data-tip="@($"Inquisitorial Seal active — agents act unprompted until {_sealExpiresUtc?.ToLocalTime():HH:mm}, then a fresh seal is requested")">⛨ @FormatRemaining(remaining)</span>
+    }
+    else if (!_sealLoaded)
+    {
+        @* First status pull from the node hasn't returned yet — show a determinate "loading" seal so the
+           bar never flashes empty then suddenly reveals UNSEALED. *@
+        <span class="header-seal loading"
+              data-tip="Reading seal status from your node…">⛨ SEAL…</span>
+    }
+    else if (_sealError)
+    {
+        @* Loaded, but the node didn't answer /context/status — say so rather than implying "sealed". *@
+        <span class="header-seal unknown"
+              data-tip="Could not read seal status from your node — retrying every few seconds.">⛨ SEAL ?</span>
+    }
+    else if (_enforcement)
+    {
+        @* No live grant, but Layer B is enforcing — the next sensitive agent action will pop a seal
+           request on your node. Blink so that's visible ahead of time. *@
+        <span class="header-seal unsealed"
+              data-tip="No active seal — the next sensitive agent action (tool call, shell, key spend) will request your approval on this node.">⛨ UNSEALED</span>
+    }
+    <span class="header-soul-bound">SOUL: <em>@user!.Name.ToUpperInvariant()</em><span class="bridge-up-dot" data-tip="Bridge connected"></span></span>
+    var bridge = ActiveBridge(user);
+    @if (bridge != null)
+    {
+        <span class="header-bridge @(bridge.Value.Ok ? "ok" : "warn")"
+              data-tip="@bridge.Value.Tip">⟁ @bridge.Value.Text</span>
+    }
+    var others = OtherNodes(user, bridge?.NodeId);
+    @if (others.Count > 0)
+    {
+        <details class="header-bridge-others">
+            <summary data-tip="Other bridges connected to this soul">+@others.Count</summary>
+            <div class="header-bridge-others-list">
+                @foreach (var n in others)
+                {
+                    var label = string.IsNullOrEmpty(n.Label) ? n.NodeId : n.Label;
+                    <div class="header-bridge-other-item">
+                        <span class="bridge-up-dot"></span>@label.ToUpperInvariant()@(string.IsNullOrEmpty(n.Platform) ? "" : $" · {n.Platform}")
+                    </div>
+                }
+            </div>
+        </details>
+    }
+}
+else if (user != null)
+{
+    @* A user is selected but the bridge has not proven identity — show locked, never the name. *@
+    <span class="header-bridge-unavailable">
+        <span class="bridge-unavail-dot"></span>// BRIDGE UNAVAILABLE //
+    </span>
+}
+else
+{
+    <span class="header-bridge-unavailable">
+        <span class="bridge-unavail-dot"></span>// BRIDGE OFFLINE //
+    </span>
+}
+
+@code {
+    // ── Inquisitorial Seal countdown ────────────────────────────────────────────────────────────
+    // While an agent holds a live context grant (Layer B, §4), it may take sensitive actions without
+    // re-prompting until the grant lapses (8h). We show how long is left; near the end it blinks so
+    // you know the next action will pop a fresh seal request on your node. The grant + its expiry are
+    // node-held, so we read them over the tunnel (GET /context/status) and count down locally.
+    private static readonly TimeSpan WarnThreshold  = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan PollInterval   = TimeSpan.FromSeconds(20);   // refresh node truth
+    private static readonly TimeSpan TickInterval   = TimeSpan.FromSeconds(1);    // smooth countdown
+
+    private System.Threading.Timer? _pollTimer;   // pulls grant expiry from the node
+    private System.Threading.Timer? _tick;        // repaints the countdown each second
+    private DateTime? _sealExpiresUtc;            // effective grant expiry, null when no live grant
+    private bool _enforcement;                    // Layer B enforcing → an unsealed action needs approval
+    private bool _sealLoaded;                     // first /context/status pull has returned (success or fail)
+    private bool _sealError;                      // last pull couldn't read status from the node
+    private bool _polling;
+
+    // Time left on the live seal, or null when none is active (nothing to show).
+    private TimeSpan? SealRemaining()
+    {
+        if (_sealExpiresUtc is not { } exp) return null;
+        var left = exp - DateTime.UtcNow;
+        return left > TimeSpan.Zero ? left : null;
+    }
+
+    // "7h59" when over an hour out; "14:59" (mm:ss) once inside the last hour so seconds are visible.
+    private static string FormatRemaining(TimeSpan r) =>
+        r.TotalHours >= 1 ? $"{(int)r.TotalHours}h{r.Minutes:D2}" : $"{r.Minutes}:{r.Seconds:D2}";
+
+    // Pull the effective grant expiry for THIS browser session from the node (grants are session-scoped
+    // on SessionState.SessionToken, or soul-wide — the endpoint returns the later of the two).
+    private async void PollSeal(object? _)
+    {
+        if (_polling) return;
+        _polling = true;
+        try
+        {
+            var user = SessionState.CurrentUser;
+            if (user == null || !CircuitAuth.IsVerified(user.Id)) { _sealExpiresUtc = null; _enforcement = false; _sealError = false; return; }
+
+            var resp = await BridgeRegistry.SendLocalRestAsync(
+                user.Id, "GET", $"/context/status?session={Uri.EscapeDataString(SessionState.SessionToken)}");
+
+            if (resp is { StatusCode: 200, Body: { } body })
+            {
+                DateTime? expiry = null;
+                using var doc = System.Text.Json.JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("expiryUnix", out var e) &&
+                    e.ValueKind == System.Text.Json.JsonValueKind.Number)
+                    expiry = DateTimeOffset.FromUnixTimeSeconds(e.GetInt64()).UtcDateTime;
+                _sealExpiresUtc = expiry;
+                _enforcement    = doc.RootElement.TryGetProperty("enforcementEnabled", out var en) &&
+                                  en.ValueKind == System.Text.Json.JsonValueKind.True;
+                _sealError      = false;
+            }
+            else
+            {
+                // Reachable-but-bad or no response — mark unknown rather than silently "no seal".
+                _sealExpiresUtc = null; _enforcement = false; _sealError = true;
+            }
+        }
+        catch { /* node unreachable / bad payload — surface as unknown, retry next poll */ _sealExpiresUtc = null; _enforcement = false; _sealError = true; }
+        finally
+        {
+            _sealLoaded = true;
+            _polling = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // Repaint once a second, but only while a countdown is actually on screen.
+    private async void OnTick(object? _)
+    {
+        if (SealRemaining() != null) await InvokeAsync(StateHasChanged);
+    }
+
+    // The bridge the active channel runs on. Null for cloud/unselected channels (node-agnostic).
+    private (string Text, bool Ok, string Tip, string? NodeId)? ActiveBridge(Aria.Web.Data.Users.User user)
+    {
+        var srcName = SessionState.SelectedModelSource;
+        if (srcName == null) return null;
+        var src = AgentService.GetSourcesForUser(user.Id).FirstOrDefault(s => s.Name == srcName);
+        if (src is not { IsBridged: true }) return null;   // cloud: not pinned to a machine
+
+        if (string.IsNullOrEmpty(src.BridgeNodeId))
+            return ("UNBOUND", false, $"Channel '{srcName}' is not bound to a bridge", null);
+        if (!BridgeRegistry.TryGetNode(user.Id.ToString(), src.BridgeNodeId, out var node))
+            return ("OFFLINE", false, $"The bridge bound to '{srcName}' is offline", src.BridgeNodeId);
+
+        var label = (string.IsNullOrEmpty(node.Label) ? node.NodeId : node.Label).ToUpperInvariant();
+        var tip   = $"'{srcName}' runs on {label}" + (string.IsNullOrEmpty(node.Platform) ? "" : $" ({node.Platform})");
+        return (label, true, tip, node.NodeId);
+    }
+
+    // Every other bridge currently connected to this soul, most-recent first — shown collapsed
+    // next to the always-visible primary badge above.
+    private List<NodeConnection> OtherNodes(Aria.Web.Data.Users.User user, string? activeNodeId) =>
+        BridgeRegistry.GetNodes(user.Id.ToString())
+            .Where(n => n.NodeId != activeNodeId)
+            .OrderByDescending(n => n.ConnectedAt)
+            .ToList();
+
+    protected override void OnInitialized()
+    {
+        SessionState.OnChange            += OnChange;
+        SessionState.SourceChanged       += OnSourceChanged;
+        BridgeRegistry.SoulStatusChanged += OnSoulStatusChanged;
+        BridgeRegistry.NodesChanged      += OnNodesChanged;
+        _pollTimer = new System.Threading.Timer(PollSeal, null, TimeSpan.FromSeconds(2), PollInterval);
+        _tick      = new System.Threading.Timer(OnTick,   null, TickInterval,           TickInterval);
+    }
+
+    private async void OnChange()                    => await InvokeAsync(StateHasChanged);
+    private async void OnSourceChanged()             => await InvokeAsync(StateHasChanged);
+    private async void OnSoulStatusChanged(string _) => await InvokeAsync(StateHasChanged);
+    private async void OnNodesChanged(string _)      => await InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        SessionState.OnChange            -= OnChange;
+        SessionState.SourceChanged       -= OnSourceChanged;
+        BridgeRegistry.SoulStatusChanged -= OnSoulStatusChanged;
+        BridgeRegistry.NodesChanged      -= OnNodesChanged;
+        _pollTimer?.Dispose();
+        _tick?.Dispose();
+    }
+}

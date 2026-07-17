@@ -1,0 +1,59 @@
+@* Themed dropdown replacing native <select>. Native <option> lists can't be styled on macOS
+   (the open list is an OS-native popup), so we render our own list of divs. Drop-in for the
+   Hive config selects: pass Options as (value,label) pairs and two-way bind Value. *@
+
+<div class="tsel">
+    <button type="button" class="@ControlClass tsel-control" @onclick="Toggle">
+        <span class="tsel-value @(IsPlaceholder ? "tsel-placeholder" : "")">@DisplayLabel</span>
+        <span class="tsel-arrow">@(_open ? "▴" : "▾")</span>
+    </button>
+    @if (_open)
+    {
+        <div class="tsel-backdrop" @onclick="Close"></div>
+        <div class="tsel-list">
+            @foreach (var opt in Options)
+            {
+                var selected = opt.Value == (Value ?? "");
+                <div class="tsel-opt @(selected ? "tsel-sel" : "")"
+                     @onclick="() => ChooseAsync(opt.Value)">
+                    @opt.Label
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public List<(string Value, string Label)> Options { get; set; } = new();
+    [Parameter] public string Placeholder { get; set; } = "— select —";
+    // Base styling class for the control, so it blends with each context (hv-input, modal-input, …).
+    [Parameter] public string ControlClass { get; set; } = "hv-input";
+
+    private bool _open;
+
+    private bool IsPlaceholder => !Options.Any(o => o.Value == (Value ?? ""));
+    private string DisplayLabel
+    {
+        get
+        {
+            foreach (var o in Options)
+                if (o.Value == (Value ?? "")) return o.Label;
+            return Placeholder;
+        }
+    }
+
+    private void Toggle() => _open = !_open;
+    private void Close()  => _open = false;
+
+    private async Task ChooseAsync(string v)
+    {
+        _open = false;
+        if (v != (Value ?? ""))
+        {
+            Value = v;
+            await ValueChanged.InvokeAsync(v);
+        }
+    }
+}

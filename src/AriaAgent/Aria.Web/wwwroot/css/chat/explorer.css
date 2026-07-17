@@ -1,0 +1,726 @@
+/* ── Explorer panel (left-edge project file tree) ───────────────── */
+.explorer-panel {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border-dim);
+    overflow: hidden;
+    transition: width 0.2s ease;
+    width: 230px;
+    min-width: 180px;
+    max-width: 480px;
+}
+.explorer-panel.resizing {
+    transition: none;
+}
+.explorer-panel--collapsed {
+    width: 28px;
+    min-width: 0;
+    max-width: 28px;
+    background: transparent;
+    border-right: none;
+}
+
+/* ── Resize handle: invisible full-height grab bar until hovered/dragged ── */
+.explorer-resize-handle {
+    flex-shrink: 0;
+    width: 5px;
+    margin: 0 -2px;
+    cursor: col-resize;
+    background: transparent;
+    position: relative;
+    z-index: 5;
+}
+.explorer-resize-handle:hover,
+.explorer-resize-handle:active {
+    background: var(--border-glow);
+    opacity: 0.5;
+}
+.explorer-panel--collapsed .explorer-body {
+    display: none;
+}
+.explorer-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 4px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-dim);
+    cursor: pointer;
+    user-select: none;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+}
+.explorer-panel--collapsed .explorer-header {
+    flex-direction: column;
+    align-items: center;
+    /* Height fits the label itself — the bookmark is only as tall as "EXPLORER" plus its padding. */
+    justify-content: center;
+    /* Flush to the outside (left) edge; small gap on the inside. */
+    margin: 10px 3px 0 0;
+    padding: 10px 4px;
+    gap: 6px;
+    border: 1px solid var(--border-dim);
+    /* Square on the outside (left), rounded on the inside (right) — reads as a tab on the edge. */
+    border-radius: 0 5px 5px 0;
+    background: var(--bg-surface);
+    transition: border-color .15s, background .15s;
+}
+.explorer-panel--collapsed .explorer-header:hover {
+    border-color: var(--border-normal);
+    background: var(--bg-panel);
+}
+.explorer-toggle {
+    font-size: 8px;
+    opacity: 0.8;
+    flex-shrink: 0;
+}
+.explorer-title {
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.explorer-panel--collapsed .explorer-title {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    transform: rotate(180deg);
+    font-size: 9px;
+    letter-spacing: 2px;
+    white-space: nowrap;
+}
+.explorer-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
+}
+.explorer-empty {
+    padding: 10px 8px;
+    color: var(--text-dead);
+    font-size: 11px;
+}
+.explorer-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 6px 4px;
+}
+.explorer-project-select {
+    flex: 1;
+    min-width: 0;
+}
+.explorer-project-select .tsel-control {
+    font-size: 10px;
+    padding: 3px 6px;
+}
+.explorer-refresh-btn {
+    flex-shrink: 0;
+    background: var(--bg-surface);
+    color: var(--text-muted);
+    border: 1px solid var(--border-dim);
+    font-size: 11px;
+    padding: 3px 6px;
+    cursor: pointer;
+}
+.explorer-refresh-btn:hover {
+    color: var(--text-bright);
+    border-color: var(--border-glow);
+}
+.explorer-filter-input {
+    margin: 0 6px 4px;
+    background: var(--bg-surface);
+    color: var(--text-bright);
+    border: 1px solid var(--border-dim);
+    font-size: 11px;
+    padding: 4px 6px;
+}
+.explorer-tree {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-dim) transparent;
+    padding-bottom: 8px;
+}
+.explorer-tree::-webkit-scrollbar { width: 3px; }
+.explorer-tree::-webkit-scrollbar-thumb { background: var(--border-dim); }
+.explorer-truncated-tag {
+    padding: 4px 8px;
+    color: var(--text-dead);
+    font-size: 10px;
+}
+.explorer-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 6px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+}
+.explorer-row:hover {
+    background: var(--bg-surface);
+    color: var(--text-bright);
+}
+.explorer-row-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.explorer-row-ref {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--text-dead);
+    font-size: 11px;
+    padding: 0 3px;
+    cursor: pointer;
+    opacity: 0;
+}
+.explorer-row:hover .explorer-row-ref {
+    opacity: 1;
+}
+.explorer-row-ref:hover {
+    color: var(--border-glow);
+}
+
+/* ── File viewer overlay ──────────────────────────────────────── */
+.explorer-viewer-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+}
+.explorer-viewer {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-dim);
+    width: min(900px, 90vw);
+    height: min(720px, 85vh);
+    display: flex;
+    flex-direction: column;
+}
+.explorer-viewer-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-dim);
+    font-size: 11px;
+}
+.explorer-viewer-path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-bright);
+    font-family: var(--font-mono);
+}
+.explorer-viewer-ref-btn, .explorer-viewer-modal-btn, .explorer-viewer-close {
+    flex-shrink: 0;
+    background: var(--bg-surface);
+    color: var(--text-muted);
+    border: 1px solid var(--border-dim);
+    font-size: 11px;
+    padding: 3px 8px;
+    cursor: pointer;
+}
+.explorer-viewer-ref-btn:hover, .explorer-viewer-modal-btn:hover, .explorer-viewer-close:hover {
+    color: var(--text-bright);
+    border-color: var(--border-glow);
+}
+.explorer-viewer-body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 10px;
+}
+
+/* ── Reload overlay: blurs whatever's already there rather than swapping it out,
+   so a refresh reads as "updating" instead of a jarring content flash. ─────── */
+.explorer-loading-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.25);
+    backdrop-filter: blur(2px);
+    z-index: 20;
+}
+.explorer-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border-dim);
+    border-top-color: var(--border-glow);
+    border-radius: 50%;
+    animation: telemetry-spin 0.8s linear infinite;
+}
+.explorer-approval-note {
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--border-glow);
+    text-transform: uppercase;
+    text-align: center;
+    padding: 4px 10px;
+    border: 1px solid var(--border-dim);
+    background: rgba(0, 0, 0, 0.5);
+}
+.explorer-viewer-code {
+    color: var(--text-bright);
+}
+.explorer-viewer-code pre {
+    font-size: 11px;
+}
+
+/* ── Diff card inside the viewer should fill the available height ── */
+.explorer-viewer-body .diff-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    margin: 0;
+}
+.explorer-viewer-body .diff-card-body {
+    flex: 1;
+    max-height: none;
+    overflow-y: auto;
+}
+
+/* ── Docked side panel (default) — code left, chat right ─────────── */
+.explorer-viewer-panel {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    width: 42%;
+    max-width: 640px;
+    min-width: 320px;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border-dim);
+    overflow: hidden;
+}
+.explorer-viewer-panel .explorer-viewer-header {
+    padding: 8px 10px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+}
+
+/* ── Explorer tabs (FILES / CHANGES) ─────────────────────────────── */
+.explorer-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 4px 6px 0;
+    border-bottom: 1px solid var(--border-dim);
+}
+.explorer-tab {
+    flex: 1;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    padding: 4px 2px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+.explorer-tab:hover {
+    color: var(--text-bright);
+}
+.explorer-tab--active {
+    color: var(--text-bright);
+    border-bottom-color: var(--border-glow);
+}
+.explorer-tab-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 7px;
+    background: var(--text-title);
+    color: var(--bg-panel);
+    font-size: 9px;
+    font-weight: bold;
+}
+
+/* ── Dirty dot in FILES tree ─────────────────────────────────────── */
+.explorer-row-dirty {
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--gold-bright);
+    margin-right: 2px;
+}
+
+/* ── Changes list ────────────────────────────────────────────────── */
+.changes-list {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-dim) transparent;
+    display: flex;
+    flex-direction: column;
+}
+.changes-list::-webkit-scrollbar { width: 3px; }
+.changes-list::-webkit-scrollbar-thumb { background: var(--border-dim); }
+.changes-branch {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border-dim);
+    font-size: 11px;
+}
+.changes-branch-name {
+    font-family: var(--font-mono);
+    color: var(--text-bright);
+}
+.changes-branch-ahead-behind {
+    color: var(--gold-bright);
+    font-family: var(--font-mono);
+    font-size: 10px;
+}
+.changes-section-title {
+    padding: 6px 8px 2px;
+    color: var(--text-dead);
+    font-size: 9px;
+    letter-spacing: 1px;
+}
+.changes-error {
+    padding: 6px 8px;
+    color: var(--text-title);
+    font-size: 10px;
+    border-bottom: 1px solid var(--border-dim);
+}
+.changes-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+}
+.changes-row:hover {
+    background: var(--bg-surface);
+    color: var(--text-bright);
+}
+.changes-row-badge {
+    flex-shrink: 0;
+    min-width: 18px;
+    text-align: center;
+    padding: 0 3px;
+    border-radius: 2px;
+    font-size: 9px;
+    font-weight: bold;
+    border: 1px solid transparent;
+}
+.git-status-untracked { color: var(--text-dead); border-color: var(--text-dead); }
+.git-status-added     { color: var(--success-bright); border-color: var(--success-bright); }
+.git-status-modified  { color: var(--gold-bright); border-color: var(--gold-bright); }
+.git-status-deleted   { color: var(--text-title); border-color: var(--text-title); }
+.git-status-renamed   { color: var(--border-glow); border-color: var(--border-glow); }
+.git-status-unknown   { color: var(--text-muted); border-color: var(--text-muted); }
+.changes-row-path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.changes-row-rename {
+    opacity: 0.8;
+}
+.changes-row-actions {
+    flex-shrink: 0;
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+}
+.changes-row:hover .changes-row-actions {
+    opacity: 1;
+}
+.changes-row-btn {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-dim);
+    color: var(--text-muted);
+    font-size: 10px;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.changes-row-btn:hover {
+    color: var(--text-bright);
+    border-color: var(--border-glow);
+}
+.changes-row-btn--danger:hover {
+    color: var(--text-title);
+    border-color: var(--text-title);
+}
+
+/* ── Commit box ──────────────────────────────────────────────────── */
+.changes-commit-box {
+    margin-top: auto;
+    padding: 8px 6px;
+    border-top: 1px solid var(--border-dim);
+    background: var(--bg-surface);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.changes-commit-row {
+    display: flex;
+    gap: 6px;
+}
+.changes-commit-btn,
+.changes-draft-btn {
+    flex: 1;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-dim);
+    color: var(--text-muted);
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    padding: 5px 4px;
+    cursor: pointer;
+}
+.changes-commit-btn:hover:not(:disabled),
+.changes-draft-btn:hover:not(:disabled) {
+    color: var(--text-bright);
+    border-color: var(--border-glow);
+}
+.changes-commit-btn:disabled,
+.changes-draft-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.changes-commit-message {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-dim);
+    color: var(--text-bright);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 5px 6px;
+    resize: vertical;
+    min-height: 54px;
+}
+.changes-commit-message:focus {
+    outline: none;
+    border-color: var(--border-glow);
+}
+
+/* ── Discard confirmation ────────────────────────────────────────── */
+.changes-discard-confirm {
+    margin: 6px;
+    padding: 8px;
+    border: 1px solid var(--text-title);
+    background: rgba(240, 96, 96, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.changes-discard-title {
+    color: var(--text-title);
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+.changes-discard-hint {
+    color: var(--text-muted);
+    font-size: 10px;
+}
+.changes-discard-input {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-dim);
+    color: var(--text-bright);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 4px 6px;
+}
+.changes-discard-actions {
+    display: flex;
+    gap: 6px;
+}
+.changes-discard-btn {
+    flex: 1;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-dim);
+    color: var(--text-muted);
+    font-size: 10px;
+    padding: 5px;
+    cursor: pointer;
+}
+.changes-discard-btn:hover:not(:disabled) {
+    color: var(--text-bright);
+    border-color: var(--border-glow);
+}
+.changes-discard-btn--confirm:hover:not(:disabled) {
+    color: var(--text-title);
+    border-color: var(--text-title);
+}
+.changes-discard-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ── Revert confirmation in viewer header ────────────────────────── */
+.explorer-viewer-revert-label {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-title);
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.explorer-viewer-revert-input {
+    width: 120px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-dim);
+    color: var(--text-bright);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 3px 6px;
+}
+.explorer-viewer-revert-btn {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-dim);
+    color: var(--text-muted);
+    font-size: 10px;
+    padding: 3px 8px;
+    cursor: pointer;
+}
+.explorer-viewer-revert-btn:hover:not(:disabled) {
+    color: var(--text-bright);
+    border-color: var(--border-glow);
+}
+.explorer-viewer-revert-btn--confirm:hover:not(:disabled) {
+    color: var(--text-title);
+    border-color: var(--text-title);
+}
+.explorer-viewer-revert-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ── Stylized tooltips on Changes row action buttons ─────────────── */
+.changes-row-btn[data-tip] {
+    cursor: pointer;
+}
+
+/* ── File viewer edit mode ─────────────────────────────────────── */
+.explorer-viewer-edit-btn,
+.explorer-viewer-save-btn,
+.explorer-viewer-cancel-btn {
+    flex-shrink: 0;
+    background: var(--bg-surface);
+    color: var(--text-muted);
+    border: 1px solid var(--border-dim);
+    font-size: 11px;
+    padding: 3px 8px;
+    cursor: pointer;
+}
+.explorer-viewer-edit-btn:hover:not(:disabled),
+.explorer-viewer-save-btn:hover:not(:disabled),
+.explorer-viewer-cancel-btn:hover:not(:disabled) {
+    color: var(--text-bright);
+    border-color: var(--border-glow);
+}
+.explorer-viewer-edit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.explorer-viewer-save-btn {
+    color: var(--text-title);
+    border-color: var(--text-title);
+}
+.explorer-viewer-path--dirty {
+    color: var(--text-title);
+}
+.explorer-viewer-saved-label {
+    flex-shrink: 0;
+    color: #4caf50;
+    font-size: 10px;
+    text-transform: uppercase;
+}
+.explorer-viewer-textarea {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    resize: none;
+    background: transparent;
+    color: var(--text-bright);
+    border: none;
+    outline: none;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.45;
+    padding: 0;
+    margin: 0;
+}
+.explorer-viewer-conflict {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 8px;
+}
+.explorer-viewer-conflict-header {
+    color: var(--text-title);
+    font-size: 11px;
+    text-transform: uppercase;
+}
+.explorer-viewer-conflict-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    border: 1px solid var(--border-dim);
+}
+.explorer-viewer-conflict-body .diff-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    margin: 0;
+}
+.explorer-viewer-conflict-body .diff-card-body {
+    flex: 1;
+    max-height: none;
+    overflow-y: auto;
+}
+.explorer-viewer-conflict-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}

@@ -1,0 +1,50 @@
+@using Aria.Agent
+@using Aria.Web.Data
+@using Aria.Tools
+@using Aria.Web.Helpers
+@using Aria.Web.Components.Pages
+@using Aria.Web.Components.Shared
+@using Markdig
+@using System.Text.Json
+@using System.Security.Cryptography
+@namespace Aria.Web.Components.Layout
+
+@code {
+    [CascadingParameter(Name = "NavMenu")]
+    public NavMenu Menu { get; set; } = null!;
+}
+
+@if (true)
+{
+    <div style="padding:6px 10px">
+        <button class="modal-add-btn" style="width:100%"
+                disabled="@(Menu.SessionState.CurrentUser == null)"
+                @onclick="Menu.NewHiveCollectiveAsync">⊕ NEW HIVE</button>
+    </div>
+    @if (Menu._hiveCollectives.Count == 0 && Menu.SessionState.CurrentUser != null)
+    {
+        <div class="cog-empty">No collectives yet.</div>
+    }
+    @foreach (var hc in Menu._hiveCollectives)
+    {
+        var statusDot = hc.Status switch {
+            CollectiveStatus.Running  or CollectiveStatus.Planning => "hv-nav-dot-running",
+            CollectiveStatus.Completed                             => "hv-nav-dot-done",
+            CollectiveStatus.Failed                                => "hv-nav-dot-failed",
+            _                                                      => ""
+        };
+        <div class="cog-row" style="cursor:pointer" @onclick="() => Menu.OpenHiveCollective(hc.Id)">
+            <span class="hv-nav-status @statusDot">⬡</span>
+            <span class="cog-title" style="flex:1;overflow:hidden;text-overflow:ellipsis" title="@hc.Name">
+                @hc.Name.ToUpperInvariant()
+            </span>
+            <span style="font-size:8px;color:var(--text-dead);white-space:nowrap;letter-spacing:1px">
+                @hc.Status.ToString()[..3].ToUpper()
+            </span>
+            <button class="mcp-delete-btn" title="Delete collective"
+                    @onclick:stopPropagation="true"
+                    @onclick="() => Menu.DeleteHiveCollectiveAsync(hc.Id)">✕</button>
+        </div>
+    }
+}
+

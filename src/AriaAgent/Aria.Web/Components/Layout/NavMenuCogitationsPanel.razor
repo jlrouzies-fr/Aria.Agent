@@ -1,0 +1,742 @@
+@using Aria.Agent
+@using Aria.Web.Data
+@using Aria.Tools
+@using Aria.Web.Helpers
+@using Aria.Web.Components.Pages
+@using Aria.Web.Components.Shared
+@using Markdig
+@using System.Text.Json
+@using System.Security.Cryptography
+@namespace Aria.Web.Components.Layout
+
+@code {
+    [CascadingParameter(Name = "NavMenu")]
+    public NavMenu Menu { get; set; } = null!;
+
+    private bool _headerMenuOpen;
+    private int? _rowMenuOpenId;
+    private readonly Dictionary<int, bool> _collapsed = new();
+    private readonly HashSet<int> _collapsedHiveCollectiveIds = new();
+    private bool _collapseStateLoaded;
+
+    private bool _bulkSelectMode;
+    private readonly HashSet<int> _selectedCogitationIds = new();
+    private bool _bulkFileMenuOpen;
+
+    private void ToggleBulkSelectMode()
+    {
+        _bulkSelectMode = !_bulkSelectMode;
+        if (!_bulkSelectMode) _selectedCogitationIds.Clear();
+    }
+
+    private void ExitBulkSelectMode()
+    {
+        _bulkSelectMode = false;
+        _selectedCogitationIds.Clear();
+        _bulkFileMenuOpen = false;
+    }
+
+    private bool IsSelected(int cogitationId) => _selectedCogitationIds.Contains(cogitationId);
+
+    private void ToggleSelection(int cogitationId)
+    {
+        if (_selectedCogitationIds.Contains(cogitationId))
+            _selectedCogitationIds.Remove(cogitationId);
+        else
+            _selectedCogitationIds.Add(cogitationId);
+    }
+
+    private void ToggleBulkFileMenu() => _bulkFileMenuOpen = !_bulkFileMenuOpen;
+    private void CloseBulkFileMenu() => _bulkFileMenuOpen = false;
+
+    private async Task BulkFileAsync(int? folderId)
+    {
+        _bulkFileMenuOpen = false;
+        var selected = _selectedCogitationIds.ToList();
+        await Menu.BulkFileCogitationsAsync(selected, folderId);
+        _selectedCogitationIds.Clear();
+        _bulkSelectMode = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            foreach (var folder in Menu._folders)
+            {
+                if (!_collapsed.ContainsKey(folder.Id))
+                    _collapsed[folder.Id] = await Menu.IsFolderCollapsedAsync(folder.Id);
+            }
+            // Hive groups have no persisted preference (they're implicit, not user-managed
+            // dossiers) — just start every one of them collapsed, same as a never-toggled folder.
+            foreach (var collectiveId in HiveGroups().Select(g => g.Key))
+                _collapsedHiveCollectiveIds.Add(collectiveId);
+            _collapseStateLoaded = true;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private bool IsCollapsed(CogitationFolder folder) =>
+        !_collapsed.TryGetValue(folder.Id, out var c) || c;
+
+    private async Task ToggleCollapseAsync(CogitationFolder folder)
+    {
+        var next = !IsCollapsed(folder);
+        _collapsed[folder.Id] = next;
+        await Menu.SetFolderCollapsedAsync(folder.Id, next);
+    }
+
+    private bool IsHiveCollapsed(int collectiveId) => _collapsedHiveCollectiveIds.Contains(collectiveId);
+
+    private void ToggleHiveCollapse(int collectiveId)
+    {
+        if (_collapsedHiveCollectiveIds.Contains(collectiveId))
+            _collapsedHiveCollectiveIds.Remove(collectiveId);
+        else
+            _collapsedHiveCollectiveIds.Add(collectiveId);
+    }
+
+    private IEnumerable<Cogitation> CogsForFolder(int folderId) =>
+        Menu._cogitations.Where(c => c.FolderId == folderId && c.CollectiveId == null);
+
+    private IEnumerable<IGrouping<int, Cogitation>> HiveGroups() =>
+        Menu._cogitations
+            .Where(c => c.CollectiveId.HasValue && c.FolderId == null)
+            .GroupBy(c => c.CollectiveId!.Value)
+            .OrderByDescending(g => g.Max(c => c.UpdatedAt));
+
+    private IEnumerable<Cogitation> UnfiledCogs() =>
+        Menu._cogitations.Where(c => c.FolderId == null && c.CollectiveId == null);
+
+    private bool HasFolders => Menu._folders.Count > 0;
+
+    private bool AnyRunning(IEnumerable<Cogitation> cogs) => cogs.Any(c => Menu.HasActiveRun(c.Id));
+    private int RunningCount(IEnumerable<Cogitation> cogs) => cogs.Count(c => Menu.HasActiveRun(c.Id));
+    private bool AnyUnseen(IEnumerable<Cogitation> cogs) => cogs.Any(c => Menu.IsCogitationUnseen(c.Id));
+    private int UnseenCount(IEnumerable<Cogitation> cogs) => cogs.Count(c => Menu.IsCogitationUnseen(c.Id));
+
+    private void ToggleHeaderMenu() => _headerMenuOpen = !_headerMenuOpen;
+    private void CloseHeaderMenu() => _headerMenuOpen = false;
+    private void ToggleRowMenu(int cogId)
+    {
+        _rowMenuOpenId = _rowMenuOpenId == cogId ? null : cogId;
+    }
+    private void CloseRowMenu() => _rowMenuOpenId = null;
+
+    private string RowSubtitle(Cogitation cog)
+    {
+        var isHive = cog.CollectiveId.HasValue && cog.Collective != null;
+        return isHive
+            ? $"⬡ {cog.Collective!.Name}"
+            : cog.SubAgentId.HasValue
+                ? (cog.SubAgent?.DisplayName ?? "Deleted Agent")
+                : "Aria";
+    }
+
+    private string RowSubtitleColor(Cogitation cog)
+    {
+        var isHive = cog.CollectiveId.HasValue && cog.Collective != null;
+        return isHive ? "#8060c0" : (cog.SubAgent?.AccentColor ?? "#8B0000");
+    }
+
+    /// <summary>Origin-bridge label for the green node badge, or null to hide it. Shown only for a
+    /// multi-node soul (≥2 connected bridges) — with a single bridge the badge would just be noise.</summary>
+    private string? RowNodeLabel(Cogitation cog)
+    {
+        if (string.IsNullOrEmpty(cog.OriginNodeId)) return null;   // server/legacy cogitation → no badge
+        var userId = Menu.SessionState.CurrentUser?.Id.ToString();
+        if (userId == null) return null;
+        var nodes = Menu.BridgeRegistry.GetNodes(userId);
+        if (nodes.Count < 2) return null;
+        var node = nodes.FirstOrDefault(n => n.NodeId == cog.OriginNodeId);
+        static string Short(string id) => id.Length > 6 ? id[..6] : id;
+        return node != null
+            ? (!string.IsNullOrWhiteSpace(node.Label)    ? node.Label
+             : !string.IsNullOrWhiteSpace(node.Platform) ? node.Platform
+             : Short(node.NodeId))
+            : Short(cog.OriginNodeId!);   // origin offline → short id (the ⚠ badge already flags offline)
+    }
+
+    /// <summary>Online bridge nodes this cogitation could be continued on (every connected node except
+    /// its current origin). Empty unless there's somewhere else online to move it — so the "continue on"
+    /// menu only appears when it can actually do something.</summary>
+    private List<(string NodeId, string Label)> MigrationTargets(Cogitation cog)
+    {
+        var userId = Menu.SessionState.CurrentUser?.Id.ToString();
+        if (userId == null) return [];
+        static string Short(string id) => id.Length > 6 ? id[..6] : id;
+        return Menu.BridgeRegistry.GetNodes(userId)
+            .Where(n => n.NodeId != cog.OriginNodeId)
+            .Select(n => (n.NodeId, !string.IsNullOrWhiteSpace(n.Label) ? n.Label
+                                  : !string.IsNullOrWhiteSpace(n.Platform) ? n.Platform!
+                                  : Short(n.NodeId)))
+            .ToList();
+    }
+
+    /// <summary>Full local date-time for the stylized last-activity tooltip.</summary>
+    private static string RowTimestampFull(Cogitation cog) =>
+        "Last activity · " + cog.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy · HH:mm");
+
+    /// <summary>Short relative timestamp for a cogitation row (last activity).</summary>
+    private static string RowTimestamp(Cogitation cog)
+    {
+        var local = cog.UpdatedAt.ToLocalTime();
+        var now   = DateTime.Now;
+        var diff  = now - local;
+        if (diff.TotalMinutes < 1)  return "now";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m";
+        if (local.Date == now.Date) return local.ToString("HH:mm");
+        if (diff.TotalDays < 7)     return local.ToString("ddd");
+        return local.ToString("MMM d");
+    }
+
+    private List<(string Value, string Label)> AgentOptions()
+    {
+        var list = new List<(string, string)> { ("", "— none —") };
+        list.AddRange(Menu._subAgents.Select(a => (a.Id.ToString(), a.DisplayName)));
+        return list;
+    }
+
+    private List<(string Value, string Label)> ProjectOptions()
+    {
+        var list = new List<(string, string)> { ("", "— none —") };
+        list.AddRange(Menu.SessionState.Projects.Select(p => (p.Path, p.Name)));
+        return list;
+    }
+
+    private void OnFolderAgentChanged(string? v) =>
+        Menu._editFolderDefaultAgentId = string.IsNullOrEmpty(v) ? null : int.Parse(v);
+
+    private void OnFolderProjectChanged(string? v) =>
+        Menu._editFolderDefaultProjectPath = v ?? "";
+}
+
+@* ── Panel header with [+] menu ───────────────────────────────────────────
+   No title span here — the section-panel-header above already reads "// COGITATIONS". *@
+<div class="cog-panel-header">
+    <div class="cog-header-menu-wrap">
+        <button class="cog-header-add" @onclick="ToggleHeaderMenu" data-tip="Create…">+</button>
+        <button class="cog-bulk-toggle @(_bulkSelectMode ? "active" : "")" @onclick="ToggleBulkSelectMode" data-tip="Select multiple">☐</button>
+        @if (_headerMenuOpen)
+        {
+            <div class="cog-header-menu">
+                <div class="cog-header-menu-item" @onclick="() => { CloseHeaderMenu(); Menu.NewCogitationInFocusedFolder(); }">
+                    + COGITATION
+                </div>
+                <div class="cog-header-menu-item" @onclick="() => { CloseHeaderMenu(); Menu.OpenNewFolderModal(); }">
+                    + DOSSIER
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@if (Menu._cogMigratingId is not null)
+{
+    <div class="cog-migrate-notice busy">◈ Copying conversation to another bridge…</div>
+}
+else if (Menu._cogMigrateMsg is { } mm)
+{
+    <div class="cog-migrate-notice" @onclick="() => { Menu._cogMigrateMsg = null; }">@mm ✕</div>
+}
+
+@if (Menu._cogitations.Count == 0 && Menu._folders.Count == 0)
+{
+    <div class="cog-empty">No records yet.</div>
+}
+else
+{
+    @* ── User folders ─────────────────────────────────────────────────── *@
+    @foreach (var folder in Menu._folders)
+    {
+        var cogs = CogsForFolder(folder.Id).ToList();
+        var collapsed = IsCollapsed(folder);
+        var isFocused = Menu.SessionState.FocusedFolderId == folder.Id;
+        var running = AnyRunning(cogs);
+        var unseen = AnyUnseen(cogs);
+        var folderColor = folder.Color ?? "#8B0000";
+
+        <div class="cog-folder-header @(isFocused ? "focused" : "")">
+            <span class="cog-folder-chevron" @onclick:stopPropagation="true" @onclick="() => ToggleCollapseAsync(folder)">@(collapsed ? "▸" : "▾")</span>
+            <div class="cog-folder-body" @onclick="() => Menu.FocusFolder(isFocused ? null : folder.Id)">
+                <span class="cog-folder-dot" style="--folder-color:@folderColor">●</span>
+                <span class="cog-folder-name" title="@folder.Name">@folder.Name.ToUpperInvariant()</span>
+                @if (running)
+                {
+                    <span class="cog-run-spinner" title="@RunningCount(cogs) streaming">◈</span>
+                }
+                else if (unseen)
+                {
+                    <span class="vigil-unseen-dot" title="@UnseenCount(cogs) finished unread"></span>
+                }
+                <span class="cog-folder-count">@cogs.Count</span>
+                <button class="cog-folder-menu-btn" title="Dossier actions"
+                        @onclick:stopPropagation="true"
+                        @onclick="() => Menu.OpenEditFolderModalAsync(folder)">⊙</button>
+                @if (isFocused)
+                {
+                    <span class="cog-folder-focus-lbl" data-tip="Focused dossier — new cogitations file here">◂ FOCUSED</span>
+                }
+            </div>
+        </div>
+
+        @if (!collapsed)
+        {
+            @if (cogs.Count == 0)
+            {
+                <div class="cog-folder-empty">— no cogitations —</div>
+            }
+            else
+            {
+                @foreach (var cog in cogs)
+                {
+                    var isActive = Menu.SessionState.ActiveCogitationId == cog.Id;
+                    var isOffline = Menu.IsCogitationOffline(cog);
+                    var subtitle = RowSubtitle(cog);
+                    var subtitleColor = RowSubtitleColor(cog);
+                    var menuOpen = _rowMenuOpenId == cog.Id;
+
+                    <div class="cog-row @(isActive ? "active" : "") @(isOffline ? "cog-row-offline" : "") @(_bulkSelectMode ? "selecting" : "")"
+                         @onclick="() => { CloseRowMenu(); if (_bulkSelectMode) ToggleSelection(cog.Id); else Menu.SelectCogitation(cog); }">
+                        @if (_bulkSelectMode)
+                        {
+                            <input type="checkbox" class="cog-bulk-checkbox" checked="@IsSelected(cog.Id)"
+                                   @onclick:stopPropagation="true" @onclick="() => ToggleSelection(cog.Id)" />
+                        }
+                        else
+                        {
+                            <span class="cog-dot">@(isActive ? "●" : "○")</span>
+                        }
+                        <div class="cog-main">
+                            <span class="cog-title" title="@cog.Title">@cog.Title</span>
+                            <span class="cog-subtitle-wrap">
+                                <span class="cog-subtitle" style="--badge:@subtitleColor">@subtitle</span>
+                                @if (RowNodeLabel(cog) is { } nl)
+                                {
+                                    <span class="cog-node-badge" title="Origin bridge: @nl">@nl</span>
+                                }
+                                <span class="cog-timestamp" data-tip="@RowTimestampFull(cog)">@RowTimestamp(cog)</span>
+                            </span>
+                        </div>
+                        @if (Menu.HasActiveRun(cog.Id))
+                        {
+                            <span class="cog-run-spinner" title="Cogitation in progress">◈</span>
+                        }
+                        @if (Menu.IsCogitationUnseen(cog.Id))
+                        {
+                            <span class="vigil-unseen-dot" title="Finished while you were away"></span>
+                        }
+                        @if (isOffline)
+                        {
+                            <span class="cog-offline-badge" title="Origin node offline">⚠</span>
+                        }
+                        @if (!_bulkSelectMode)
+                        {
+                            <div class="cog-row-menu-wrap">
+                                <button class="cog-row-menu-btn" title="Move…"
+                                        @onclick:stopPropagation="true"
+                                        @onclick="() => ToggleRowMenu(cog.Id)">⋮</button>
+                                @if (menuOpen)
+                                {
+                                    <div class="cog-row-menu">
+                                        <div class="cog-row-menu-title">FILE UNDER</div>
+                                        @foreach (var target in Menu._folders.Where(f => f.Id != cog.FolderId))
+                                        {
+                                            <div class="cog-row-menu-item" @onclick:stopPropagation="true"
+                                                 @onclick="async () => { CloseRowMenu(); await Menu.FileCogitationAsync(cog, target.Id); }">
+                                                <span class="cog-row-menu-dot" style="--folder-color:@(target.Color ?? "#8B0000")">●</span>
+                                                @target.Name
+                                            </div>
+                                        }
+                                        <div class="cog-row-menu-item" @onclick:stopPropagation="true"
+                                             @onclick="async () => { CloseRowMenu(); await Menu.FileCogitationAsync(cog, null); }">
+                                            — UNFILED —
+                                        </div>
+                                        <div class="cog-row-menu-divider"></div>
+                                        <div class="cog-row-menu-item" @onclick:stopPropagation="true"
+                                             @onclick="() => { CloseRowMenu(); Menu.OpenNewFolderModal(); }">
+                                            + NEW DOSSIER…
+                                        </div>
+                                        @if (MigrationTargets(cog) is { Count: > 0 } tgts)
+                                        {
+                                            <div class="cog-row-menu-divider"></div>
+                                            <div class="cog-row-menu-title" title="Copy this conversation to another bridge so you can continue it there (both bridges must be online)">CONTINUE ON</div>
+                                            @foreach (var (nodeId, label) in tgts)
+                                            {
+                                                <div class="cog-row-menu-item" @onclick:stopPropagation="true"
+                                                     @onclick="async () => { CloseRowMenu(); await Menu.ContinueCogitationOnNodeAsync(cog, nodeId); }">
+                                                    <span class="cog-row-menu-dot" style="--folder-color:#78a082">⬡</span>
+                                                    @label
+                                                </div>
+                                            }
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <button class="cog-delete-btn" title="Delete cogitation"
+                                    @onclick:stopPropagation="true"
+                                    @onclick="() => Menu.DeleteCogitation(cog)">✕</button>
+                        }
+                    </div>
+                }
+            }
+        }
+
+        @* Focus the header (but not the chevron/buttons) when clicked anywhere on it. The chevron
+           toggles collapse; the rest of the header toggles focus only when not collapsed. *@
+    }
+
+    @* ── Implicit Hive groups ─────────────────────────────────────────── *@
+    @foreach (var hive in HiveGroups())
+    {
+        var first = hive.First();
+        var collectiveId = first.CollectiveId!.Value;
+        var cogs = hive.ToList();
+        var hiveCollapsed = IsHiveCollapsed(collectiveId);
+        var running = AnyRunning(cogs);
+        var unseen = AnyUnseen(cogs);
+        <div class="cog-folder-header hive">
+            <span class="cog-folder-chevron" @onclick:stopPropagation="true" @onclick="() => ToggleHiveCollapse(collectiveId)">@(hiveCollapsed ? "▸" : "▾")</span>
+            <span class="cog-folder-dot" style="--folder-color:#8060c0">⬡</span>
+            <span class="cog-folder-name">HIVE — @first.Collective?.Name.ToUpperInvariant()</span>
+            @if (running)
+            {
+                <span class="cog-run-spinner" title="@RunningCount(cogs) streaming">◈</span>
+            }
+            else if (unseen)
+            {
+                <span class="vigil-unseen-dot" title="@UnseenCount(cogs) finished unread"></span>
+            }
+            <span class="cog-folder-count">@cogs.Count</span>
+        </div>
+        @if (!hiveCollapsed)
+        {
+            @foreach (var cog in cogs)
+            {
+            var isActive = Menu.SessionState.ActiveCogitationId == cog.Id;
+            var isOffline = Menu.IsCogitationOffline(cog);
+            <div class="cog-row @(isActive ? "active" : "") @(isOffline ? "cog-row-offline" : "")"
+                 @onclick="() => Menu.SelectCogitation(cog)">
+                <span class="cog-dot">@(isActive ? "●" : "○")</span>
+                <div class="cog-main">
+                    <span class="cog-title" title="@cog.Title">@cog.Title</span>
+                    <span class="cog-subtitle-wrap">
+                        <span class="cog-subtitle" style="--badge:#8060c0">⬡ @cog.Collective?.Name</span>
+                        <span class="cog-timestamp" data-tip="@RowTimestampFull(cog)">@RowTimestamp(cog)</span>
+                    </span>
+                </div>
+                @if (Menu.HasActiveRun(cog.Id))
+                {
+                    <span class="cog-run-spinner" title="Cogitation in progress">◈</span>
+                }
+                @if (Menu.IsCogitationUnseen(cog.Id))
+                {
+                    <span class="vigil-unseen-dot" title="Finished while you were away"></span>
+                }
+                @if (isOffline)
+                {
+                    <span class="cog-offline-badge" title="Origin node offline">⚠</span>
+                }
+                <button class="cog-delete-btn" title="Delete cogitation"
+                        @onclick:stopPropagation="true"
+                        @onclick="() => Menu.DeleteCogitation(cog)">✕</button>
+            </div>
+        }
+        }
+    }
+
+    @* ── Unfiled ───────────────────────────────────────────────────────── *@
+    @if (HasFolders || HiveGroups().Any())
+    {
+        var unfiled = UnfiledCogs().ToList();
+        <div class="cog-folder-header unfiled">
+            <span class="cog-folder-name">— UNFILED —</span>
+            @if (AnyRunning(unfiled))
+            {
+                <span class="cog-run-spinner" title="@RunningCount(unfiled) streaming">◈</span>
+            }
+            else if (AnyUnseen(unfiled))
+            {
+                <span class="vigil-unseen-dot" title="@UnseenCount(unfiled) finished unread"></span>
+            }
+            <span class="cog-folder-count">@unfiled.Count</span>
+        </div>
+        @foreach (var cog in unfiled)
+        {
+            var isActive = Menu.SessionState.ActiveCogitationId == cog.Id;
+            var isOffline = Menu.IsCogitationOffline(cog);
+            var subtitle = RowSubtitle(cog);
+            var subtitleColor = RowSubtitleColor(cog);
+            var menuOpen = _rowMenuOpenId == cog.Id;
+
+            <div class="cog-row @(isActive ? "active" : "") @(isOffline ? "cog-row-offline" : "") @(_bulkSelectMode ? "selecting" : "")"
+                 @onclick="() => { CloseRowMenu(); if (_bulkSelectMode) ToggleSelection(cog.Id); else Menu.SelectCogitation(cog); }">
+                @if (_bulkSelectMode)
+                {
+                    <input type="checkbox" class="cog-bulk-checkbox" checked="@IsSelected(cog.Id)"
+                           @onclick:stopPropagation="true" @onclick="() => ToggleSelection(cog.Id)" />
+                }
+                else
+                {
+                    <span class="cog-dot">@(isActive ? "●" : "○")</span>
+                }
+                <div class="cog-main">
+                    <span class="cog-title" title="@cog.Title">@cog.Title</span>
+                    <span class="cog-subtitle-wrap">
+                        <span class="cog-subtitle" style="--badge:@subtitleColor">@subtitle</span>
+                        @if (RowNodeLabel(cog) is { } nl)
+                        {
+                            <span class="cog-node-badge" title="Origin bridge: @nl">@nl</span>
+                        }
+                        <span class="cog-timestamp" data-tip="@RowTimestampFull(cog)">@RowTimestamp(cog)</span>
+                    </span>
+                </div>
+                @if (Menu.HasActiveRun(cog.Id))
+                {
+                    <span class="cog-run-spinner" title="Cogitation in progress">◈</span>
+                }
+                @if (Menu.IsCogitationUnseen(cog.Id))
+                {
+                    <span class="vigil-unseen-dot" title="Finished while you were away"></span>
+                }
+                @if (isOffline)
+                {
+                    <span class="cog-offline-badge" title="Origin node offline">⚠</span>
+                }
+                @if (!_bulkSelectMode)
+                {
+                    <div class="cog-row-menu-wrap">
+                        <button class="cog-row-menu-btn" title="Move…"
+                                @onclick:stopPropagation="true"
+                                @onclick="() => ToggleRowMenu(cog.Id)">⋮</button>
+                        @if (menuOpen)
+                        {
+                            <div class="cog-row-menu">
+                                <div class="cog-row-menu-title">FILE UNDER</div>
+                                @foreach (var target in Menu._folders)
+                                {
+                                    <div class="cog-row-menu-item" @onclick:stopPropagation="true"
+                                         @onclick="async () => { CloseRowMenu(); await Menu.FileCogitationAsync(cog, target.Id); }">
+                                        <span class="cog-row-menu-dot" style="--folder-color:@(target.Color ?? "#8B0000")">●</span>
+                                        @target.Name
+                                    </div>
+                                }
+                                <div class="cog-row-menu-divider"></div>
+                                <div class="cog-row-menu-item" @onclick:stopPropagation="true"
+                                     @onclick="() => { CloseRowMenu(); Menu.OpenNewFolderModal(); }">
+                                    + NEW DOSSIER…
+                                </div>
+                                @if (MigrationTargets(cog) is { Count: > 0 } tgts)
+                                {
+                                    <div class="cog-row-menu-divider"></div>
+                                    <div class="cog-row-menu-title" title="Copy this conversation to another bridge so you can continue it there (both bridges must be online)">CONTINUE ON</div>
+                                    @foreach (var (nodeId, label) in tgts)
+                                    {
+                                        <div class="cog-row-menu-item" @onclick:stopPropagation="true"
+                                             @onclick="async () => { CloseRowMenu(); await Menu.ContinueCogitationOnNodeAsync(cog, nodeId); }">
+                                            <span class="cog-row-menu-dot" style="--folder-color:#78a082">⬡</span>
+                                            @label
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
+                    <button class="cog-delete-btn" title="Delete cogitation"
+                            @onclick:stopPropagation="true"
+                            @onclick="() => Menu.DeleteCogitation(cog)">✕</button>
+                }
+            </div>
+        }
+    }
+    else
+    {
+        @* No folders yet: render the original flat list so existing users see no change. *@
+        @foreach (var cog in Menu._cogitations)
+        {
+            var isActive = Menu.SessionState.ActiveCogitationId == cog.Id;
+            var isOffline = Menu.IsCogitationOffline(cog);
+            var subtitle = RowSubtitle(cog);
+            var subtitleColor = RowSubtitleColor(cog);
+
+            <div class="cog-row @(isActive ? "active" : "") @(isOffline ? "cog-row-offline" : "") @(_bulkSelectMode ? "selecting" : "")"
+                 @onclick="() => { if (_bulkSelectMode) ToggleSelection(cog.Id); else Menu.SelectCogitation(cog); }">
+                @if (_bulkSelectMode)
+                {
+                    <input type="checkbox" class="cog-bulk-checkbox" checked="@IsSelected(cog.Id)"
+                           @onclick:stopPropagation="true" @onclick="() => ToggleSelection(cog.Id)" />
+                }
+                else
+                {
+                    <span class="cog-dot">@(isActive ? "●" : "○")</span>
+                }
+                <div class="cog-main">
+                    <span class="cog-title" title="@cog.Title">@cog.Title</span>
+                    <span class="cog-subtitle-wrap">
+                        <span class="cog-subtitle" style="--badge:@subtitleColor">@subtitle</span>
+                        @if (RowNodeLabel(cog) is { } nl)
+                        {
+                            <span class="cog-node-badge" title="Origin bridge: @nl">@nl</span>
+                        }
+                        <span class="cog-timestamp" data-tip="@RowTimestampFull(cog)">@RowTimestamp(cog)</span>
+                    </span>
+                </div>
+                @if (Menu.HasActiveRun(cog.Id))
+                {
+                    <span class="cog-run-spinner" title="Cogitation in progress">◈</span>
+                }
+                @if (Menu.IsCogitationUnseen(cog.Id))
+                {
+                    <span class="vigil-unseen-dot" title="Finished while you were away"></span>
+                }
+                @if (isOffline)
+                {
+                    <span class="cog-offline-badge" title="Origin node offline">⚠</span>
+                }
+                @if (!_bulkSelectMode)
+                {
+                    <button class="cog-delete-btn" title="Delete cogitation"
+                            @onclick:stopPropagation="true"
+                            @onclick="() => Menu.DeleteCogitation(cog)">✕</button>
+                }
+            </div>
+        }
+    }
+
+    @* ── Bulk selection action bar ──────────────────────────────────────── *@
+    @if (_bulkSelectMode)
+    {
+        <div class="cog-bulk-bar">
+            <span class="cog-bulk-count">@_selectedCogitationIds.Count selected</span>
+            <div class="cog-bulk-actions">
+                <div class="cog-bulk-menu-wrap">
+                    <button class="cog-bulk-btn" @onclick="ToggleBulkFileMenu" disabled="@(_selectedCogitationIds.Count == 0)">
+                        MOVE TO…
+                    </button>
+                    @if (_bulkFileMenuOpen)
+                    {
+                        <div class="cog-row-menu cog-bulk-menu">
+                            <div class="cog-row-menu-title">MOVE TO</div>
+                            @foreach (var target in Menu._folders)
+                            {
+                                <div class="cog-row-menu-item" @onclick:stopPropagation="true"
+                                     @onclick="async () => await BulkFileAsync(target.Id)">
+                                    <span class="cog-row-menu-dot" style="--folder-color:@(target.Color ?? "#8B0000")">●</span>
+                                    @target.Name
+                                </div>
+                            }
+                            <div class="cog-row-menu-item" @onclick:stopPropagation="true"
+                                 @onclick="async () => await BulkFileAsync(null)">
+                                — UNFILED —
+                            </div>
+                        </div>
+                    }
+                </div>
+                <button class="cog-bulk-btn secondary" @onclick="ExitBulkSelectMode">CANCEL</button>
+            </div>
+        </div>
+    }
+}
+
+@* ── Folder create/edit modal ─────────────────────────────────────────── *@
+@if (Menu._folderModal)
+{
+    <div class="modal-backdrop" @onclick="Menu.CloseFolderModal">
+        <div class="modal-panel" style="max-width:480px" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <span class="modal-icon" style="color:@Menu._editFolderColor">●</span>
+                <span class="modal-title">@(Menu._editingFolderId == null ? "NEW DOSSIER" : "EDIT DOSSIER")</span>
+                <button class="modal-close" @onclick="Menu.CloseFolderModal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-field">
+                    <label class="modal-field-label">Name</label>
+                    <DebouncedInput class="modal-input" Placeholder="e.g. Aria Refactor"
+                                    Value="@Menu._editFolderName"
+                                    ValueChanged="v => Menu._editFolderName = v" />
+                </div>
+
+                <div class="modal-section-title">// ACCENT COLOUR</div>
+                <div class="wg-color-row" style="padding:4px 0 10px; align-items:center">
+                    @foreach (var (hex, label) in NavMenu.FolderColorPresets)
+                    {
+                        <div class="wg-color-swatch @(Menu._editFolderColor == hex ? "selected" : "")"
+                             style="background:@hex;width:24px;height:24px"
+                             title="@label"
+                             @onclick="() => Menu.OnFolderColorPicked(hex)"></div>
+                    }
+                    <input type="color"
+                           class="agent-color-picker-input"
+                           value="@Menu._editFolderColor"
+                           title="Custom colour"
+                           @oninput="e => Menu.OnFolderColorPicked(e.Value?.ToString() ?? Menu._editFolderColor)" />
+                </div>
+
+                <div class="modal-section-title">// CONTEXT DEFAULTS (optional)</div>
+                <p class="modal-desc">Applied to new cogitations created while this dossier is focused.</p>
+
+                <div class="modal-field">
+                    <label class="modal-field-label">Persona</label>
+                    <ThemedSelect Value="@(Menu._editFolderDefaultAgentId?.ToString() ?? "")"
+                                  ValueChanged="OnFolderAgentChanged"
+                                  Options="AgentOptions()"
+                                  Placeholder="— none —"
+                                  ControlClass="modal-input" />
+                </div>
+
+                <div class="modal-field">
+                    <label class="modal-field-label">Project</label>
+                    <ThemedSelect Value="@(Menu._editFolderDefaultProjectPath ?? "")"
+                                  ValueChanged="OnFolderProjectChanged"
+                                  Options="ProjectOptions()"
+                                  Placeholder="— none —"
+                                  ControlClass="modal-input" />
+                </div>
+
+                <div class="modal-field">
+                    <label class="modal-field-label">Standing directive</label>
+                    <DebouncedTextArea class="modal-textarea" rows="4"
+                                       Placeholder="e.g. Answers terse. Prefer diffs over prose."
+                                       Value="@Menu._editFolderDirective"
+                                       ValueChanged="v => Menu._editFolderDirective = v" />
+                </div>
+
+                @if (Menu._folderModalError != null)
+                {
+                    <div class="modal-error">@Menu._folderModalError</div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="modal-apply" @onclick="Menu.CommitFolderAsync">@(Menu._editingFolderId == null ? "FORGE" : "COMMIT")</button>
+                <button class="modal-cancel" @onclick="Menu.CloseFolderModal">CANCEL</button>
+                @if (Menu._folderModalSaved) { <span class="modal-saved-msg">// SAVED //</span> }
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Folder delete confirmation ───────────────────────────────────────── *@
+@if (Menu._folderPendingDelete != null)
+{
+    <div class="modal-backdrop" @onclick="Menu.CancelDeleteFolder">
+        <div class="modal-panel" style="max-width:360px" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <span class="modal-title">// DISBAND DOSSIER</span>
+                <button class="modal-close" @onclick="Menu.CancelDeleteFolder">✕</button>
+            </div>
+            <div class="modal-body" style="padding:16px;display:flex;flex-direction:column;gap:12px">
+                <p style="margin:0">
+                    Disband <strong>@Menu._folderPendingDelete.Name.ToUpperInvariant()</strong>?
+                </p>
+                <p style="margin:0;color:var(--gold-normal)">
+                    Its @Menu._folderPendingDeleteCount cogitation@(Menu._folderPendingDeleteCount == 1 ? "" : "s") return to the unfiled list.
+                    No cogitation is deleted.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-apply" style="background:var(--danger,#8b2020)" @onclick="Menu.ConfirmDeleteFolderAsync">DISBAND</button>
+                <button class="modal-cancel" @onclick="Menu.CancelDeleteFolder">CANCEL</button>
+            </div>
+        </div>
+    </div>
+}

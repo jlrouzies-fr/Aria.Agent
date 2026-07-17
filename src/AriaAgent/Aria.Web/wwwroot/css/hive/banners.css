@@ -1,0 +1,85 @@
+/* ── Gate approval banners ───────────────────────────────────────────── */
+.hv-gate-banners {
+    position: absolute;
+    top: 10px;
+    left: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 600;
+    max-width: 230px;
+}
+.hv-gate-banner {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 7px 10px;
+    border: 1px solid #ffaa00;
+    background: rgba(20, 10, 0, 0.93);
+    color: #ffcc66;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    box-shadow: 0 0 12px rgba(255, 170, 0, 0.3);
+    animation: hv-gate-pulse 1.4s ease-in-out infinite;
+}
+.hv-gate-banner-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 9px;
+    font-weight: bold;
+}
+.hv-gate-banner-icon { font-size: 12px; }
+.hv-gate-banner-label { letter-spacing: 2px; }
+.hv-gate-banner-hint { color: #a08840; font-size: 8px; letter-spacing: 1px; text-transform: none; }
+.hv-gate-banner-content {
+    color: #c0ae82;
+    font-size: 8px;
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 72px;
+    overflow: hidden;
+    border-left: 2px solid #5a4010;
+    padding-left: 5px;
+    line-height: 1.4;
+}
+.hv-gate-banner-drone { border-color: #d4a020; color: #c0ae82; }
+.hv-gate-banner-overmind { border-color: #c0ae82; color: #e8d8a0; box-shadow: 0 0 12px rgba(192, 174, 130, 0.35); }
+.hv-gate-approve-btn {
+    background: rgba(74, 138, 42, 0.2);
+    border: 1px solid #4a8a2a;
+    color: #8acc60;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 2px;
+    padding: 3px 10px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: background 0.15s, border-color 0.15s;
+}
+.hv-gate-approve-btn:hover {
+    background: rgba(74, 138, 42, 0.4);
+    border-color: #6aba40;
+    color: #aae080;
+}
+.hv-gate-view-btn {
+    background: rgba(30, 40, 60, 0.5);
+    border: 1px solid #446;
+    color: #8899bb;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 2px;
+    padding: 3px 10px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: background 0.15s, border-color 0.15s;
+}
+.hv-gate-view-btn:hover {
+    background: rgba(40, 55, 90, 0.7);
+    border-color: #6688cc;
+    color: #aabbee;
+}

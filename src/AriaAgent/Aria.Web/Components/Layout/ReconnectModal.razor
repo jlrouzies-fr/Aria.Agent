@@ -1,0 +1,37 @@
+<script type="module" src="@Assets["Components/Layout/ReconnectModal.razor.js"]"></script>
+
+<dialog id="components-reconnect-modal" data-nosnippet>
+    <div class="components-reconnect-container">
+        <div class="reconnect-header">☠ COGITATOR LINK DISRUPTED</div>
+
+        <div class="components-rejoining-animation" aria-hidden="true">
+            <div></div>
+            <div></div>
+        </div>
+
+        <p class="components-reconnect-first-attempt-visible">
+            // RE-ESTABLISHING CHANNEL TO THE MACHINE SPIRIT...
+        </p>
+        <p class="components-reconnect-repeated-attempt-visible">
+            // LINK UNSTABLE — RETRY IN <span id="components-seconds-to-next-attempt"></span> SECONDS...
+        </p>
+        <p class="components-reconnect-failed-visible">
+            // SIGNAL LOST — THE MACHINE SPIRIT IS SILENT.<br />
+            RELOAD THE AUSPEX OR RETRY TRANSMISSION.
+        </p>
+        <button id="components-reconnect-button" class="components-reconnect-failed-visible">
+            ▶▶ RETRY TRANSMISSION
+        </button>
+        <p class="components-pause-visible">
+            // SESSION SUSPENDED BY THE OMNISSIAH.<br />
+            AWAIT RESUMPTION OR SUBMIT ANEW.
+        </p>
+        <p class="components-resume-failed-visible">
+            // RESUMPTION FAILED — THE CIRCUIT IS BROKEN.<br />
+            RELOAD TO REESTABLISH CONTACT.
+        </p>
+        <button id="components-resume-button" class="components-pause-visible components-resume-failed-visible">
+            ▶▶ RESUME
+        </button>
+    </div>
+</dialog>

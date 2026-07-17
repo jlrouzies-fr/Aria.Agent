@@ -1,0 +1,252 @@
+@keyframes bridge-unavail-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 4px #e07b3980; }
+    50%       { opacity: 0.25; box-shadow: none; }
+}
+
+.bridge-unavail-dot {
+    display: inline-block;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #e07b39;
+    box-shadow: 0 0 4px #e07b3980;
+    margin-right: 6px; vertical-align: middle;
+    animation: bridge-unavail-pulse 2.4s ease-in-out infinite;
+}
+
+.header-bridge-unavailable {
+    color: #e07b39;
+    letter-spacing: .08em;
+    display: inline-flex; align-items: center;
+}
+
+/* Inquisitorial Seal countdown, left of the soul name. Time left on the live 8h context grant during
+   which agents act unprompted; when it lapses the next sensitive action requests a fresh seal. */
+.header-seal {
+    display: inline-flex; align-items: center;
+    margin-right: 12px; padding: 2px 8px;
+    font-size: 9px; letter-spacing: .12em;
+    border: 1px solid var(--border-dim); border-radius: 2px;
+    color: var(--text-muted);
+    font-family: var(--font-mono, monospace); cursor: default;
+}
+/* Under 15 min — blink an amber→red warning so an imminent re-seal doesn't take you by surprise. */
+@keyframes header-seal-warn {
+    0%, 100% { color: #e0703c; border-color: #e0703c; box-shadow: 0 0 5px #e0703c55; }
+    50%      { color: #d01f1f; border-color: #d01f1f; box-shadow: 0 0 8px #d01f1f77; }
+}
+.header-seal.warn { animation: header-seal-warn 1.1s ease-in-out infinite; }
+/* No seal yet (Layer B enforcing) — steady amber caution: the next agent action will need approval. */
+@keyframes header-seal-unsealed {
+    0%, 100% { color: #d8a020; border-color: #d8a020; box-shadow: 0 0 5px #d8a02055; }
+    50%      { color: #8a6a18; border-color: #8a6a18; box-shadow: none; }
+}
+.header-seal.unsealed { animation: header-seal-unsealed 1.8s ease-in-out infinite; }
+/* Status pull in flight — dim, gently pulsing so it reads as "working", not as a live seal. */
+@keyframes header-seal-loading {
+    0%, 100% { opacity: 0.45; }
+    50%      { opacity: 0.85; }
+}
+.header-seal.loading {
+    color: var(--text-muted); border-color: var(--border-dim);
+    animation: header-seal-loading 1.2s ease-in-out infinite;
+}
+/* Loaded but the node didn't answer — muted red so it's clearly "unknown", not "sealed". */
+.header-seal.unknown { color: #b06a6a; border-color: #7a3a3a; }
+
+/* Bridge-connected indicator next to the soul name (slow green blink). */
+.header-soul-bound { display: inline-flex; align-items: center; }
+@keyframes bridge-up-pulse {
+    0%, 100% { opacity: 1;   box-shadow: 0 0 5px #4caf50cc; }
+    50%      { opacity: 0.4; box-shadow: 0 0 2px #4caf5060; }
+}
+.bridge-up-dot {
+    display: inline-block;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #4caf50;
+    box-shadow: 0 0 5px #4caf50cc;
+    margin-left: 8px; vertical-align: middle;
+    animation: bridge-up-pulse 2s ease-in-out infinite;
+}
+
+/* Active-channel bridge badge in the top header (next to the soul). */
+.header-bridge {
+    display: inline-flex; align-items: center; gap: 4px;
+    margin-left: 12px; padding: 2px 8px;
+    font-size: 9px; letter-spacing: .12em; text-transform: uppercase;
+    border: 1px solid var(--border-dim); border-radius: 2px;
+    font-family: var(--font-mono, monospace); cursor: default;
+}
+.header-bridge.ok   { color: var(--text-normal); border-color: var(--border-dim); }
+.header-bridge.warn { color: #c0a010; border-color: #c0a010; }
+
+/* Collapsed-by-default list of other bridges connected to the same soul (header-bridge above is
+   always the one bound to the active channel; this reveals the rest on click). */
+.header-bridge-others {
+    display: inline-block;
+    margin-left: 6px;
+    position: relative;
+}
+.header-bridge-others > summary {
+    display: inline-flex; align-items: center;
+    list-style: none; cursor: pointer;
+    padding: 2px 7px;
+    font-size: 9px; letter-spacing: .1em;
+    border: 1px solid var(--border-dim); border-radius: 2px;
+    color: var(--text-dead);
+    font-family: var(--font-mono, monospace);
+}
+.header-bridge-others > summary::-webkit-details-marker { display: none; }
+.header-bridge-others > summary:hover { color: var(--text-muted); border-color: var(--border-normal); }
+.header-bridge-others[open] > summary { color: var(--text-normal); border-color: var(--border-normal); }
+.header-bridge-others-list {
+    position: absolute; top: calc(100% + 4px); right: 0;
+    min-width: 160px; z-index: 50;
+    background: var(--bg-panel, #1c1712);
+    border: 1px solid var(--border-normal);
+    border-radius: 2px;
+    padding: 4px 0;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+}
+.header-bridge-other-item {
+    display: flex; align-items: center;
+    padding: 4px 10px;
+    font-size: 10px; letter-spacing: .05em; white-space: nowrap;
+    color: var(--text-normal);
+    font-family: var(--font-mono, monospace);
+}
+.header-bridge-other-item .bridge-up-dot { margin-left: 0; margin-right: 7px; }
+
+/* ── Seal-approval node picker (shown only with 2+ bridges online) ─────────────────────────────
+   Chip in the header to choose which bridge opens seal-approval pages, plus a first-time modal. */
+.seal-node-picker { display: inline-block; position: relative; margin-left: 6px; }
+.seal-node-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 8px; cursor: pointer;
+    font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+    font-family: var(--font-mono, monospace);
+    background: transparent; color: #d4a020;
+    border: 1px solid #6a5010; border-radius: 2px;
+}
+.seal-node-btn:hover, .seal-node-btn.open { color: #f0d060; border-color: #b09040; }
+.seal-node-btn .arw { color: var(--text-dead); }
+.seal-node-backdrop { position: fixed; inset: 0; z-index: 60; }
+.seal-node-list {
+    position: absolute; top: calc(100% + 4px); right: 0;
+    min-width: 220px; z-index: 61;
+    background: var(--bg-panel, #1c1712);
+    border: 1px solid #6a5010; border-radius: 2px;
+    padding: 5px 0; box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+}
+.seal-node-head {
+    font-size: 8px; letter-spacing: .18em; color: var(--text-dead);
+    padding: 4px 12px 6px; font-family: var(--font-mono, monospace);
+}
+.seal-node-opt {
+    display: flex; align-items: center; gap: 7px;
+    padding: 6px 12px; cursor: pointer; white-space: nowrap;
+    font-size: 10px; letter-spacing: .04em; color: var(--text-normal);
+    font-family: var(--font-mono, monospace);
+}
+.seal-node-opt .bridge-up-dot { margin-left: 0; }
+.seal-node-opt .nm { flex: 1; }
+.seal-node-opt:hover { background: rgba(180,144,64,0.14); }
+.seal-node-opt.sel   { color: #f0d060; }
+.seal-node-opt .tag {
+    font-size: 7px; letter-spacing: .14em; padding: 1px 5px;
+    border: 1px solid #6a5010; color: #d4a020; border-radius: 2px;
+}
+.seal-node-opt .tag.auto { border-color: var(--border-dim); color: var(--text-dead); }
+.seal-node-opt.reset { color: var(--text-muted); border-top: 1px solid var(--border-dim); margin-top: 4px; padding-top: 8px; }
+
+.seal-node-modal-backdrop {
+    position: fixed; inset: 0; z-index: 4200;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.72); backdrop-filter: blur(2px);
+}
+.seal-node-modal {
+    width: min(500px, 92vw);
+    border: 1px solid #b09040; border-top: 3px solid #d4a020;
+    background: rgba(20,15,4,0.98); box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+    padding: 22px 24px 18px; font-family: var(--font-mono, monospace);
+}
+.seal-node-modal h1 {
+    font-size: 13px; letter-spacing: 2px; color: #f0d060; margin: 0 0 12px;
+}
+.seal-node-modal p {
+    font-size: 11px; line-height: 1.6; color: var(--text-normal, #c8c0a8); margin: 0 0 14px;
+}
+.seal-node-modal p b { color: #f0d060; }
+.seal-node-modal-list { display: flex; flex-direction: column; gap: 8px; }
+.seal-node-modal-opt {
+    display: flex; align-items: center; gap: 8px;
+    padding: 11px 14px; cursor: pointer; text-align: left;
+    background: rgba(0,0,0,0.4); border: 1px solid #6a5010; color: #f0d060;
+    font-family: var(--font-mono, monospace); font-size: 11px; letter-spacing: .05em;
+}
+.seal-node-modal-opt:hover { background: rgba(180,144,64,0.18); border-color: #d4a020; }
+.seal-node-modal-opt .bridge-up-dot { margin-left: 0; }
+.seal-node-modal-opt .nm { flex: 1; }
+.seal-node-modal-opt .sub { font-size: 8px; letter-spacing: .1em; color: var(--text-dead); }
+.seal-node-modal-skip {
+    display: block; width: 100%; margin-top: 14px; padding: 8px;
+    background: transparent; border: 1px solid var(--border-dim);
+    color: var(--text-muted); cursor: pointer;
+    font-family: var(--font-mono, monospace); font-size: 10px; letter-spacing: .06em;
+}
+.seal-node-modal-skip:hover { color: var(--text-normal); border-color: var(--border-normal); }
+
+.souls-bridge-unavail {
+    display: flex; align-items: center;
+    font-size: 10px; letter-spacing: .10em; color: #e07b39;
+    text-transform: uppercase; padding: 4px 12px 6px;
+}
+
+/* Locked stub shown in place of any soul-scoped panel until the bridge is verified */
+.panel-locked {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 40px 22px; gap: 0;
+}
+.panel-locked-title {
+    font-size: 11px; letter-spacing: .14em; color: #e07b39;
+    text-transform: uppercase; margin-bottom: 8px;
+}
+.panel-locked-sub {
+    font-size: 10px; color: var(--text-dead); line-height: 1.6; max-width: 220px;
+}
+
+/* ── §12 manual session-code unlock (fallback pairing) ───── */
+.bridge-unlock {
+    margin: 16px auto 0; max-width: 250px; text-align: left;
+    border: 1px solid var(--border-color, #3a2a1a); border-radius: 6px;
+    padding: 12px; background: rgba(224, 123, 57, .05);
+}
+.bridge-unlock-title {
+    font-size: 10px; letter-spacing: .12em; color: #e07b39;
+    text-transform: uppercase; margin-bottom: 6px;
+}
+.bridge-unlock-sub {
+    font-size: 10px; color: var(--text-dead); line-height: 1.6; margin-bottom: 10px;
+}
+.bridge-unlock-sub .mono {
+    font-family: var(--font-mono, monospace); color: var(--text-normal); white-space: nowrap;
+}
+.bridge-unlock-row { display: flex; gap: 6px; }
+.bridge-unlock-input {
+    flex: 1; min-width: 0; padding: 6px 8px; font-family: var(--font-mono, monospace);
+    font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+    background: var(--input-bg, #15110c); color: var(--text-bright);
+    border: 1px solid var(--border-color, #3a2a1a); border-radius: 4px;
+}
+.bridge-unlock-input:focus { outline: none; border-color: #e07b39; }
+.bridge-unlock-btn {
+    padding: 6px 12px; font-size: 10px; letter-spacing: .1em; cursor: pointer;
+    background: #e07b39; color: #15110c; border: none; border-radius: 4px; font-weight: 600;
+}
+.bridge-unlock-btn:disabled { opacity: .5; cursor: default; }
+.bridge-unlock-err { margin-top: 8px; font-size: 10px; color: #d9534f; line-height: 1.5; }
+
+/* Read-only channel→bridge binding label in the channels list (picker itself lives in the edit modal) */
+.node-bound-lbl {
+    font-size: 9px; letter-spacing: .06em; color: var(--text-dead);
+    padding: 1px 0 3px 24px;
+}
+

@@ -1,0 +1,10 @@
+/* ── HIVE COGITATE button ─────────────────────────────────────────── */
+.hv-btn-cogitate {
+    border-color: #4070c0;
+    color: #4070c0;
+}
+.hv-btn-cogitate:hover:not(:disabled) {
+    border-color: #6090e0;
+    color: #6090e0;
+    box-shadow: 0 0 8px rgba(64,112,192,0.3);
+}

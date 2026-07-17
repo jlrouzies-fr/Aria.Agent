@@ -1,0 +1,223 @@
+@using Aria.Web.Data
+@using Aria.Web.Services
+
+@* ── Faction list ───────────────────────────────────────── *@
+<div class="wg-section-title">// FACTIONS</div>
+@foreach (var f in Parent.Game.Factions)
+{
+    var tileCount = Parent.Game.Tiles.Count(t => t.OwnerFactionId == f.Id);
+    var unitCount = Parent.Game.Units.Count(u => u.FactionId == f.Id);
+    var bldCount  = Parent.Game.Buildings.Count(b => b.FactionId == f.Id);
+    <div class="wg-faction-row @(!f.IsAlive ? "wg-faction-dead" : "")">
+        <span class="wg-faction-dot" style="color: @f.Color">■</span>
+        <span class="wg-faction-name">@f.Name.ToUpper()</span>
+        @if (!f.IsAlive)
+        {
+            <span class="wg-faction-dead-label">ELIMINATED</span>
+        }
+        else
+        {
+            <span class="wg-faction-stats">t:@tileCount u:@unitCount b:@bldCount</span>
+        }
+    </div>
+    @if (f.IsAlive)
+    {
+        <div class="wg-resources">
+            <span data-tip="Wood — build Farms (4🪵), Lumber Mills (4⛏ earns 3🪵/turn), Barracks (5🪵+4⛏)">🪵<span class="wg-res-val">@f.Wood</span></span>
+            <span data-tip="Stone — build Lumber Mills (4⛏) and Barracks (5🪵+4⛏)">⛏<span class="wg-res-val">@f.Stone</span></span>
+            <span data-tip="Food — recruit new units (costs 4🌾+3💰). Farms produce +3🌾/turn">🌾<span class="wg-res-val">@f.Food</span></span>
+            <span data-tip="Gold — earned from territory and Keep (+2💰/turn). Recruit units (costs 4🌾+3💰)">💰<span class="wg-res-val">@f.Gold</span></span>
+        </div>
+    }
+}
+
+@foreach (var f in Parent.Game.StagedFactions)
+{
+    <div class="wg-faction-row wg-faction-staged">
+        <span class="wg-faction-dot" style="color: @f.Color">■</span>
+        <span class="wg-faction-name">@f.Name.ToUpper()</span>
+        <span class="wg-faction-cat" data-tip="@RaceTip(f.Race)">@RaceLabel(f.Race)</span>
+        <span style="font-size:10px; color: var(--text-dead)">staged</span>
+    </div>
+}
+@if (Parent.Game.Factions.Count == 0 && Parent.Game.StagedFactions.Count == 0)
+{
+    <div style="color: var(--text-dead); font-size: 11px; padding: 4px 0">No factions configured</div>
+}
+
+@* ── Add faction / generate map — only before first turn ── *@
+@if (!Parent.IsRunning && (Parent.Game.ActiveMap == null || Parent.Game.ActiveMap.CurrentTurn == 0))
+{
+    <div class="wg-section-title" style="margin-top:12px">// ADD FACTION</div>
+    @if (_addError != null)
+    {
+        <div class="wg-error">@_addError</div>
+    }
+    <div class="wg-form">
+        <input class="wg-input" placeholder="Faction name" maxlength="32"
+               @bind="_newName" @bind:event="oninput" />
+        <ThemedSelect Value="@_newRace.ToString()"
+                      ValueChanged="@(v => _newRace = Enum.Parse<WargameRace>(v!))"
+                      Options="RaceOptions()" ControlClass="wg-input" />
+        <ThemedSelect Value="@(_newSource ?? "")"
+                      ValueChanged="OnSourceChanged"
+                      Options="WargameSourceOptions()" Placeholder="-- LLM Source --"
+                      ControlClass="wg-input" />
+        <ThemedSelect Value="@(_newModel ?? "")"
+                      ValueChanged="@(v => _newModel = v ?? "")"
+                      Options="ModelOptions()" Placeholder="-- Model --"
+                      ControlClass="wg-input" />
+        <div class="wg-color-row">
+            @foreach (var hex in _palette)
+            {
+                var h = hex;
+                <div class="wg-color-swatch @(_newColor == h ? "selected" : "")"
+                     style="background: @h"
+                     @onclick="() => _newColor = h"></div>
+            }
+        </div>
+        <button class="wg-btn" @onclick="AddFaction"
+                disabled="@(string.IsNullOrWhiteSpace(_newName) || string.IsNullOrWhiteSpace(_newSource) || string.IsNullOrWhiteSpace(_newModel) || Parent.Game.StagedFactions.Count + Parent.Game.Factions.Count >= 4)">
+            + ADD FACTION
+        </button>
+        @if (Parent.Game.StagedFactions.Count + Parent.Game.Factions.Count >= 2)
+        {
+            <button class="wg-btn wg-btn-primary" @onclick="GenerateMap">
+                ⚙ GENERATE MAP
+            </button>
+        }
+    </div>
+}
+
+@* ── Interval — editable whenever game is stopped ── *@
+@if (!Parent.IsRunning && Parent.Game.ActiveMap != null)
+{
+    <div class="wg-section-title" style="margin-top:12px">// INTERVAL</div>
+    <div style="display:flex; gap:6px; align-items:center">
+        <input class="wg-input" style="width:60px" type="number" min="10" max="3600"
+               @bind="_intervalSeconds" @bind:event="oninput" />
+        <span style="font-size:11px; color: var(--text-dead)">seconds / turn</span>
+        <button class="wg-btn" @onclick="SaveInterval">SET</button>
+    </div>
+}
+
+@code {
+    [CascadingParameter] public Wargame Parent { get; set; } = null!;
+
+    [Inject] private AgentService AgentSvc { get; set; } = null!;
+    [Inject] private UserSessionState SessionState { get; set; } = null!;
+
+    private IReadOnlyList<Aria.Agent.ModelSource> UserSources =>
+        SessionState.CurrentUser is { } u ? AgentSvc.GetSourcesForUser(u.Id) : AgentSvc.AvailableModelSources;
+
+    private string? _addError;
+    private string  _newName        = "";
+    private WargameRace _newRace    = WargameRace.Empire;
+    private string  _newSource      = "";
+    private string  _newModel       = "";
+    private string  _newColor       = "#d44040";
+    private int     _intervalSeconds;
+
+    private static readonly string[] _palette =
+    [
+        "#d44040", "#50b840", "#4080d0", "#d0a030",
+        "#c040c0", "#30c0a0", "#d06030", "#8080d0"
+    ];
+
+    protected override void OnInitialized()
+    {
+        _intervalSeconds = Parent.Game.ActiveMap?.TurnIntervalSeconds ?? 10;
+
+#if DEBUG
+        const string DefaultSource = "Local LLM - Mac (localhost)";
+        const string DefaultModel  = "qwen3.6-35b-a3b-claude-4.7-opus-distilled-mlx-oq4";
+        var src = UserSources.FirstOrDefault(s => s.Name == DefaultSource)
+               ?? UserSources.FirstOrDefault();
+        if (src != null)
+        {
+            _newSource = src.Name;
+            _newModel  = src.Name == DefaultSource && src.Models.Contains(DefaultModel)
+                       ? DefaultModel
+                       : src.Models.FirstOrDefault() ?? "";
+        }
+#endif
+    }
+
+    private static string RaceLabel(WargameRace r) => r switch
+    {
+        WargameRace.Empire     => "Empire of Man",
+        WargameRace.Greenskins => "Greenskins",
+        WargameRace.Chaos      => "Warriors of Chaos",
+        WargameRace.Undead     => "Vampire Counts",
+        _                      => r.ToString()
+    };
+
+    private static List<(string Value, string Label)> RaceOptions() =>
+        Enum.GetValues<WargameRace>().Select(r => (r.ToString(), RaceLabel(r))).ToList();
+
+    private List<(string Value, string Label)> WargameSourceOptions()
+    {
+        var list = new List<(string, string)> { ("", "-- LLM Source --") };
+        list.AddRange(UserSources.Select(s => (s.Name, s.Name)));
+        return list;
+    }
+
+    private void OnSourceChanged(string? v)
+    {
+        _newSource = v ?? "";
+        _newModel  = UserSources.FirstOrDefault(s => s.Name == _newSource)?.Models.FirstOrDefault() ?? "";
+    }
+
+    private List<(string Value, string Label)> ModelOptions()
+    {
+        var models = UserSources.FirstOrDefault(s => s.Name == _newSource)?.Models ?? [];
+        var list = new List<(string, string)> { ("", "-- Model --") };
+        list.AddRange(models.Select(m => (m, m)));
+        return list;
+    }
+
+    private static string RaceTip(WargameRace r) => r switch
+    {
+        WargameRace.Empire     => "Empire of Man\n2 moves/turn · 3 HP\nDisciplined soldiers. Balanced speed and resilience.",
+        WargameRace.Greenskins => "Greenskins\n2 moves/turn · 3 HP\nReckless savagery. Fast expansion, hard hitting.",
+        WargameRace.Chaos      => "Warriors of Chaos\n1 move/turn · 5 HP\nSlow but nearly unkillable. Heavy plate armour.",
+        WargameRace.Undead     => "Vampire Counts\n3 moves/turn · 2 HP\nSwarms of fragile skeletons. Extremely fast.",
+        _                      => r.ToString()
+    };
+
+    private void AddFaction()
+    {
+        _addError = null;
+        if (string.IsNullOrWhiteSpace(_newName))   { _addError = "Name required";       return; }
+        if (string.IsNullOrWhiteSpace(_newSource))  { _addError = "Source required";     return; }
+        if (string.IsNullOrWhiteSpace(_newModel))   { _addError = "Model ID required";   return; }
+        if (Parent.Game.StagedFactions.Count + Parent.Game.Factions.Count >= 4)
+                                                    { _addError = "Maximum 4 factions";  return; }
+
+        Parent.Game.StageFaction(new WargameFaction
+        {
+            Name       = _newName.Trim(),
+            Category   = FactionCategory.Aggressive,
+            Race       = _newRace,
+            Color      = _newColor,
+            UserId     = SessionState.CurrentUser?.Id ?? "",
+            SourceName = _newSource,
+            ModelId    = string.IsNullOrWhiteSpace(_newModel) ? null : _newModel.Trim(),
+        });
+
+        _newName = "";
+    }
+
+    private async Task GenerateMap()
+    {
+        _addError = null;
+        var total = Parent.Game.StagedFactions.Count + Parent.Game.Factions.Count;
+        if (total < 2) { _addError = "At least 2 factions required"; return; }
+        var all = Parent.Game.Factions.Concat(Parent.Game.StagedFactions).ToList();
+        await Parent.Game.GenerateMapAsync(all);
+        Parent.Game.StagedFactions.Clear();
+    }
+
+    private async Task SaveInterval() =>
+        await Parent.Game.UpdateIntervalAsync(_intervalSeconds);
+}

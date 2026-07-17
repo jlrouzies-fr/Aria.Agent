@@ -1,0 +1,139 @@
+
+/* MCP server list */
+.mcp-server-card {
+    border: 1px solid rgba(139,0,0,0.2);
+    margin-bottom: 6px;
+    background: rgba(0,0,0,0.15);
+}
+.mcp-server-card.editing {
+    border-color: var(--border-glow);
+    background: rgba(139,0,0,0.06);
+}
+.mcp-server-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border-bottom: 1px solid rgba(139,0,0,0.1);
+}
+.mcp-server-card-detail {
+    padding: 6px 10px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.mcp-detail-row {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    font-size: 10px;
+    line-height: 1.5;
+}
+.mcp-detail-label {
+    color: var(--text-dead);
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    flex-shrink: 0;
+    width: 28px;
+    text-align: right;
+}
+.mcp-detail-val {
+    color: var(--text-muted);
+    word-break: break-all;
+    font-family: var(--font-mono);
+}
+.mcp-args-list { white-space: pre; }
+.mcp-enabled-toggle {
+    font-size: 12px;
+    color: var(--border-glow);
+    cursor: pointer;
+    flex-shrink: 0;
+    width: 14px;
+}
+.mcp-name { flex: 1; font-size: 11px; color: var(--text-bright); min-width: 0; }
+
+/* MCP transport badge */
+.mcp-transport-badge {
+    font-size: 9px; font-weight: 700; letter-spacing: .06em;
+    padding: 1px 4px; border-radius: 2px; flex-shrink: 0;
+    background: rgba(139,0,0,0.25); color: var(--text-mid);
+}
+.mcp-transport-badge.sse         { background: rgba(0,80,139,0.3); color: #7ab4e0; }
+.mcp-transport-badge.localbridge { background: rgba(0,100,50,0.3); color: #7ae0a0; }
+
+/* Bridge status bar */
+.bridge-status-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; margin-top: 14px; margin-bottom: 10px;
+    background: rgba(0,0,0,0.2); border: 1px solid rgba(139,0,0,0.2);
+    border-radius: 3px; font-size: 10px;
+}
+.bridge-dot {
+    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.bridge-dot.online  { background: #4caf50; box-shadow: 0 0 4px #4caf5080; }
+.bridge-dot.offline { background: #555; }
+.bridge-dot.absent  { background: #e07b39; box-shadow: 0 0 4px #e07b3980; }
+
+.bridge-label { font-weight: 700; color: var(--text-mid); letter-spacing: .05em; }
+.bridge-state { color: var(--text-dead); flex: 1; }
+.bridge-check-btn {
+    background: none; border: 1px solid rgba(139,0,0,0.4);
+    color: var(--text-mid); font-family: inherit; font-size: 9px;
+    padding: 2px 6px; cursor: pointer; border-radius: 2px;
+}
+.bridge-check-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.bridge-check-btn:disabled { opacity: 0.4; cursor: default; }
+.bridge-download-link {
+    font-size: 9px; color: var(--text-dead); text-decoration: none;
+    border: 1px solid rgba(80,80,80,0.4); padding: 2px 6px; border-radius: 2px;
+}
+.bridge-download-link:hover { color: var(--text-mid); border-color: var(--text-dead); }
+
+/* MCP transport type selector */
+.mcp-transport-selector {
+    display: flex; gap: 4px;
+}
+.mcp-transport-selector button {
+    background: rgba(0,0,0,0.2); border: 1px solid rgba(139,0,0,0.3);
+    color: var(--text-dead); font-family: inherit; font-size: 9px;
+    letter-spacing: .05em; padding: 3px 8px; cursor: pointer; border-radius: 2px;
+    transition: all 0.15s;
+}
+.mcp-transport-selector button:hover   { border-color: rgba(139,0,0,0.6); color: var(--text-mid); }
+.mcp-transport-selector button.active  { background: rgba(139,0,0,0.3); border-color: var(--accent); color: var(--accent); }
+
+/* Local bridge hint text */
+.mcp-bridge-hint {
+    font-size: 10px; color: var(--text-dead); margin: 0 0 8px;
+    font-style: italic; line-height: 1.4;
+}
+.mcp-delete-btn {
+    background: none; border: none; color: var(--text-dead);
+    font-size: 11px; cursor: pointer; padding: 0 2px; flex-shrink: 0;
+    transition: color 0.1s;
+}
+.mcp-delete-btn:hover { color: #d04040; }
+/* Legacy row (kept for safety) */
+.mcp-server-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 0; border-bottom: 1px solid rgba(139,0,0,0.15);
+}
+.modal-add-btn {
+    background: rgba(139,0,0,0.2);
+    border: 1px solid rgba(139,0,0,0.5);
+    color: var(--text-normal);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 5px 12px;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    margin-top: 6px;
+    transition: background 0.1s;
+}
+.modal-add-btn:hover:not(:disabled) {
+    background: rgba(139,0,0,0.45);
+    color: var(--text-bright);
+}
+.modal-add-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+

@@ -1,0 +1,66 @@
+/* ── Vigil full-screen modal overlay ────────────────────────────────── */
+.vigil-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 9000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(3px);
+    animation: vigilFadeIn .18s ease-out;
+}
+@keyframes vigilFadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+.vigil-modal {
+    background: var(--bg-panel, #141414);
+    border: 1px solid var(--border-dim, #2a2a2a);
+    width: min(920px, 95vw);
+    height: 92vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 0 0 1px rgba(139,0,0,0.12),
+                0 30px 80px rgba(0,0,0,0.9),
+                0 0 60px rgba(0,0,0,0.7);
+    animation: vigilSlideIn .2s ease-out;
+}
+@keyframes vigilSlideIn {
+    from { opacity: 0; transform: translateY(16px) scale(.98); }
+    to   { opacity: 1; transform: translateY(0)     scale(1); }
+}
+.vigil-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border-dim, #2a2a2a);
+    flex-shrink: 0;
+    background: rgba(0,0,0,0.2);
+}
+.vigil-modal-title {
+    font-size: 12px;
+    color: var(--text-bright, #ccc);
+    letter-spacing: 4px;
+}
+.vigil-close-btn {
+    background: none;
+    border: 1px solid var(--border-dim, #2a2a2a);
+    color: var(--text-dead, #555);
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 2px;
+    padding: 4px 12px;
+    cursor: pointer;
+    transition: border-color .12s, color .12s;
+}
+.vigil-close-btn:hover { border-color: var(--text-muted, #888); color: var(--text-muted, #888); }
+.vigil-modal-body {
+    overflow-y: auto;
+    padding: 18px 24px 24px;
+    flex: 1;
+    min-height: 0;
+}
+
+

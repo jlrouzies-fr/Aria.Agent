@@ -1,0 +1,147 @@
+@inject UserSessionState SessionState
+@inject CircuitAuthService CircuitAuth
+@inject ModelBridgeRegistry BridgeRegistry
+@implements IDisposable
+
+@* Lets the human choose which connected bridge opens seal-approval pages when several nodes are online.
+   Without it, ceremonies open on whichever node connected most recently — which may be a remote,
+   unattended machine. Shows a header chip to switch at any time, plus a one-time prompt the first time
+   two or more nodes are seen with no choice made yet. See ModelBridgeRegistry.ResolveApprovalNode. *@
+
+@{
+    var user   = SessionState.CurrentUser;
+    var active = user != null && CircuitAuth.IsVerified(user.Id);
+    var nodes  = active
+        ? BridgeRegistry.GetNodes(user!.Id.ToString()).OrderByDescending(n => n.ConnectedAt).ToList()
+        : new List<NodeConnection>();
+}
+
+@if (active && nodes.Count >= 2)
+{
+    var uid    = user!.Id.ToString();
+    var pinned = BridgeRegistry.GetPreferredApprovalNode(uid);
+    var effId  = BridgeRegistry.ResolveApprovalNode(uid);
+    var eff    = nodes.FirstOrDefault(n => n.NodeId == effId);
+
+    <div class="seal-node-picker">
+        <button class="seal-node-btn @(_open ? "open" : "")" @onclick="Toggle"
+                data-tip="Which bridge opens seal-approval pages. You need a browser open there to approve.">
+            ⛨→ @NodeLabel(eff)@(pinned == null ? " ·auto" : "") <span class="arw">@(_open ? "▴" : "▾")</span>
+        </button>
+        @if (_open)
+        {
+            <div class="seal-node-backdrop" @onclick="Close"></div>
+            <div class="seal-node-list">
+                <div class="seal-node-head">DIRECT SEAL APPROVALS TO</div>
+                @foreach (var n in nodes)
+                {
+                    var sel = n.NodeId == effId;
+                    <div class="seal-node-opt @(sel ? "sel" : "")" @onclick="() => Pick(n.NodeId)">
+                        <span class="bridge-up-dot"></span>
+                        <span class="nm">@NodeLabel(n)</span>
+                        @if (pinned == n.NodeId)      { <span class="tag">PINNED</span> }
+                        else if (sel)                 { <span class="tag auto">AUTO</span> }
+                    </div>
+                }
+                <div class="seal-node-opt reset @(pinned == null ? "sel" : "")" @onclick="() => Pick(null)">
+                    ↺ Auto (follow most-recent)
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@if (active && nodes.Count >= 2 && _promptOpen
+     && BridgeRegistry.GetPreferredApprovalNode(user!.Id.ToString()) == null)
+{
+    var uid   = user!.Id.ToString();
+    var defId = BridgeRegistry.ResolveApprovalNode(uid);
+    <div class="seal-node-modal-backdrop">
+        <div class="seal-node-modal">
+            <h1>⛨ MULTIPLE COGITATOR NODES ONLINE</h1>
+            <p>Seal-approval pages open on <b>one</b> bridge — and you need a browser open there to approve.
+               You have <b>@nodes.Count</b> connected. Which one should seal approvals be directed to?</p>
+            <div class="seal-node-modal-list">
+                @foreach (var n in nodes)
+                {
+                    <button class="seal-node-modal-opt" @onclick="() => PickAndDismiss(n.NodeId)">
+                        <span class="bridge-up-dot"></span>
+                        <span class="nm">@NodeLabel(n)</span>
+                        @if (n.NodeId == defId) { <span class="sub">most recent</span> }
+                    </button>
+                }
+            </div>
+            <button class="seal-node-modal-skip" @onclick="DismissPrompt">
+                Decide later — keep opening on the most-recent bridge
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _open;            // header dropdown expanded
+    private bool _promptOpen;      // first-time choose-a-node modal showing
+    private bool _promptDismissed; // user answered or deferred the prompt this circuit
+
+    private static string NodeLabel(NodeConnection? n)
+    {
+        if (n == null) return "—";
+        var label = string.IsNullOrEmpty(n.Label) ? n.NodeId : n.Label;
+        return (string.IsNullOrEmpty(n.Platform) ? label : $"{label} · {n.Platform}").ToUpperInvariant();
+    }
+
+    private void Toggle() => _open = !_open;
+    private void Close()  => _open = false;
+
+    private void Pick(string? nodeId)
+    {
+        if (SessionState.CurrentUser is { } u)
+            BridgeRegistry.SetPreferredApprovalNode(u.Id.ToString(), nodeId);
+        _open = false;
+    }
+
+    private void PickAndDismiss(string nodeId)
+    {
+        Pick(nodeId);
+        _promptDismissed = true;
+        _promptOpen = false;
+    }
+
+    private void DismissPrompt()
+    {
+        _promptDismissed = true;
+        _promptOpen = false;
+    }
+
+    // Re-open the prompt whenever a second node appears and the user hasn't chosen (and hasn't deferred).
+    private void EvaluatePrompt()
+    {
+        var user = SessionState.CurrentUser;
+        if (user == null || !CircuitAuth.IsVerified(user.Id)) { _promptOpen = false; return; }
+        var uid   = user.Id.ToString();
+        var multi = BridgeRegistry.GetNodes(uid).Count >= 2;
+        var unset = BridgeRegistry.GetPreferredApprovalNode(uid) == null;
+        _promptOpen = multi && unset && !_promptDismissed;
+    }
+
+    protected override void OnInitialized()
+    {
+        SessionState.OnChange              += OnChanged;
+        BridgeRegistry.NodesChanged        += OnNodesChanged;
+        BridgeRegistry.ApprovalNodeChanged += OnNodesChanged;
+        BridgeRegistry.SoulStatusChanged   += OnSoulStatusChanged;
+        EvaluatePrompt();
+    }
+
+    private async void OnChanged()                    { EvaluatePrompt(); await InvokeAsync(StateHasChanged); }
+    private async void OnNodesChanged(string _)       { EvaluatePrompt(); await InvokeAsync(StateHasChanged); }
+    private async void OnSoulStatusChanged(string _)  { EvaluatePrompt(); await InvokeAsync(StateHasChanged); }
+
+    public void Dispose()
+    {
+        SessionState.OnChange              -= OnChanged;
+        BridgeRegistry.NodesChanged        -= OnNodesChanged;
+        BridgeRegistry.ApprovalNodeChanged -= OnNodesChanged;
+        BridgeRegistry.SoulStatusChanged   -= OnSoulStatusChanged;
+    }
+}

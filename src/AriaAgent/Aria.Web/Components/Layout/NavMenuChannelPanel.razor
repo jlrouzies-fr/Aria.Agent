@@ -1,0 +1,134 @@
+@using Aria.Agent
+@using Aria.Web.Data
+@using Aria.Tools
+@using Aria.Web.Helpers
+@using Aria.Web.Components.Pages
+@using Aria.Web.Components.Shared
+@using Markdig
+@using System.Text.Json
+@using System.Security.Cryptography
+@namespace Aria.Web.Components.Layout
+
+@code {
+    [CascadingParameter(Name = "NavMenu")]
+    public NavMenu Menu { get; set; } = null!;
+}
+
+@* Channels (URL, models, keys) are authored ONLY on your bridge node — never on the server. This
+   panel is a read-only mirror: pick a channel/model here; add or edit them on the bridge status page. *@
+@if (true)
+{
+    @* ── Configure on the bridge (top) ─────────────────────────── *@
+    <a class="source-add-row source-add-row--cta" href="http://localhost:5741#channels" target="_blank" rel="noopener"
+       title="Channels, URLs and API keys are configured on your bridge node — they never touch the server"
+       style="text-decoration:none;color:inherit;display:flex;align-items:center;margin-bottom:6px">
+        <span class="source-dot">⚙</span>
+        <span class="source-name" style="color:var(--text-title)">CONFIGURE CHANNELS ON YOUR BRIDGE ↗</span>
+    </a>
+
+    @* ── Local LLM channels ───────────────────────────────────── *@
+    @if (Menu._userLocalDbSources.Count > 0)
+    {
+        <div class="channel-section-lbl">LOCAL LLM</div>
+        @foreach (var src in Menu._userLocalDbSources)
+        {
+            var ms = UserLocalSourceService.ToModelSource(src);
+            var isActive = Menu.SessionState.SelectedModelSource == ms.Name;
+            <div class="source-row @(isActive ? "active" : "") @(ms.Models.Count == 0 ? "unavailable" : "")"
+                 @onclick="() => Menu.TrySelectSource(ms.Name, ms.Models.Count)">
+                <span class="source-dot">@(ms.Models.Count == 0 ? "⚠" : isActive ? "●" : "○")</span>
+                <span class="source-icon">⟁</span>
+                <span class="source-name">@ms.Name</span>
+                @if (Menu._configuredProviders.Contains(ms.Name))
+                {
+                    <span class="node-bound-lbl" title="Key stored on your node">⚿</span>
+                }
+                <button type="button" class="channel-refresh-btn @(Menu._rediscoveringChannels.Contains(src.BridgeNodeId + "|" + src.Name) ? "spinning" : "")"
+                        @onclick:stopPropagation="true" @onclick="() => Menu.RediscoverModelsAsync(src)"
+                        data-tip="Refresh model list — re-query this endpoint for the models it currently serves, and save them to your node.">
+                    ⟳
+                </button>
+            </div>
+            @if (isActive && ms.Models.Count > 1)
+            {
+                <div class="model-list">
+                    @foreach (var model in ms.Models)
+                    {
+                        var isModelActive = Menu.SessionState.SelectedModel == model;
+                        <div class="model-row @(isModelActive ? "active" : "")"
+                             @onclick:stopPropagation="true"
+                             @onclick="() => Menu.SelectModel(ms.Name, model)">
+                            <span class="model-dot">@(isModelActive ? "●" : "·")</span>
+                            <span class="model-name">@model</span>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    }
+
+    @* ── Public cloud providers ──────────────────────────────── *@
+    @if (Menu._userSources.Any(s => s.IsPublicProvider))
+    {
+        <div class="channel-section-lbl">CLOUD</div>
+        @foreach (var source in Menu._userSources.Where(s => s.IsPublicProvider))
+        {
+            var isActive = Menu.SessionState.SelectedModelSource == source.Name;
+            var hasKey = Menu._configuredProviders.Contains(source.Name);
+            <div class="source-row @(isActive ? "active" : "") @(!hasKey ? "unavailable" : "")"
+                 @onclick="() => Menu.TrySelectSource(source.Name, hasKey ? source.Models.Count : 0)">
+                <span class="source-dot">@(!hasKey ? "⚿" : isActive ? "●" : "○")</span>
+                <span class="source-icon">@NavMenu.ProviderIcon(source)</span>
+                <span class="source-name">@source.Name</span>
+                @if (!hasKey)
+                {
+                    <span class="node-bound-lbl" title="No key on your node — add it on the bridge">no key</span>
+                }
+            </div>
+            @if (isActive && source.Models.Count > 1)
+            {
+                <div class="model-list">
+                    @foreach (var model in source.Models)
+                    {
+                        var isModelActive = Menu.SessionState.SelectedModel == model;
+                        <div class="model-row @(isModelActive ? "active" : "")"
+                             @onclick:stopPropagation="true"
+                             @onclick="() => Menu.SelectModel(source.Name, model)">
+                            <span class="model-dot">@(isModelActive ? "●" : "·")</span>
+                            <span class="model-name">@model</span>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    }
+
+    @if (Menu._userSources.Count == 0)
+    {
+        <div class="source-row unavailable">
+            <span class="source-dot">✕</span>
+            <span class="source-name">@(Menu.BridgeRegistry.HasDirectBridge(Menu.SessionState.CurrentUser?.Id.ToString() ?? "") ? "NO CHANNELS" : "BRIDGE OFFLINE")</span>
+        </div>
+    }
+
+    @* ── Transient channel feedback ───────────────────────────── *@
+    @if (Menu._channelNotice != null)
+    {
+        <div class="node-bound-lbl">@Menu._channelNotice</div>
+    }
+
+    @* ── Maintenance: drop cached thinking/tool-call format verdicts ── *@
+    @if (Menu.SessionState.CurrentUser != null)
+    {
+        <div class="channel-section-lbl">MAINTENANCE</div>
+        <div class="source-add-row source-add-row--warn" @onclick="Menu.ClearModelFormatCacheAsync"
+             title="Forget every detected thinking/tool-call format — all channels re-probe on their next session">
+            <span class="source-dot">@(Menu._formatCacheClearing ? "…" : "⟳")</span>
+            <span class="source-name">CLEAR MODEL FORMAT CACHE</span>
+        </div>
+        @if (Menu._formatCacheMsg != null)
+        {
+            <div class="node-bound-lbl">@Menu._formatCacheMsg</div>
+        }
+    }
+}

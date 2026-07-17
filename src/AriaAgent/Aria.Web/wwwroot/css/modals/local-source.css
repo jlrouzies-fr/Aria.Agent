@@ -1,0 +1,231 @@
+/* ── Local Source Modal (lsm-*) ────────────────────────────────────── */
+.lsm-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.88);
+    z-index: 9100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+    animation: vigilFadeIn .15s ease-out;
+}
+.lsm-modal {
+    background: var(--bg-panel, #141414);
+    border: 1px solid var(--border-dim, #2a2a2a);
+    width: min(680px, 95vw);
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 0 0 1px rgba(139,0,0,0.15),
+                0 24px 70px rgba(0,0,0,0.9),
+                0 0 40px rgba(0,0,0,0.6);
+    animation: vigilSlideIn .2s ease-out;
+}
+.lsm-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--border-dim, #2a2a2a);
+    flex-shrink: 0;
+    background: rgba(139,0,0,0.04);
+}
+.lsm-title {
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--border-glow, #8b0000);
+    text-shadow: var(--glow-sm, 0 0 6px rgba(139,0,0,0.4));
+}
+.lsm-body {
+    overflow-y: auto;
+    padding: 18px 20px 22px;
+    flex: 1;
+    min-height: 0;
+}
+.lsm-section-label {
+    font-size: 8px;
+    letter-spacing: 2.5px;
+    color: var(--text-dead, #444);
+    margin-bottom: 10px;
+    text-transform: uppercase;
+}
+
+/* Mode cards */
+.lsm-mode-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+.lsm-mode-card {
+    border: 1px solid var(--border-dim, #2a2a2a);
+    padding: 12px 14px;
+    cursor: pointer;
+    background: var(--bg-surface, #1a1a1a);
+    transition: border-color .15s, background .15s;
+    position: relative;
+}
+.lsm-mode-card:hover {
+    border-color: var(--border-normal, #333);
+    background: var(--bg-hover, #1e1e1e);
+}
+.lsm-mode-card.lsm-mode-active {
+    border-color: var(--border-glow, #8b0000);
+    background: rgba(139,0,0,0.07);
+    box-shadow: 0 0 0 1px rgba(139,0,0,0.15) inset;
+}
+.lsm-mode-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 10px;
+}
+.lsm-mode-dot {
+    font-size: 12px;
+    color: var(--text-dead, #444);
+}
+.lsm-mode-active .lsm-mode-dot {
+    color: var(--border-glow, #8b0000);
+    text-shadow: var(--glow-sm, 0 0 6px rgba(139,0,0,0.4));
+}
+.lsm-mode-name {
+    font-size: 10px;
+    letter-spacing: 2.5px;
+    color: var(--text-normal, #aaa);
+    flex: 1;
+}
+.lsm-mode-active .lsm-mode-name {
+    color: var(--text-bright, #ccc);
+}
+.lsm-mode-badge {
+    font-size: 7px;
+    letter-spacing: 1.5px;
+    color: #b8860b;
+    border: 1px solid rgba(184,134,11,0.3);
+    padding: 1px 5px;
+}
+
+/* Diagram */
+.lsm-diagram {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+    font-size: 9px;
+    font-family: inherit;
+    letter-spacing: 0.5px;
+    color: var(--text-dead, #444);
+}
+.lsm-mode-active .lsm-diagram { color: var(--text-muted, #666); }
+.lsm-dia-arrow { color: var(--text-dead, #3a3a3a); white-space: nowrap; }
+.lsm-dia-node {
+    padding: 2px 6px;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+    letter-spacing: 1px;
+}
+.lsm-dia-server { color: var(--text-dead, #444); }
+.lsm-dia-bridge { color: #6a6a1a; }
+.lsm-dia-llm    { color: #6a2a2a; }
+.lsm-mode-active .lsm-dia-server { color: var(--text-muted, #666); }
+.lsm-mode-active .lsm-dia-bridge { color: #aaaa4a; }
+.lsm-mode-active .lsm-dia-llm    { color: var(--border-glow, #8b0000); }
+
+/* Description + requirements */
+.lsm-mode-desc {
+    font-size: 9.5px;
+    line-height: 1.55;
+    color: var(--text-dead, #555);
+    margin-bottom: 9px;
+}
+.lsm-mode-active .lsm-mode-desc { color: var(--text-muted, #777); }
+.lsm-mode-req {
+    font-size: 8.5px;
+    line-height: 1.7;
+    color: var(--text-dead, #444);
+    letter-spacing: 0.5px;
+}
+.lsm-mode-active .lsm-mode-req { color: var(--text-dead, #555); }
+.lsm-req-dot { margin-right: 4px; }
+.lsm-req-warn { color: #c0a010 !important; }
+
+/* Fields */
+.lsm-fields { display: flex; flex-direction: column; gap: 10px; }
+.lsm-field  { display: flex; flex-direction: column; gap: 4px; }
+.lsm-field-label {
+    font-size: 8px;
+    letter-spacing: 2px;
+    color: var(--text-dead, #555);
+    text-transform: uppercase;
+}
+.lsm-input, .lsm-textarea {
+    background: var(--bg-input, #111);
+    border: 1px solid var(--border-dim, #2a2a2a);
+    color: var(--text-normal, #aaa);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 7px 9px;
+    width: 100%;
+    box-sizing: border-box;
+    transition: border-color .12s;
+}
+.lsm-textarea { resize: vertical; }
+.lsm-input:focus, .lsm-textarea:focus {
+    outline: none;
+    border-color: var(--border-glow, #8b0000);
+}
+.lsm-input::placeholder, .lsm-textarea::placeholder {
+    color: var(--text-dead, #3a3a3a);
+}
+
+/* ThemedSelect inside the scrollable local-source modal: open upward so the
+   option list isn't clipped by .lsm-body's overflow-y: auto. */
+.lsm-body .tsel-list {
+    top: auto;
+    bottom: calc(100% + 2px);
+    z-index: 60;   /* above other in-modal ThemedSelect backdrops (z-index 50) */
+}
+
+.lsm-key-badge {
+    margin-left: 8px;
+    font-size: 8px;
+    letter-spacing: 1px;
+    color: var(--gold-dim);
+    border: 1px solid var(--gold-dim);
+    padding: 1px 5px;
+    vertical-align: middle;
+}
+
+.lsm-validate-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+}
+.lsm-validate-btn {
+    background: none;
+    border: 1px solid var(--border-dim, #333);
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 9px;
+    letter-spacing: 2px;
+    padding: 5px 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color .12s, color .12s;
+}
+.lsm-validate-btn:hover:not(:disabled) { border-color: var(--border-glow); color: var(--text-bright); }
+.lsm-validate-btn:disabled { opacity: .4; cursor: default; }
+.lsm-validate-ok   { font-size: 9px; color: #4caf50; letter-spacing: 1px; }
+.lsm-validate-err  { font-size: 9px; color: var(--border-glow); letter-spacing: 1px; }
+.lsm-validate-warn { font-size: 9px; color: var(--gold-dim); letter-spacing: 1px; margin-top: 6px; }
+
+.lsm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-dim, #222);
+}

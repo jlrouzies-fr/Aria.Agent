@@ -1,0 +1,11 @@
+@inherits DebouncedInputBase
+
+@* No value attribute: after JS init the DOM owns the text (see DebouncedInputBase). Rendering it
+   would let a re-render mid-typing rewrite the input with stale committed text (lost keystrokes). *@
+<input @ref="InputElement"
+       class="@Class"
+       placeholder="@Placeholder"
+       id="@Id"
+       @attributes="AdditionalAttributes"
+       @onkeydown="HandleKeyDown"
+       @onblur="HandleBlur" />

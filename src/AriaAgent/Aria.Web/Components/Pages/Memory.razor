@@ -1,0 +1,117 @@
+@page "/memory"
+@using Aria.Web.Services.Memory
+
+<PageTitle>ARIA // NOOSPHERE</PageTitle>
+
+<div class="mem-shell">
+    <div class="mem-header">
+        <div class="mem-header-left">
+            <img class="mem-header-icon" src="avatars/noosphere.png" alt="" />
+            <span class="mem-title">// NOOSPHERE</span>
+            @if (_stats != null)
+            {
+                <span class="mem-stat-badge">@_stats.Engrams ENGRAMS · @_stats.Entities ENTITIES · @_stats.Links RELATIONS</span>
+            }
+        </div>
+        <div class="mem-header-center">
+            <input class="mem-search-input" placeholder="Probe the Noosphere…"
+                   @bind="_query" @bind:event="oninput" @onkeydown="OnSearchKeyDown" />
+            <button class="hv-btn" @onclick="SearchAsync">⌕ PROBE</button>
+            @if (_searchResults != null)
+            {
+                <button class="hv-btn" @onclick="ClearSearch">✕ CLEAR</button>
+            }
+        </div>
+        <div class="mem-header-right">
+            <button class="hv-btn" @onclick='() => Nav.NavigateTo("/")'>← BACK</button>
+        </div>
+    </div>
+
+    @if (_nodes.Count > 1)
+    {
+        <div class="mem-node-bar">
+            <span class="mem-node-bar-label">NODE</span>
+            @foreach (var node in _nodes)
+            {
+                var active = _selectedNodeId == node.NodeId;
+                <button class="mem-node-pill @(active ? "mem-node-pill--active" : "")"
+                        @onclick="() => SelectNodeAsync(node.NodeId)">
+                    <span class="mem-node-dot"></span>@node.Label
+                </button>
+            }
+            <span class="mem-node-bar-hint">memory is per-node — nodes don't share engrams</span>
+        </div>
+    }
+
+    @if (_stats != null && !_stats.EmbeddingsConfigured)
+    {
+        <div class="hv-offline-banner">⚠ AUGUR ARRAY OFFLINE — lexical + graph retrieval only (embeddings not configured on this node)</div>
+    }
+
+    <div class="mem-body">
+        <MemoryCanvas Parent="this" />
+
+        @if (_searchResults != null)
+        {
+            <div class="mem-drawer">
+                <div class="mem-drawer-header">
+                    <span>// RECALL RESULTS</span>
+                    <button class="mem-drawer-close" @onclick="ClearSearch">✕</button>
+                </div>
+                <div class="mem-drawer-body">
+                    @if (_searchResults.Count == 0)
+                    {
+                        <div class="mem-drawer-empty">// NO RECORDS FOUND</div>
+                    }
+                    @foreach (var r in _searchResults)
+                    {
+                        <div class="mem-engram-row">
+                            <div class="mem-engram-text">@r.Text</div>
+                            @if (r.Entities.Count > 0)
+                            {
+                                <div class="mem-engram-meta">@string.Join(" · ", r.Entities)</div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else if (_selectedEntityId != null)
+        {
+            var entity = _graph.Nodes.FirstOrDefault(n => n.Id == _selectedEntityId);
+            <div class="mem-drawer">
+                <div class="mem-drawer-header">
+                    <span>// @(entity?.Name.ToUpperInvariant() ?? "ENTITY")</span>
+                    <button class="mem-drawer-close" @onclick="CloseEntityDrawer">✕</button>
+                </div>
+                <div class="mem-merge-row">
+                    <ThemedSelect Value="@(_mergeTargetId ?? "")" ValueChanged="v => _mergeTargetId = v"
+                                  Placeholder="⇄ merge into…" ControlClass="hv-input mem-merge-select"
+                                  Options="@(_graph.Nodes.Where(n => n.Id != _selectedEntityId).OrderBy(n => n.Name).Select(n => (n.Id, n.Name)).ToList())" />
+                    <button class="hv-btn" disabled="@string.IsNullOrEmpty(_mergeTargetId)" @onclick="MergeSelectedEntityAsync">⇄ MERGE</button>
+                </div>
+                <div class="mem-drawer-body">
+                    @if (_selectedEntityEngrams.Count == 0)
+                    {
+                        <div class="mem-drawer-empty">// NO ENGRAMS LINKED</div>
+                    }
+                    @foreach (var e in _selectedEntityEngrams)
+                    {
+                        <div class="mem-engram-row">
+                            <div class="mem-engram-text">@e.Content</div>
+                            <div class="mem-engram-meta">
+                                @(e.TimeAnchor != null ? e.TimeAnchor + " · " : "")@string.Join(" · ", e.Entities)
+                            </div>
+                            <button class="mem-engram-delete" @onclick="() => DeleteEngramAsync(e.Id)">✕ delete</button>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        @if (_loading)
+        {
+            <div class="mem-loading-badge">Consulting the Noosphere…</div>
+        }
+    </div>
+</div>

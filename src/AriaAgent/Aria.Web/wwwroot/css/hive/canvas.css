@@ -1,0 +1,359 @@
+.hv-main {
+    position: absolute;
+    top: 0;
+    left: 240px;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ── Flow canvas ── */
+.hv-canvas-wrap {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+    background: var(--bg-base, #1a1a1a);
+    border-bottom: 1px solid var(--border-dim, #2a2a2a);
+    cursor: grab;
+}
+.hv-canvas-wrap:active { cursor: grabbing; }
+.hv-canvas-inner {
+    position: absolute;
+    top: 0; left: 0;
+    transform-origin: 0 0;
+    will-change: transform;
+}
+
+.hv-edges-svg {
+    position: absolute;
+    top: 0; left: 0;
+    pointer-events: none;
+    overflow: visible;
+}
+
+.hv-edge { transition: stroke .3s; }
+.hv-edge-active {
+    animation: hv-flow-down 1.2s linear infinite;
+    stroke-dasharray: 8 4;
+}
+
+@keyframes hv-flow-down {
+    from { stroke-dashoffset: 0; }
+    to   { stroke-dashoffset: -36; }
+}
+
+.hv-canvas-empty, .hv-canvas-empty-root {
+    position: absolute;
+    /* Sits ~5% below viewport centre so it reads as a caption beneath the (now larger) Overmind. */
+    top: 55%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--text-dead, #555);
+}
+
+/* Overmind node */
+.hv-overmind-node {
+    position: absolute;
+    width: 150px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 10px;
+    background: var(--bg-panel, #222);
+    border: 1px solid var(--border-glow, #8b0000);
+    box-shadow: 0 0 12px rgba(0,0,0,0.5), 0 0 6px var(--border-glow, #8b0000);
+    user-select: none;
+}
+.hv-overmind-node.hv-overmind-running,
+.hv-overmind-node.hv-overmind-active {
+    animation: hv-overmind-pulse 2s ease-in-out infinite;
+}
+@keyframes hv-overmind-pulse {
+    0%, 100% { box-shadow: 0 0 12px rgba(0,0,0,0.5), 0 0 6px var(--border-glow); }
+    50%       { box-shadow: 0 0 18px rgba(0,0,0,0.5), 0 0 18px var(--border-glow); }
+}
+/* Live phase label under the Overmind during a run (Planning / Dispatching / Synthesising) */
+.hv-overmind-phase {
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    color: var(--text-bright, #f0d060);
+    text-shadow: 0 0 6px var(--border-glow);
+    margin-top: 3px;
+    animation: hv-pulse-amber 1.4s ease-in-out infinite;
+}
+.hv-overmind-avatar {
+    width: 115px;
+    height: 173px;
+    flex-shrink: 0;
+    display: block;
+    /* Centre horizontally via auto margins so it stays centred regardless of flex/align or image
+       load state (the box was drifting left before the PNG resolved on a freshly-created hive). */
+    margin: 0 auto 4px;
+    object-fit: cover;
+    object-position: center;
+    border: 1px solid var(--border-glow, #8b0000);
+    box-shadow: 0 0 8px var(--border-glow, #8b0000);
+    image-rendering: pixelated;
+}
+.hv-overmind-crown {
+    font-size: 22px;
+    color: var(--border-glow, #8b0000);
+    text-shadow: 0 0 10px var(--border-glow);
+    line-height: 1;
+    margin-bottom: 4px;
+}
+.hv-overmind-label {
+    font-size: 9.5px;
+    letter-spacing: 2px;
+    color: var(--text-muted, #888);
+}
+.hv-overmind-name {
+    font-size: 11px;
+    color: var(--text-bright, #f0d060);
+    letter-spacing: 1px;
+    margin-top: 2px;
+    text-align: center;
+}
+.hv-overmind-round {
+    font-size: 9.5px;
+    color: var(--border-glow, #8b0000);
+    margin-top: 2px;
+    letter-spacing: 1px;
+}
+
+/* Drone nodes */
+.hv-drone-node {
+    position: absolute;
+    width: 150px;
+    overflow: visible;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 6px;
+    background: var(--bg-panel, #222);
+    border: 1px solid var(--border-dim, #2a2a2a);
+    cursor: pointer;
+    user-select: none;
+    transition: box-shadow .2s;
+}
+.hv-drone-node:hover {
+    box-shadow: 0 0 8px rgba(0,0,0,0.6);
+}
+.hv-drone-avatar { margin-bottom: 4px; }
+.hv-drone-info   { text-align: center; }
+.hv-drone-add-btn {
+    position: absolute;
+    top: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-panel, #222);
+    border: 1px solid #444;
+    color: #666;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 1px;
+    padding: 1px 7px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+    z-index: 10;
+}
+.hv-drone-node:hover .hv-drone-add-btn { opacity: 1; }
+.hv-drone-add-btn:hover { color: #aaa; border-color: #666; }
+.hv-drone-node-name {
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    color: var(--text-muted, #888);
+    /* Long names wrap to a second line rather than truncating (clamped at 2 lines). */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: break-word;
+    text-align: center;
+    line-height: 1.25;
+    max-width: 136px;
+}
+.hv-drone-task {
+    font-size: 8px;
+    color: var(--text-dead, #555);
+    margin-top: 4px;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 136px;
+}
+
+/* ── Channel / model / bridge meta badges (under Overmind + every drone) ── */
+.hv-meta {
+    display: flex;
+    flex-direction: column;
+    /* Badges hug their own text (centred) rather than stretching the full node width, so they read as
+       compact chips instead of wide bars. */
+    align-items: center;
+    gap: 2px;
+    width: 100%;
+    margin-top: 5px;
+}
+.hv-meta-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    max-width: 100%;
+    font-family: var(--font-mono, monospace);
+    font-size: 7px;
+    letter-spacing: 0.3px;
+    line-height: 1.3;
+    padding: 1px 5px;
+    border-radius: 2px;
+    border: 1px solid transparent;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.hv-meta-ic {
+    flex-shrink: 0;
+    font-size: 7px;
+    opacity: 0.9;
+}
+.hv-meta-badge > :last-child,
+.hv-meta-badge {
+    text-overflow: ellipsis;
+}
+.hv-meta-channel {
+    color: #9fb8d0;
+    border-color: rgba(120,150,190,0.35);
+    background: rgba(120,150,190,0.10);
+}
+.hv-meta-model {
+    color: #c9b48a;
+    border-color: rgba(190,160,90,0.35);
+    background: rgba(190,160,90,0.10);
+}
+.hv-meta-bridge {
+    color: #93c0a2;
+    border-color: rgba(110,170,130,0.35);
+    background: rgba(110,170,130,0.10);
+}
+
+/* Status badges */
+.hv-drone-badge {
+    font-size: 8px;
+    letter-spacing: 1.5px;
+    padding: 1px 5px;
+    margin-top: 2px;
+    border-radius: 1px;
+    display: inline-block;
+}
+.hv-badge-idle    { color: var(--text-dead, #555);  }
+.hv-badge-thinking,
+.hv-badge-working {
+    color: #d4a020;
+    animation: hv-pulse-amber 1.5s ease-in-out infinite;
+}
+.hv-badge-gate    { color: #c09030; animation: hv-pulse-amber 1.2s ease-in-out infinite; }
+.hv-badge-done    { color: #4caf50; }
+.hv-badge-failed  { color: #e07070; }
+.hv-badge-skipped { color: var(--text-dead, #6a6a6a); }
+
+/* Drone node state tints — active drones pulse so you can watch the run on the canvas */
+.hv-drone-working {
+    box-shadow: 0 0 10px rgba(212,160,32,0.55);
+    animation: hv-drone-active-pulse 1.5s ease-in-out infinite;
+}
+.hv-drone-gate {
+    box-shadow: 0 0 12px rgba(192,144,48,0.7);
+    animation: hv-drone-active-pulse 1.1s ease-in-out infinite;
+}
+.hv-drone-done    { box-shadow: 0 0 6px rgba(76,175,80,0.2);  opacity: 0.85; }
+.hv-drone-failed  { box-shadow: 0 0 6px rgba(224,112,112,0.2);}
+.hv-drone-skipped { opacity: 0.4; filter: grayscale(0.6); }
+@keyframes hv-drone-active-pulse {
+    0%, 100% { box-shadow: 0 0 6px rgba(212,160,32,0.35); }
+    50%       { box-shadow: 0 0 16px rgba(212,160,32,0.75); }
+}
+
+@keyframes hv-pulse-amber {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
+}
+
+/* Task status badges (in drawer) */
+.hv-badge-pending    { color: var(--text-muted, #888); }
+.hv-badge-blocked    { color: #c09030; }
+.hv-badge-dispatched { color: #d4a020; }
+.hv-badge-running    { color: #d4a020; animation: hv-pulse-amber 1.5s ease-in-out infinite; }
+.hv-badge-completed  { color: #4caf50; }
+.hv-badge-skipped    { color: var(--text-dead, #555); }
+
+/* ── Zoom bar — fixed to the viewport, left edge, outside .hv-canvas-inner so it never pans/scales ── */
+.hv-zoom-bar {
+    position: absolute;
+    top: 50%;
+    left: 16px;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    z-index: 5;
+    user-select: none;
+}
+.hv-zoom-btn {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-panel, #222);
+    border: 1px solid var(--border-glow, #8b0000);
+    border-radius: 3px;
+    color: var(--text-bright, #f0d060);
+    font-family: var(--font-mono, monospace);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.hv-zoom-btn:hover { background: rgba(139,0,0,0.25); }
+.hv-zoom-track {
+    position: relative;
+    width: 6px;
+    height: 140px;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid var(--border-dim, #2a2a2a);
+    border-radius: 3px;
+    cursor: pointer;
+}
+.hv-zoom-fill {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: var(--border-glow, #8b0000);
+    border-radius: 3px;
+}
+.hv-zoom-thumb {
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    width: 12px;
+    height: 12px;
+    background: var(--text-bright, #f0d060);
+    border-radius: 50%;
+    transform: translate(-50%, 50%);
+    box-shadow: 0 0 6px var(--border-glow, #8b0000);
+    cursor: grab;
+}
+.hv-zoom-pct {
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    color: var(--text-dead, #777);
+    font-family: var(--font-mono, monospace);
+}
+

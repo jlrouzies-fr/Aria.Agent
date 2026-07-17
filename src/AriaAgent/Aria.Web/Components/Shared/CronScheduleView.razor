@@ -1,0 +1,491 @@
+@using Aria.Web.Data
+@using Aria.Web.Services
+
+@* ── Timezone picker ──────────────────────────────────── *@
+@if (Parent._tzOpen)
+{
+    <div class="vc-dropdown-backdrop" @onclick="() => Parent._tzOpen = false"></div>
+}
+<div class="vc-tz-bar">
+    <span class="vc-tz-lbl">// TIMEZONE</span>
+    <div class="vc-tz-dropdown">
+        <button class="vc-tz-trigger" @onclick="() => Parent._tzOpen = !Parent._tzOpen">
+            <span class="vc-tz-current">@CurrentTzLabel</span>
+            <span class="vc-tz-arrow">@(Parent._tzOpen ? "▴" : "▾")</span>
+        </button>
+        @if (Parent._tzOpen)
+        {
+            <div class="vc-tz-options">
+                @foreach (var (tzId, tzName) in TzZones)
+                {
+                    var id       = tzId;
+                    var label    = FormatTzLabel(tzId, tzName);
+                    var isActive = id == (SessionState.CurrentUser?.Timezone ?? "");
+                    <div class="vc-tz-option @(isActive ? "vc-tz-option-active" : "")"
+                         @onclick="() => SelectTzAsync(id)">@label</div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@* ── Week header ─────────────────────────────────────── *@
+<div class="vc-topbar">
+    <div class="vc-nav-cluster">
+        <button class="vc-nav-btn" @onclick="Parent.PrevWeek" title="Previous week">◀</button>
+        <span class="vc-week-label">
+            @Parent._weekStart.ToString("dd MMM").ToUpperInvariant()
+            <span class="vc-week-sep">—</span>
+            @Parent._weekStart.AddDays(6).ToString("dd MMM yyyy").ToUpperInvariant()
+        </span>
+        <button class="vc-nav-btn" @onclick="Parent.NextWeek" title="Next week">▶</button>
+    </div>
+    <div class="vc-quota @(Parent._userJobs.Count >= CronSlotService.MaxJobsPerUser ? "vc-quota-maxed" : "")">
+        <span class="vc-quota-num">@Parent._userJobs.Count</span>
+        <span class="vc-quota-sep">/</span>
+        <span class="vc-quota-max">@CronSlotService.MaxJobsPerUser</span>
+        <span class="vc-quota-lbl">VIGILS</span>
+    </div>
+</div>
+
+@* ── Calendar ─────────────────────────────────────────── *@
+<div class="vc-cal">
+
+    @* Day-header row *@
+    <div class="vc-cal-head">
+        <div class="vc-hour-gutter"></div>
+        @for (int d = 0; d < 7; d++)
+        {
+            var day     = Parent._weekStart.AddDays(d);
+            var isToday = day == CronSchedulerPanel._today;
+            <div class="vc-day-col @(isToday ? "vc-today" : "")">
+                <div class="vc-day-name">@day.ToString("ddd").ToUpperInvariant()</div>
+                <div class="vc-day-num">@day.Day</div>
+                @if (isToday) { <div class="vc-today-bar"></div> }
+            </div>
+        }
+    </div>
+
+    @* Hour rows *@
+    <div class="vc-cal-body">
+        @for (int h = 6; h <= 23; h++)
+        {
+            var hour = h;
+            <div class="vc-hour-row">
+                <div class="vc-hour-lbl">
+                    <div class="vc-hour-utc">
+                        <span class="vc-hour-h">@hour.ToString("D2")</span><span class="vc-hour-m">:00</span>
+                    </div>
+                    @{ var localLbl = LocalTimeLabel(hour); }
+                    @if (localLbl != null)
+                    {
+                        <div class="vc-hour-local">@localLbl</div>
+                    }
+                </div>
+                @for (int d = 0; d < 7; d++)
+                {
+                    var day           = Parent._weekStart.AddDays(d);
+                    var nowUtc        = DateTime.UtcNow;
+                    var todayUtc      = DateOnly.FromDateTime(nowUtc);
+                    var isPast        = day < todayUtc || (day == todayUtc && hour < nowUtc.Hour);
+                    var isCurrentHour = day == todayUtc && hour == nowUtc.Hour;
+                    var minsLeft      = 60 - nowUtc.Minute;
+                    var isMine        = Parent._userSlots.Contains((day, hour));
+                    var booked        = Parent._weekBookings.GetValueOrDefault((day, hour), 0);
+                    var isFull        = booked >= CronSlotService.MaxUsersPerSlot;
+                    var isSel         = Parent._selectedDay == day && Parent._selectedHour == hour;
+                    var canClick      = !isPast && !isMine && !isFull;
+
+                    var cls = "vc-cell";
+                    if (isPast)                     cls += " vc-past";
+                    if (isCurrentHour)              cls += " vc-current-hour";
+                    if (isMine)                     cls += " vc-mine";
+                    if (isFull && !isMine)          cls += " vc-full";
+                    if (isSel)                      cls += " vc-selected";
+                    if (canClick)                   cls += " vc-clickable";
+
+                    <div class="@cls"
+                         data-tip="@(isCurrentHour ? $"Current hour — {minsLeft} min remaining" : null)"
+                         @onclick="@(EventCallback.Factory.Create<Microsoft.AspNetCore.Components.Web.MouseEventArgs>(
+                             this, canClick ? () => Parent.SelectSlot(day, hour) : () => { }))">
+
+                        @if (isMine)
+                        {
+                            <span class="vc-star">★</span>
+                        }
+                        else if (isCurrentHour)
+                        {
+                            <div class="vc-current-info">
+                                <span class="vc-current-warn">⚠</span>
+                                <span class="vc-current-mins">@minsLeft MIN</span>
+                            </div>
+                        }
+                        else if (!isPast)
+                        {
+                            <div class="vc-dots">
+                                <span class="vc-dot @(booked >= 1 ? "vc-dot-on" : "")"></span>
+                                <span class="vc-dot @(booked >= 2 ? "vc-dot-on" : "")"></span>
+                            </div>
+                        }
+
+                        @* Occupancy fill bar at bottom *@
+                        @if (!isPast && !isMine && booked > 0)
+                        {
+                            <div class="vc-fill-bar vc-fill-@booked"></div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@* ── Legend ───────────────────────────────────────────── *@
+<div class="vc-legend">
+    <span class="vc-leg-item"><span class="vc-leg-dot"></span><span class="vc-leg-dot"></span> FREE</span>
+    <span class="vc-leg-sep">·</span>
+    <span class="vc-leg-item"><span class="vc-leg-dot vc-leg-dot-on"></span><span class="vc-leg-dot"></span> 1 LEFT</span>
+    <span class="vc-leg-sep">·</span>
+    <span class="vc-leg-item"><span class="vc-leg-dot vc-leg-dot-on"></span><span class="vc-leg-dot vc-leg-dot-on"></span> FULL</span>
+    <span class="vc-leg-sep">·</span>
+    <span class="vc-leg-item vc-leg-mine">★ YOUR VIGIL</span>
+    <span class="vc-leg-sep">·</span>
+    <span class="vc-leg-note">ALL TIMES UTC@(Parent._tz != null ? " · LOCAL IN GUTTER" : "")</span>
+</div>
+
+@* ── Booking panel ────────────────────────────────────── *@
+@if (Parent._selectedDay.HasValue && Parent._selectedHour.HasValue)
+{
+    <div class="vc-book-panel">
+        <div class="vc-book-header">
+            <div class="vc-book-slot-label">
+                <span class="vc-book-slot-icon">⏱</span>
+                <div class="vc-book-slot-info">
+                    <div class="vc-book-slot-date">@Parent._selectedDay!.Value.ToString("ddd dd MMM yyyy").ToUpperInvariant()</div>
+                    <div class="vc-book-slot-time">
+                        @{ var bookLocal = LocalTimeLabel(Parent._selectedDay!.Value, Parent._selectedHour!.Value); }
+                        @Parent._selectedHour!.Value.ToString("D2"):00 UTC
+                        @if (bookLocal != null)
+                        {
+                            <span class="vc-book-slot-local">· @bookLocal</span>
+                        }
+                    </div>
+                </div>
+            </div>
+            <button class="vc-book-dismiss" @onclick="Parent.ClearSelection" title="Dismiss">✕</button>
+        </div>
+
+        @if (Parent._bookError != null)
+        {
+            <div class="vc-book-error">⚠ @Parent._bookError</div>
+        }
+
+        <div class="vc-book-body">
+            <div class="vc-book-field">
+                <label class="vc-book-lbl">// OPERATION</label>
+                <textarea class="vc-book-textarea" rows="3"
+                          placeholder="Describe what the agent should cogitate upon…"
+                          @bind="Parent._taskPrompt" @bind:event="oninput"></textarea>
+            </div>
+
+            <div class="vc-book-field">
+                <label class="vc-book-lbl">// DEVICE</label>
+                <ThemedSelect Value="@Parent._selectedBridgeNodeId"
+                              ValueChanged="OnBridgeNodeChanged"
+                              Options="VigilDeviceOptions()" Placeholder="ANY CONNECTED NODE"
+                              ControlClass="vc-book-select" />
+            </div>
+
+            @if (Parent._subAgents.Count > 0)
+            {
+                <div class="vc-book-field">
+                    <label class="vc-book-lbl">// AGENT</label>
+                    <ThemedSelect Value="@Parent._selectedSubAgentId"
+                                  ValueChanged="OnSubAgentChanged"
+                                  Options="VigilAgentOptions()" Placeholder="BASE ARIA"
+                                  ControlClass="vc-book-select" />
+                </div>
+            }
+
+            @* ── Cogitation picker ─────────────────────────────── *@
+            <div class="vc-book-field">
+                <label class="vc-book-lbl">// COGITATION</label>
+                @if (Parent._lockedCogitation != null)
+                {
+                    <div class="vc-cog-locked">
+                        <span class="vc-cog-locked-icon">⟳</span>
+                        <span class="vc-cog-locked-title">@Parent._lockedCogitation.Title</span>
+                        <button class="vc-cog-unlock-btn" @onclick="UnlockCogitation" title="Create new instead">✕</button>
+                    </div>
+                }
+                else
+                {
+                    <DebouncedInput class="vc-cog-search"
+                                    Placeholder="Search cogitations to continue… (leave blank for new)"
+                                    Value="@Parent._cogSearch"
+                                    ValueChanged="OnCogSearchInput" />
+                    @if (Parent._cogResults.Count > 0)
+                    {
+                        <div class="vc-cog-results">
+                            @foreach (var cog in Parent._cogResults)
+                            {
+                                <div class="vc-cog-result" @onclick="() => SelectCogitation(cog)">
+                                    <span class="vc-cog-result-title">@cog.Title</span>
+                                    <span class="vc-cog-result-date">@cog.UpdatedAt.ToString("dd MMM")</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="vc-book-actions">
+                <button class="vc-btn-cancel" @onclick="Parent.ClearSelection">ABANDON</button>
+                <button class="vc-btn-confirm"
+                        disabled="@(string.IsNullOrWhiteSpace(Parent._taskPrompt) || Parent._booking)"
+                        @onclick="ConfirmBooking">
+                    @(Parent._booking ? "SCHEDULING…" : "✦ INSCRIBE VIGIL")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [CascadingParameter] public CronSchedulerPanel Parent { get; set; } = null!;
+
+    [Inject] private UserSessionState SessionState { get; set; } = null!;
+    [Inject] private UserService UserService { get; set; } = null!;
+    [Inject] private CronSlotService CronService { get; set; } = null!;
+    [Inject] private CogitationService CogitationService { get; set; } = null!;
+    [Inject] private Aria.Web.Services.ModelBridge.ContextApprovalService ContextApproval { get; set; } = null!;
+
+    internal static readonly (string Id, string Name)[] TzZones =
+    [
+        ("",                               "No local conversion"),
+        ("Pacific/Midway",                 "Midway Island, American Samoa"),
+        ("Pacific/Honolulu",               "Hawaii"),
+        ("America/Anchorage",              "Alaska"),
+        ("America/Los_Angeles",            "Los Angeles, Seattle, Vancouver"),
+        ("America/Phoenix",                "Phoenix, Arizona"),
+        ("America/Denver",                 "Denver, Salt Lake City"),
+        ("America/Chicago",                "Chicago, Dallas, Mexico City"),
+        ("America/New_York",               "New York, Miami, Toronto"),
+        ("America/Halifax",                "Halifax, Atlantic Canada"),
+        ("America/Caracas",                "Caracas, La Paz"),
+        ("America/Sao_Paulo",              "São Paulo, Rio de Janeiro"),
+        ("America/Argentina/Buenos_Aires", "Buenos Aires"),
+        ("America/Montevideo",             "Montevideo"),
+        ("Atlantic/Azores",                "Azores"),
+        ("Atlantic/Cape_Verde",            "Cape Verde"),
+        ("UTC",                            "UTC / Reykjavik"),
+        ("Europe/London",                  "London, Dublin, Lisbon"),
+        ("Europe/Paris",                   "Paris, Berlin, Rome, Madrid, Amsterdam"),
+        ("Europe/Warsaw",                  "Warsaw, Prague, Budapest, Vienna"),
+        ("Europe/Athens",                  "Athens, Bucharest, Helsinki, Cairo"),
+        ("Europe/Istanbul",                "Istanbul, Ankara"),
+        ("Europe/Moscow",                  "Moscow, St. Petersburg"),
+        ("Asia/Tehran",                    "Tehran"),
+        ("Asia/Dubai",                     "Dubai, Abu Dhabi, Muscat"),
+        ("Asia/Baku",                      "Baku, Tbilisi, Yerevan"),
+        ("Asia/Kabul",                     "Kabul"),
+        ("Asia/Karachi",                   "Karachi, Islamabad, Tashkent"),
+        ("Asia/Kolkata",                   "Mumbai, Kolkata, New Delhi, Chennai"),
+        ("Asia/Kathmandu",                 "Kathmandu"),
+        ("Asia/Dhaka",                     "Dhaka, Almaty, Novosibirsk"),
+        ("Asia/Yangon",                    "Yangon, Rangoon"),
+        ("Asia/Bangkok",                   "Bangkok, Jakarta, Hanoi"),
+        ("Asia/Shanghai",                  "Beijing, Shanghai, Chongqing"),
+        ("Asia/Singapore",                 "Singapore, Kuala Lumpur, Perth"),
+        ("Asia/Tokyo",                     "Tokyo, Osaka, Sapporo"),
+        ("Asia/Seoul",                     "Seoul"),
+        ("Australia/Adelaide",             "Adelaide"),
+        ("Australia/Darwin",               "Darwin"),
+        ("Australia/Sydney",               "Sydney, Melbourne, Canberra"),
+        ("Asia/Vladivostok",               "Vladivostok, Guam"),
+        ("Pacific/Noumea",                 "Noumea, Solomon Islands"),
+        ("Pacific/Auckland",               "Auckland, Wellington"),
+        ("Pacific/Fiji",                   "Fiji, Marshall Islands"),
+        ("Pacific/Tongatapu",              "Tonga, Samoa"),
+    ];
+
+    internal static string FormatTzLabel(string id, string name)
+    {
+        if (string.IsNullOrEmpty(id)) return $"(UTC) {name}";
+        try
+        {
+            var tz     = TimeZoneInfo.FindSystemTimeZoneById(id);
+            var offset = tz.GetUtcOffset(DateTime.UtcNow);
+            var sign   = offset >= TimeSpan.Zero ? "+" : "−";
+            var abs    = offset.Duration();
+            var hrs    = (int)abs.TotalHours;
+            var offsetStr = abs.Minutes == 0 ? $"UTC{sign}{hrs}" : $"UTC{sign}{hrs}:{abs.Minutes:D2}";
+            return $"({offsetStr}) {name}";
+        }
+        catch { return name; }
+    }
+
+    internal static TimeZoneInfo? TryGetTz(string id)
+    {
+        try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
+        catch { return null; }
+    }
+
+    private string? LocalTimeLabel(int utcHour) =>
+        LocalTimeLabel(DateOnly.FromDateTime(DateTime.UtcNow), utcHour);
+
+    private string? LocalTimeLabel(DateOnly day, int utcHour)
+    {
+        if (Parent._tz == null) return null;
+        try
+        {
+            var utc = day.ToDateTime(new TimeOnly(utcHour, 0), DateTimeKind.Utc);
+            return TimeZoneInfo.ConvertTimeFromUtc(utc, Parent._tz).ToString("HH:mm");
+        }
+        catch { return null; }
+    }
+
+    private string CurrentTzLabel
+    {
+        get
+        {
+            var current = SessionState.CurrentUser?.Timezone ?? "";
+            var zone    = TzZones.FirstOrDefault(t => t.Id == current);
+            return zone.Id != null ? FormatTzLabel(zone.Id, zone.Name) : FormatTzLabel("", "No local conversion");
+        }
+    }
+
+    private async Task SelectTzAsync(string id)
+    {
+        Parent._tzOpen = false;
+        if (SessionState.CurrentUser == null) return;
+        var tz = string.IsNullOrEmpty(id) ? null : id;
+        await UserService.SaveTimezoneAsync(SessionState.CurrentUser.Id, tz);
+        SessionState.CurrentUser.Timezone = tz;
+        Parent._tz = tz == null ? null : TryGetTz(tz);
+        Parent.Refresh();
+    }
+
+    private List<(string Value, string Label)> VigilDeviceOptions()
+    {
+        var list = new List<(string, string)> { ("", "ANY CONNECTED NODE") };
+        if (SessionState.CurrentUser == null) return list;
+        var nodes = Parent.bridgeRegistry.GetNodes(SessionState.CurrentUser.Id);
+        list.AddRange(nodes.Select(n =>
+        {
+            var label = string.IsNullOrWhiteSpace(n.Label) ? n.NodeId : n.Label;
+            if (!string.IsNullOrEmpty(n.Platform)) label += $" · {n.Platform}";
+            return (n.NodeId, label.ToUpperInvariant());
+        }));
+        return list;
+    }
+
+    private List<(string Value, string Label)> VigilAgentOptions()
+    {
+        var list = new List<(string, string)> { ("", "BASE ARIA") };
+        list.AddRange(Parent._subAgents.Select(a => (a.Id.ToString(), a.DisplayName.ToUpperInvariant())));
+        return list;
+    }
+
+    private async Task OnCogSearchInput(string value)
+    {
+        Parent._cogSearch = value ?? "";
+        if (SessionState.CurrentUser == null) { Parent._cogResults = []; return; }
+        Parent._cogResults = await CogitationService.SearchAsync(SessionState.CurrentUser.Id, Parent._cogSearch);
+    }
+
+    private void SelectCogitation(Cogitation cog)
+    {
+        Parent._lockedCogitation = cog;
+        Parent._cogSearch        = "";
+        Parent._cogResults       = [];
+        Parent.Refresh();
+    }
+
+    private void UnlockCogitation()
+    {
+        Parent._lockedCogitation = null;
+        Parent._cogSearch        = "";
+        Parent._cogResults       = [];
+        Parent.Refresh();
+    }
+
+    private void OnBridgeNodeChanged(string? v)
+    {
+        Parent._selectedBridgeNodeId = v;
+        Parent.Refresh();
+    }
+
+    private void OnSubAgentChanged(string? v)
+    {
+        Parent._selectedSubAgentId = v ?? "";
+        Parent.Refresh();
+    }
+
+    private async Task ConfirmBooking()
+    {
+        if (SessionState.CurrentUser == null || !Parent._selectedDay.HasValue || !Parent._selectedHour.HasValue) return;
+        Parent._booking   = true;
+        Parent._bookError = null;
+        Parent.Refresh();
+
+        int? subAgentId = int.TryParse(Parent._selectedSubAgentId, out var sid) ? sid : null;
+        var userId = SessionState.CurrentUser.Id;
+        var day    = Parent._selectedDay.Value;
+        var hour   = Parent._selectedHour.Value;
+
+        // Keep the user's node choice as-is (including "ANY connected node"). Under Layer B the seal is
+        // node-signed but REPLICATED across the soul's nodes, so it reaches whichever bridge runs the
+        // vigil — no need to pin the run to one machine just to place the grant.
+        var preferredNode = string.IsNullOrEmpty(Parent._selectedBridgeNodeId) ? null : Parent._selectedBridgeNodeId;
+
+        var (ok, error, job) = await CronService.BookAsync(
+            userId, day, hour,
+            Parent._taskPrompt, subAgentId,
+            sourceName:          SessionState.SelectedModelSource,
+            modelId:             SessionState.SelectedModel,
+            targetCogitationId:  Parent._lockedCogitation?.Id,
+            bridgeNodeId:        preferredNode);
+
+        if (!ok || job == null) { Parent._bookError = error ?? "Booking failed."; Parent._booking = false; Parent.Refresh(); return; }
+
+        // Layer B pre-authorisation: while the human is here, seal this one vigil for its slot window.
+        // The ceremony runs on the human's node and the signed grant replicates to whichever bridge runs
+        // the vigil — so it can act unattended, even on a remote node. A no-op when nothing is enforcing.
+        {
+            var slotUtc    = day.ToDateTime(new TimeOnly(hour, 0), DateTimeKind.Utc);
+            var slotExpiry = new DateTimeOffset(slotUtc, TimeSpan.Zero)
+                             + Aria.Web.Services.ModelBridge.ContextApprovalService.VigilGrantWindow;
+            var slotLabel  = slotUtc.ToString("ddd dd MMM · HH:mm 'UTC'");
+            var preview    = Parent._taskPrompt.Length > 300 ? Parent._taskPrompt[..300] + "…" : Parent._taskPrompt;
+
+            Aria.Web.Services.ModelBridge.ContextApprovalService.VigilPreauthResult res;
+            try
+            {
+                res = await ContextApproval.PreauthorizeVigilAsync(userId, job.Id, preferredNode, slotExpiry, preview, slotLabel);
+            }
+            catch (OperationCanceledException)
+            {
+                res = Aria.Web.Services.ModelBridge.ContextApprovalService.VigilPreauthResult.Refused;
+            }
+
+            if (res is Aria.Web.Services.ModelBridge.ContextApprovalService.VigilPreauthResult.Refused
+                    or Aria.Web.Services.ModelBridge.ContextApprovalService.VigilPreauthResult.NodeUnavailable)
+            {
+                // Don't leave a vigil booked that is guaranteed to fail at the gate — unschedule it.
+                await CronService.CancelAsync(job.Id, userId);
+                Parent._bookError = res == Aria.Web.Services.ModelBridge.ContextApprovalService.VigilPreauthResult.NodeUnavailable
+                    ? "Could not reach a node to pre-authorise this vigil — not scheduled."
+                    : "Vigil pre-authorisation was refused on your node — not scheduled.";
+                Parent._booking = false;
+                Parent.Refresh();
+                return;
+            }
+        }
+
+        Parent._selectedSubAgentId = "";
+        Parent.ClearSelection();
+        await Parent.LoadAsync();
+        Parent.Refresh();
+    }
+}

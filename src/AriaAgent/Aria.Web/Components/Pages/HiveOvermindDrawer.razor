@@ -1,0 +1,34 @@
+@using Aria.Web.Data
+@using Aria.Web.Helpers
+
+@if (Show && Collective != null)
+{
+    <div class="hv-drawer-backdrop" @onclick="() => OnClose.InvokeAsync()"></div>
+    <div class="hv-drawer hv-drawer-wide" @onclick:stopPropagation="true">
+        <div class="hv-drawer-header">
+            <span>⬡ // OVERMIND CONCLUSION</span>
+            <button class="hv-del-btn" @onclick="() => OnClose.InvokeAsync()">✕ CLOSE</button>
+        </div>
+        <div class="hv-drawer-body">
+            @if (string.IsNullOrEmpty(Collective.ResultSummary))
+            {
+                <div class="hv-empty">No conclusion yet. Run a COGITATE operation to see the Overmind's synthesis here.</div>
+            }
+            else
+            {
+                <div class="hv-drawer-markdown">@((MarkupString)MarkdownHelper.ToHtml(Collective.ResultSummary))</div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool Show { get; set; }
+
+    [Parameter]
+    public AgentCollective? Collective { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback OnClose { get; set; }
+}

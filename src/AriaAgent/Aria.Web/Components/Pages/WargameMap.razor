@@ -1,0 +1,20 @@
+@* ── Map canvas ── *@
+<div class="wg-map-panel">
+    @if (Parent.Game.ActiveMap != null && Parent._tileMap.Count > 0)
+    {
+        <div class="wg-canvas-wrap">
+            <canvas id="wg-canvas" class="wg-canvas"></canvas>
+        </div>
+    }
+    else
+    {
+        <div class="wg-no-map">
+            <div>// NO BATTLEFIELD CONFIGURED</div>
+            <div style="font-size:10px; color: var(--text-dead)">Add factions below and generate the map</div>
+        </div>
+    }
+</div>
+
+@code {
+    [CascadingParameter] public Wargame Parent { get; set; } = null!;
+}

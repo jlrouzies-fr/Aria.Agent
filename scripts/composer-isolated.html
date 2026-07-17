@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+:root {
+    --bg-panel: #2d2d2d;
+    --bg-input: #2a1e1e;
+    --border-active: #5a3a3a;
+    --border-normal: #5a3a3a;
+    --text-body: #e08888;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+body { margin: 0; font-family: var(--font-mono); background: #1a1a1a; color: #fff; }
+
+.input-area {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border-active);
+}
+.chat-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg-input);
+    border: 1px solid var(--border-normal);
+    color: var(--text-body);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 5px 8px;
+    resize: none;
+    outline: none;
+    min-height: 28px;
+    max-height: 120px;
+    line-height: 1.5;
+    scrollbar-width: thin;
+}
+.input-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.input-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 9px;
+    color: #888;
+}
+.input-buttons {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+}
+button {
+    background: #3a3a3a;
+    border: 1px solid #555;
+    color: #ccc;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 4px 10px;
+    height: 28px;
+    cursor: pointer;
+}
+</style>
+</head>
+<body>
+<div class="input-area">
+    <textarea id="chatInput" class="chat-input" rows="1" placeholder="Type here..."></textarea>
+    <div class="input-controls">
+        <div class="input-status">
+            <span>●</span>
+            <span>READY</span>
+            <span>LOCAL · qwen2.5</span>
+        </div>
+        <div class="input-buttons">
+            <button>TERMINAL</button>
+            <button>ATTACH</button>
+            <button>VOX</button>
+            <button>TRANSMIT</button>
+        </div>
+    </div>
+</div>
+<script>
+window.ariaInterop = {
+    initChatComposer: function (id) {
+        var el = document.getElementById(id);
+        if (!el || el._composerInit) return;
+        el._composerInit = true;
+
+        var apply = function () {
+            el.style.height = 'auto';
+            var borderHeight = el.offsetHeight - el.clientHeight;
+            el.style.height = Math.min(el.scrollHeight + borderHeight, 120) + 'px';
+            console.log('apply: scrollHeight=' + el.scrollHeight + ' borderHeight=' + borderHeight + ' height=' + el.style.height);
+        };
+
+        el._composerApply = apply;
+        el.addEventListener('input', apply);
+        el.addEventListener('focus', apply);
+        requestAnimationFrame(apply);
+    }
+};
+window.ariaInterop.initChatComposer('chatInput');
+</script>
+</body>
+</html>

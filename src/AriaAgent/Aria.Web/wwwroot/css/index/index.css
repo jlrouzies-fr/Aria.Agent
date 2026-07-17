@@ -1,0 +1,181 @@
+/* ── INDEX panel — chat "/" command & "#" reference catalogue ───────────── */
+.idx-panel { padding: 4px 0 12px; }
+
+.idx-intro {
+    padding: 4px 14px 12px;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--text-system);
+    border-bottom: 1px solid var(--border-dim);
+}
+.idx-intro code {
+    color: var(--text-bright);
+    background: var(--bg-input);
+    padding: 0 4px;
+    border-radius: 2px;
+}
+
+.idx-section-title {
+    padding: 14px 14px 6px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--text-title);
+    text-shadow: var(--glow-sm);
+}
+
+.idx-group {
+    padding: 8px 14px 3px;
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-dead);
+}
+
+.idx-row {
+    padding: 5px 14px 7px;
+    border-left: 2px solid transparent;
+    transition: background 0.1s, border-color 0.1s;
+}
+.idx-row:hover { background: var(--bg-hover); border-left-color: var(--border-glow); }
+.idx-row.idx-planned { opacity: 0.55; }
+
+.idx-row-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.idx-token {
+    font-family: inherit;
+    font-size: 12px;
+    color: var(--text-bright);
+}
+
+.idx-desc {
+    margin-top: 2px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.idx-backing {
+    margin-top: 2px;
+    font-size: 10px;
+    color: var(--text-dead);
+}
+
+.idx-badge {
+    flex: none;
+    font-size: 8px;
+    letter-spacing: 1px;
+    padding: 1px 5px;
+    border-radius: 2px;
+    border: 1px solid var(--border-dim);
+}
+.idx-badge-available {
+    color: var(--text-title);
+    border-color: var(--border-normal);
+    text-shadow: var(--glow-sm);
+}
+.idx-badge-planned {
+    color: var(--text-dead);
+    border-style: dashed;
+}
+
+/* ── INDEX modal — larger & taller than the default modal ─────────────────── */
+.modal-panel--index {
+    max-width: 980px;
+    height: 88vh;
+    max-height: 88vh;
+}
+
+/* ── INDEX tabs / search / collapsible groups ─────────────────────────────── */
+.idx-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 12px 14px 0;
+}
+.idx-tab {
+    flex: 1;
+    background: none;
+    border: 1px solid var(--border-dim);
+    color: var(--text-dead);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+    padding: 7px 8px;
+    cursor: pointer;
+    transition: color 0.1s, background 0.1s, border-color 0.1s;
+}
+.idx-tab:hover { color: var(--text-muted); background: var(--bg-hover); }
+.idx-tab.active {
+    color: var(--text-title);
+    border-color: var(--border-normal);
+    background: rgba(139,0,0,0.12);
+    text-shadow: var(--glow-sm);
+}
+.idx-tab-count {
+    font-size: 9px;
+    color: var(--text-dead);
+    margin-left: 2px;
+}
+
+.idx-search-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 14px 14px 8px;
+    padding: 7px 9px;
+    border: 1px solid var(--border-dim);
+    background: var(--bg-input);
+}
+.idx-search-icon { color: var(--text-dead); font-size: 12px; }
+.idx-search {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text-bright);
+    font-family: var(--font-mono);
+    font-size: 11px;
+}
+.idx-search::placeholder { color: var(--text-dead); }
+.idx-search-clear {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-dead); font-size: 11px; padding: 0 2px;
+}
+.idx-search-clear:hover { color: var(--text-bright); }
+
+.idx-group-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px 6px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.1s;
+}
+.idx-group-header:hover { background: var(--bg-hover); }
+.idx-group-toggle { font-size: 8px; color: var(--text-dead); width: 9px; }
+.idx-group-name {
+    flex: 1;
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-title);
+}
+.idx-count {
+    font-size: 9px;
+    color: var(--text-dead);
+    border: 1px solid var(--border-dim);
+    border-radius: 2px;
+    padding: 0 5px;
+}
+
+.idx-empty {
+    padding: 18px 14px;
+    font-size: 11px;
+    color: var(--text-dead);
+    text-align: center;
+}

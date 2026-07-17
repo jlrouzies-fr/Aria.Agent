@@ -1,0 +1,197 @@
+/* ── Chat tab bar ─────────────────────────────────────────────────────────
+   Sits above chat-body-row inside .chat-shell. Left-pinned slot is the
+   cogitator status indicator (was previously its own full-width bar above
+   the message list — moved here so it no longer costs a whole row); the
+   rest of the strip is a horizontally-scrolling row of open cogitations. */
+.chat-tabs-bar {
+    /* Pinned to the base (Warhammer-red) palette regardless of which agent's theme is currently
+       applied to .chat-shell (see ariaInterop.applyTheme) — the bar holds MULTIPLE cogitations,
+       each possibly a different agent, so it must not retint wholesale just because the active one
+       changed. Each tab's own identity color comes from --folder-color (set per-tab below) instead,
+       never from these ambient theme vars. */
+    --text-muted:   #cc9898;
+    --text-normal:  #e08888;
+    --text-bright:  #f5a0a0;
+    --text-dead:    #9a8282;
+    --bg-hover:     #3a2424;
+    --bg-panel:     #2d2d2d;
+    --border-dim:   #5a4040;
+    --border-glow:  #e07070;
+
+    flex: 0 0 auto;
+    display: flex;
+    align-items: stretch;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border-dim);
+    min-height: 26px;
+}
+
+.chat-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    border-right: 1px solid var(--border-dim);
+    color: var(--text-muted);
+    font-family: var(--font-mono, monospace);
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    padding: 0 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+    transition: background 0.1s, color 0.1s;
+}
+
+.chat-tab:hover { background: var(--bg-hover); color: var(--text-normal); }
+
+/* ── Pinned status slot ──────────────────────────────────────────────── */
+.chat-tab-pinned {
+    position: relative;
+    flex: 0 0 auto;
+    border-right: 1px solid var(--border-dim);
+}
+
+.chat-tab-pinned-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 100%;
+    background: rgba(139,0,0,0.08);
+    border: none;
+    color: var(--text-bright);
+    font-family: var(--font-mono, monospace);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    padding: 0 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    max-width: 260px;
+}
+
+.chat-tab-pinned-btn:hover { background: var(--bg-hover); }
+.chat-tab-pinned-btn:disabled { cursor: default; }
+
+/* No separate status dot here — the "READY" indicator at the bottom input bar already covers that;
+   this slot just needs to read as attention-worthy while initializing or on fault. */
+.chat-tab-pinned-btn.fault { color: var(--danger, #c05050); }
+
+.chat-tab-pinned-btn.pulsing {
+    color: var(--border-glow);
+    animation: cog-run-pulse 1.4s ease-in-out infinite;
+}
+
+.chat-tab-status-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+/* Dropdown with the full init log — anchored under the pinned slot instead
+   of pushing the chat body down like the old full-width bar did. */
+.chat-tab-status-drop {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 50;
+    min-width: 320px;
+    max-width: 480px;
+    max-height: 260px;
+    overflow-y: auto;
+    background: rgba(0,0,0,0.9);
+    border: 1px solid var(--border-glow);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    padding: 8px 14px;
+}
+
+/* ── Overflow arrows ──────────────────────────────────────────────────── */
+/* Hidden by default; ariaInterop.initChatTabsScroll toggles display:flex only when the strip
+   actually overflows, and only on the side there's more to scroll to. */
+.chat-tabs-arrow {
+    display: none;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    background: var(--bg-panel);
+    border: none;
+    border-right: 1px solid var(--border-dim);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.chat-tabs-arrow:hover { background: var(--bg-hover); color: var(--text-bright); }
+.chat-tabs-arrow-right { border-right: none; border-left: 1px solid var(--border-dim); }
+
+/* ── Open cogitation tabs ────────────────────────────────────────────── */
+.chat-tabs-scroll {
+    flex: 1;
+    display: flex;
+    align-items: stretch;
+    overflow-x: auto;
+    min-width: 0;
+    /* Native scrollbar hidden outright — at this bar's height it renders thick/system-styled on
+       hover/drag in every browser we've tried, which clashes with the rest of the UI. The strip
+       stays fully wheel/trackpad/drag scrollable; the ‹ › arrows (JS-toggled) are the explicit,
+       consistently-styled affordance instead. */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+.chat-tabs-scroll::-webkit-scrollbar { display: none; }
+
+.chat-tabs-scroll .chat-tab {
+    max-width: 220px;
+    /* Dim rest-state underline in the tab's own agent color, so identity is visible even when not
+       active; the active tab (below) gets the same color at full strength. Using --folder-color
+       (set per-tab in markup) rather than the ambient theme keeps each tab tied to ITS OWN agent. */
+    box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--folder-color, #8B0000) 40%, transparent);
+}
+
+.chat-tabs-scroll .chat-tab.active {
+    color: var(--text-bright);
+    background: var(--bg-hover);
+    box-shadow: inset 0 -2px 0 var(--folder-color, #8B0000);
+}
+
+.chat-tab-dot { font-size: 9px; color: var(--folder-color, #8B0000); flex-shrink: 0; }
+
+.chat-tab-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+/* Class+attribute beats the shared bare [data-tip] rule on specificity regardless of CSS file load
+   order (tooltip.css happens to load after this file, so equal-specificity "cursor: pointer" here
+   alone was losing to its "cursor: help") — the tab itself is clickable, so this must stay pointer. */
+.chat-tab-title[data-tip] {
+    cursor: pointer;
+}
+
+.chat-tab-close {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--text-dead);
+    font-size: 11px;
+    line-height: 1;
+    padding: 2px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.1s, color 0.1s;
+}
+
+.chat-tab:hover .chat-tab-close,
+.chat-tab.active .chat-tab-close { opacity: 1; }
+
+.chat-tab-close:hover { color: var(--text-bright); }
+
+.chat-tab-new {
+    flex: 0 0 auto;
+    font-size: 13px;
+    padding: 0 12px;
+    border-right: none;
+}

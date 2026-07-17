@@ -1,0 +1,63 @@
+@using Aria.Web.Data
+@using Aria.Web.Helpers
+
+@if (SelectedDrone != null)
+{
+    <div class="hv-drawer-backdrop" @onclick="() => OnClose.InvokeAsync()"></div>
+    <div class="hv-drawer hv-drawer-wide" @onclick:stopPropagation="true">
+        <div class="hv-drawer-header">
+            <span>// DRONE: @SelectedDrone.SubAgent.DisplayName.ToUpperInvariant()</span>
+            <button class="hv-del-btn" @onclick="() => OnClose.InvokeAsync()">✕ CLOSE</button>
+        </div>
+        <div class="hv-drawer-body">
+            @{
+                var droneTasks = Tasks.Where(t => t.AssignedMemberId == SelectedDrone.Id)
+                                       .OrderByDescending(t => t.Id)
+                                       .ToList();
+            }
+            @if (droneTasks.Count == 0)
+            {
+                <div class="hv-empty">No directives assigned yet.</div>
+            }
+            @foreach (var t in droneTasks)
+            {
+                <div class="hv-task-card">
+                    <div class="hv-task-title">[@t.Title] <span class="hv-task-status hv-badge-@t.Status.ToString().ToLower()">@t.Status.ToString().ToUpperInvariant()</span></div>
+                    @if (!string.IsNullOrEmpty(t.EffectiveInstruction) && t.EffectiveInstruction != t.Instruction)
+                    {
+                        <div class="hv-task-label">PLANNED</div>
+                        <div class="hv-task-text hv-task-text-muted">@t.Instruction</div>
+                        <div class="hv-task-label" style="color:var(--border-glow)">⟳ DISPATCHED</div>
+                        <div class="hv-task-text">@t.EffectiveInstruction</div>
+                    }
+                    else
+                    {
+                        <div class="hv-task-label">INSTRUCTION</div>
+                        <div class="hv-task-text">@(t.EffectiveInstruction ?? t.Instruction)</div>
+                    }
+                    @if (!string.IsNullOrEmpty(t.Result))
+                    {
+                        <div class="hv-task-label">RESULT</div>
+                        <div class="hv-task-text hv-task-markdown">@((MarkupString)MarkdownHelper.ToHtml(t.Result))</div>
+                    }
+                    @if (!string.IsNullOrEmpty(t.ErrorMessage))
+                    {
+                        <div class="hv-task-label" style="color:var(--text-dim)">ERROR</div>
+                        <div class="hv-task-text" style="color:var(--text-dim)">@t.ErrorMessage</div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public CollectiveMember? SelectedDrone { get; set; }
+
+    [Parameter, EditorRequired]
+    public List<CollectiveTask> Tasks { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public EventCallback OnClose { get; set; }
+}

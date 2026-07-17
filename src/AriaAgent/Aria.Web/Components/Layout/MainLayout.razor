@@ -1,0 +1,79 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@* The WASM bridge now lives at the document root in App.razor (sibling of Routes) so it persists
+   across SPA navigation. The whole app is one interactive Server circuit, so this layout and
+   NavMenu are never rebuilt on route changes. *@
+
+<div class="app-shell">
+    <header class="app-header">
+        <div class="logo">
+            <span class="logo-blocks">▓▓</span>
+            <div class="logo-text">
+                <div class="logo-title">ARIA <span>//</span> SERVER</div>
+                <div class="logo-sub">COGITATOR TERMINAL MK.IV</div>
+            </div>
+        </div>
+        <BridgeVersionIndicator />
+        @if (ShowBridgeSummon)
+        {
+            <button class="header-bridge-summon" @onclick="SummonBridgeModal" title="Re-open the communion rite">
+                ⚙ PERFORM COMMUNION
+            </button>
+        }
+        <span class="header-soul">
+            <HeaderSoul />
+            <ApprovalNodePicker />
+        </span>
+    </header>
+
+    <div class="app-body">
+        <aside class="sidebar">
+            <NavMenu />
+        </aside>
+
+        <main class="main-content">
+            @Body
+        </main>
+    </div>
+</div>
+
+
+<BridgeGatewayModal />
+
+<div id="blazor-error-ui" data-nosnippet>
+    <div class="blazor-error-boundary">
+        // COGITATOR FAULT — An unhandled error has occurred.
+        <a href="." class="ml-2" style="color: var(--text-bright)">RELOAD</a>
+    </div>
+</div>
+
+@code {
+    [Inject] private UserSessionState  SessionState { get; set; } = null!;
+    [Inject] private CircuitAuthService CircuitAuth { get; set; } = null!;
+    [Inject] private ModelBridgeRegistry BridgeRegistry { get; set; } = null!;
+
+    private bool ShowBridgeSummon =>
+        SessionState.CurrentUser == null ||
+        !CircuitAuth.IsVerified(SessionState.CurrentUser.Id);
+
+    private void SummonBridgeModal() => BridgeGatewayModal.RequestShow();
+
+    protected override void OnInitialized()
+    {
+        SessionState.OnChange            += OnSessionChanged;
+        BridgeRegistry.SoulStatusChanged += OnSoulStatusChanged;
+    }
+
+    private async void OnSessionChanged() => await InvokeAsync(StateHasChanged);
+    private async void OnSoulStatusChanged(string _) => await InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        SessionState.OnChange            -= OnSessionChanged;
+        BridgeRegistry.SoulStatusChanged -= OnSoulStatusChanged;
+    }
+
+    // Agent colour theming is applied (scoped to the chat area + New Cogitation button only) by
+    // ariaInterop.applyTheme / clearTheme — driven by NavMenu.ApplyThemeAsync. It is intentionally
+    // NOT applied to .app-shell here, so the rest of the UI keeps the default theme.
+}

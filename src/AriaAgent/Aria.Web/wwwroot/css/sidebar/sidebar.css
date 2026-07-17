@@ -1,0 +1,257 @@
+/* ── Body: Sidebar + Main ───────────────────────────────── */
+.app-body {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+    position: relative;
+}
+
+/* ── Sidebar ────────────────────────────────────────────── */
+.sidebar {
+    --sidebar-w: 220px;
+    width: 220px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border-active);
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: none;
+    transition: width 0.2s ease;
+}
+.sidebar.sidebar-collapsed { --sidebar-w: 44px; width: 44px; }
+
+.sidebar-tools-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+}
+
+.sidebar-tools-content {
+    flex: 1;
+    overflow: visible;
+    max-height: none;
+}
+
+.sidebar-section {
+    padding: 10px 0 4px;
+}
+
+.sidebar-section-title {
+    padding: 2px 12px 6px;
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #c0ae82;
+    text-shadow: 0 0 6px rgba(192, 174, 130, 0.3);
+    border-bottom: 1px solid var(--gold-dim);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.sidebar-section-title.collapsible {
+    cursor: pointer;
+    user-select: none;
+}
+
+.sidebar-section-title.collapsible:hover {
+    color: var(--text-bright);
+}
+
+.section-toggle {
+    font-size: 8px;
+    opacity: 0.6;
+    flex-shrink: 0;
+}
+
+.sidebar-section-content {
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* ── Slim nav items (gold title style) ──────────────────── */
+.sidebar-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px 7px;
+    cursor: pointer;
+    color: #c0ae82;
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    text-shadow: 0 0 6px rgba(192, 174, 130, 0.3);
+    border-bottom: 1px solid var(--gold-dim);
+    border-left: 2px solid transparent;
+    transition: background 0.1s, color 0.1s;
+    user-select: none;
+    white-space: nowrap;
+    overflow: hidden;
+}
+.sidebar-nav-item:hover { background: var(--bg-hover); color: var(--text-bright); }
+.sidebar-nav-item.active {
+    border-left-color: var(--border-glow);
+    background: var(--bg-hover);
+    color: var(--text-bright);
+    text-shadow: none;
+}
+.nav-item-dot { display: none; font-size: 8px; flex-shrink: 0; opacity: 0.9; }
+.nav-sub-label { font-size: 8px; letter-spacing: 1px; color: var(--text-dead, #555); margin-left: 2px; }
+.nav-item-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-nav-item.active .nav-item-dot { display: inline; }
+
+/* Noosphere "still processing" indicator — a memory Inscribe returns immediately, but the bridge's
+   ingest worker extracts/embeds it asynchronously; the nav icon blinks for as long as that queue is
+   non-empty. Applied to the icon (not a separate badge) so it still reads when the sidebar is
+   collapsed to icons-only. */
+.mem-icon-processing { animation: mem-icon-blink 0.9s ease-in-out infinite; }
+@keyframes mem-icon-blink {
+    0%, 100% { opacity: 1;   color: var(--text-bright, #f0d060); }
+    50%       { opacity: 0.25; }
+}
+
+/* nav icon: always visible */
+.nav-icon { display: flex; align-items: center; flex-shrink: 0; width: 15px; height: 15px; opacity: 0.7; }
+.nav-icon svg { display: block; width: 15px; height: 15px; }
+.sidebar-nav-item:hover .nav-icon { opacity: 1; }
+.sidebar-nav-item.active .nav-icon { opacity: 1; }
+
+/* collapse btn: pointer cursor overrides [data-tip] cursor:help */
+.sidebar-collapse-btn[data-tip] { cursor: pointer; }
+
+/* ── Sidebar collapse toggle button ─────────────────────── */
+.sidebar-collapse-btn {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 3px 10px 3px 0;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--gold-dim);
+    color: #c0ae82;
+    font-size: 10px;
+    cursor: pointer;
+    width: 100%;
+    opacity: 0.5;
+    transition: opacity 0.15s;
+    user-select: none;
+    letter-spacing: 1px;
+}
+.sidebar-collapse-btn:hover { opacity: 1; color: var(--text-bright); }
+
+/* ── Collapsed sidebar overrides ────────────────────────── */
+.sidebar-collapsed .new-chat-btn { display: none; }
+.sidebar-collapsed .new-chat-btn-collapsed {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 0;
+    font-size: 14px;
+    line-height: 14px;
+    letter-spacing: 0;
+}
+.sidebar-collapsed .sidebar-collapse-btn {
+    justify-content: center;
+    padding: 3px 0;
+}
+.sidebar-collapsed .sidebar-nav-item {
+    justify-content: center;
+    padding: 6px 0 7px;
+    gap: 0;
+}
+.sidebar-collapsed .nav-icon  { display: flex; align-items: center; justify-content: center; }
+.sidebar-collapsed .nav-item-dot { display: none !important; }
+.sidebar-collapsed .nav-item-label { display: none; }
+.sidebar-collapsed .nav-sub-label-count { display: none; }
+.sidebar-collapsed .vigil-unseen-dot { position: absolute; top: 6px; right: 6px; }
+.sidebar-collapsed .sidebar-nav-item { position: relative; }
+.sidebar-collapsed .nav-agent-active { display: none; }
+
+.vigil-unseen-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #4caf50;
+    box-shadow: 0 0 6px rgba(76,175,80,0.9);
+    margin-left: auto;
+    flex-shrink: 0;
+    animation: vigilDotPulse 1.4s ease-in-out infinite;
+}
+@keyframes vigilDotPulse {
+    0%, 100% { opacity: 1;   box-shadow: 0 0 6px rgba(76,175,80,0.9); }
+    50%       { opacity: 0.3; box-shadow: 0 0 2px rgba(76,175,80,0.3); }
+}
+
+/* ── Section panel overlay ──────────────────────────────── */
+.section-panel {
+    position: absolute;
+    left: var(--sidebar-w);
+    top: 0;
+    bottom: 0;
+    width: 262px;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border-active);
+    border-left: 1px solid var(--border-dim);
+    box-shadow: 6px 0 24px rgba(0, 0, 0, 0.55);
+    /* Above page-level overlays like the Hive Overmind drawer (z-700) — the left nav flyout is a
+       top-level surface and must sit over page content — but below true modals (z-1000+). */
+    z-index: 800;
+    display: flex;
+    flex-direction: column;
+    animation: panelSlideIn 0.12s ease;
+}
+@keyframes panelSlideIn {
+    from { opacity: 0; transform: translateX(-8px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+.section-panel-backdrop {
+    position: absolute;
+    top: 0;
+    left: var(--sidebar-w);
+    right: 0;
+    bottom: 0;
+    z-index: 799;   /* just under .section-panel; keeps the flyout's click-catcher over page overlays */
+}
+
+.section-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-dim);
+    color: #c0ae82;
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-shadow: 0 0 6px rgba(192, 174, 130, 0.3);
+    flex-shrink: 0;
+}
+.section-panel-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 0;
+    line-height: 1;
+    flex-shrink: 0;
+}
+.section-panel-close:hover { color: var(--text-bright); }
+
+.section-panel-body {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: none;
+    padding: 4px 0;
+}
+.section-panel-body::-webkit-scrollbar { width: 4px; }
+.section-panel-body::-webkit-scrollbar-thumb { background: var(--border-dim); }
+

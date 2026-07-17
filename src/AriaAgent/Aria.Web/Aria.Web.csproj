@@ -1,0 +1,144 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Markdig" Version="1.2.0" />
+        <PackageReference Include="Markdown.ColorCode" Version="3.0.1" />
+        <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.8" />
+        <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.6.2" />
+        <PackageReference Include="Microsoft.Extensions.AI" Version="10.6.0" />
+        <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.6.0" />
+<PackageReference Include="OpenAI" Version="2.10.0" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.5" />
+        <!-- EF Core Sqlite 9.0.5 transitively pulls SQLitePCLRaw 2.1.10, flagged by GHSA-2m69-gcr7-jv3q
+             (affects <= 2.1.11, no 2.x patch). 3.0.x is the unaffected line; verified working with EF 9. -->
+        <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.5">
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Aria.Agent\Aria.Agent.csproj" />
+        <ProjectReference Include="..\Aria.Tools\Aria.Tools.csproj" />
+        <ProjectReference Include="..\Aria.Shared\Aria.Shared.csproj" />
+        <ProjectReference Include="..\Aria.Harness\Aria.Harness.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Compile Update="Components/Pages/Chat.razor.cs">
+            <DependentUpon>Chat.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components/Pages/Chat.Session.razor.cs">
+            <DependentUpon>Chat.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components/Pages/Chat.Messaging.razor.cs">
+            <DependentUpon>Chat.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components/Pages/Chat.Rendering.razor.cs">
+            <DependentUpon>Chat.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components/Pages/Chat.HiveGate.razor.cs">
+            <DependentUpon>Chat.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components/Pages/Chat.Vox.razor.cs">
+            <DependentUpon>Chat.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components/Pages/Hive.razor.cs">
+            <DependentUpon>Hive.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components/Pages/Hive.Canvas.razor.cs">
+            <DependentUpon>Hive.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components/Pages/Hive.Config.razor.cs">
+            <DependentUpon>Hive.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components/Pages/Hive.Members.razor.cs">
+            <DependentUpon>Hive.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components/Pages/Hive.Cogitation.razor.cs">
+            <DependentUpon>Hive.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components/Layout/NavMenu.razor.cs">
+            <DependentUpon>NavMenu.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components/Layout/NavMenu.Bridge.cs">
+            <DependentUpon>NavMenu.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components/Layout/NavMenu.Agents.razor.cs">
+            <DependentUpon>NavMenu.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components/Layout/NavMenu.Tools.razor.cs">
+            <DependentUpon>NavMenu.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components/Layout/NavMenu.Channels.razor.cs">
+            <DependentUpon>NavMenu.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components/Layout/NavMenu.Contacts.razor.cs">
+            <DependentUpon>NavMenu.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components\Pages\Chat.Approval.razor.cs">
+          <DependentUpon>Chat.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Components\Pages\Chat.FilePicker.razor.cs">
+          <DependentUpon>Chat.razor</DependentUpon>
+        </Compile>
+        <Compile Update="Endpoints\SoulEndpointHelpers.cs">
+          <DependentUpon>SoulEndpoints.cs</DependentUpon>
+        </Compile>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Content Update="Components/Layout/NavMenu*Panel.razor">
+            <DependentUpon>NavMenu.razor</DependentUpon>
+        </Content>
+        <Content Update="Components/Layout/NavMenuVigilScheduler.razor">
+            <DependentUpon>NavMenu.razor</DependentUpon>
+        </Content>
+        <Content Update="Components/Pages/HiveSidebar.razor">
+            <DependentUpon>Hive.razor</DependentUpon>
+        </Content>
+        <Content Update="Components/Pages/HiveCanvas.razor">
+            <DependentUpon>Hive.razor</DependentUpon>
+        </Content>
+        <Content Update="Components/Pages/HiveTimeline.razor">
+            <DependentUpon>Hive.razor</DependentUpon>
+        </Content>
+        <Content Update="Components/Pages/HiveOvermindDrawer.razor">
+            <DependentUpon>Hive.razor</DependentUpon>
+        </Content>
+        <Content Update="Components/Pages/HiveDroneDrawer.razor">
+            <DependentUpon>Hive.razor</DependentUpon>
+        </Content>
+        <Content Update="Components/Pages/HiveCogitateModal.razor">
+            <DependentUpon>Hive.razor</DependentUpon>
+        </Content>
+        <Content Update="Components\Pages\WargameFactionPanel.razor">
+          <DependentUpon>Wargame.razor</DependentUpon>
+        </Content>
+        <Content Update="Components\Pages\WargameLog.razor">
+          <DependentUpon>Wargame.razor</DependentUpon>
+        </Content>
+        <Content Update="Components\Pages\WargameMap.razor">
+          <DependentUpon>Wargame.razor</DependentUpon>
+        </Content>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Update="appsettings.json">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+
+    <Target Name="KillPortBeforeBuild" BeforeTargets="Build" Condition="'$(OS)' != 'Windows_NT' AND '$(Configuration)' == 'Debug'">
+        <Exec Command="lsof -ti:5129 | xargs kill -9 2&gt;/dev/null; true" IgnoreExitCode="true" />
+    </Target>
+
+</Project>

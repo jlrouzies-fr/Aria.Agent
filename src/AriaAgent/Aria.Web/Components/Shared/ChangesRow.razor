@@ -1,0 +1,60 @@
+@using Aria.Web.Services.ModelBridge
+
+<div class="changes-row">
+    <span class="changes-row-badge @GetBadgeClass(Entry.StatusCode)">@GetBadgeText(Entry.StatusCode)</span>
+    <span class="changes-row-path" title="@(Entry.OriginalPath != null ? $"{Entry.OriginalPath} → {Entry.Path}" : Entry.Path)" @onclick="() => OnOpen.InvokeAsync(Entry)">
+        @if (Entry.OriginalPath != null)
+        {
+            <span class="changes-row-rename">@Entry.OriginalPath → @Entry.Path</span>
+        }
+        else
+        {
+            @Entry.Path
+        }
+    </span>
+    <span class="changes-row-actions">
+        @if (Entry.Staged)
+        {
+            <button class="changes-row-btn" data-tip="Unstage" @onclick="() => OnUnstage.InvokeAsync(Entry)" @onclick:stopPropagation="true">−</button>
+        }
+        else
+        {
+            <button class="changes-row-btn" data-tip="Stage" @onclick="() => OnStage.InvokeAsync(Entry)" @onclick:stopPropagation="true">+</button>
+        }
+        <button class="changes-row-btn changes-row-btn--danger" data-tip="Discard changes" @onclick="() => OnDiscard.InvokeAsync(Entry)" @onclick:stopPropagation="true">✕</button>
+    </span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ProjectGitStatusEntry Entry { get; set; } = null!;
+    [Parameter] public EventCallback<ProjectGitStatusEntry> OnOpen { get; set; }
+    [Parameter] public EventCallback<ProjectGitStatusEntry> OnStage { get; set; }
+    [Parameter] public EventCallback<ProjectGitStatusEntry> OnUnstage { get; set; }
+    [Parameter] public EventCallback<ProjectGitStatusEntry> OnDiscard { get; set; }
+
+    private static string GetBadgeClass(string code) => code switch
+    {
+        "??" => "git-status-untracked",
+        "!!" => "git-status-ignored",
+        _ => code[0] == 'A' ? "git-status-added"
+            : code[0] == 'M' ? "git-status-modified"
+            : code[0] == 'D' ? "git-status-deleted"
+            : code[0] == 'R' ? "git-status-renamed"
+            : code[1] == 'M' ? "git-status-modified"
+            : code[1] == 'D' ? "git-status-deleted"
+            : "git-status-unknown"
+    };
+
+    private static string GetBadgeText(string code) => code switch
+    {
+        "??" => "??",
+        "!!" => "!!",
+        _ when code[0] == 'A' => "A",
+        _ when code[0] == 'M' => "M",
+        _ when code[0] == 'D' => "D",
+        _ when code[0] == 'R' => "R",
+        _ when code[1] == 'M' => "M",
+        _ when code[1] == 'D' => "D",
+        _ => "?"
+    };
+}

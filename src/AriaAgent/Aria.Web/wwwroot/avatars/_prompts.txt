@@ -1,0 +1,180 @@
+================================================================================
+ARIA AGENT — WARHAMMER 40K PIXEL ART PORTRAIT PROMPTS
+================================================================================
+
+GENERATION SETTINGS
+-------------------
+Model:      SDXL + Pixel Art XL LoRA (weight 0.8–1.0)
+Resolution: 512×512
+Steps:      25–30
+CFG Scale:  7–11 (higher = more obedient)
+Sampler:    DPM++ 2M Karras
+Seed:       0 (random) — generate 10–15 variants per archetype
+
+SHARED POSITIVE PREFIX (prepend to every prompt)
+-------------------------------------------------
+
+
+SHARED NEGATIVE PROMPT (use for every prompt)
+----------------------------------------------
+full body, standing, walking, action pose, from behind, side view,
+profile, three quarter view, legs, feet, arms, hands, wide shot,
+long shot, scenery, background details, environmental, tilted head,
+body, torso below chest, blurry, photorealistic, 3d render, realistic,
+photograph, low quality, bad anatomy, watermark, text, logo,
+smooth shading, painterly, oil painting, anime, chibi, cute
+
+
+================================================================================
+IMPERIAL ARCHETYPES
+================================================================================
+
+[space-marine]
+--------------
+
+space marine astartes, power armor helmet, T-shaped visor slit glowing red,
+gorget collar, blue-grey armor, imperial eagle, imposing, stoic
+
+[chaos-marine]
+--------------
+
+chaos space marine, corrupted power armor, central spike on helmet,
+one glowing eye one dead socket, chaos star glyph,
+dark tarnished metal, blood and rust
+
+[tech-priest]
+-------------
+
+adeptus mechanicus tech-priest, dark hood, three bionic eyes,
+respirator mask, red robe collar, mechadendrite hints,
+pale augmented flesh, cog symbols
+
+[inquisitor]
+------------
+
+imperial inquisitor, wide brimmed hat, stern cold eyes,
+long dark coat collar, aquila brooch, harsh lighting,
+battle-worn, obsidian and gold accents
+
+[commissar]
+-----------
+
+imperial commissar, peaked officer cap, cold calculating eyes,
+high coat collar, dark uniform, iron will expression,
+skull pin, military bearing
+
+[guardsman]
+-----------
+
+astra militarum guardsman, combat helmet with visor slot,
+small determined eyes, flak armor collar, weathered dirty armor,
+loyal expression, green-grey colors
+
+[sister]
+--------
+
+adepta sororitas sister of battle, white pointed headdress veil,
+bright fierce eyes, gorget collar, purity seals,
+white and gold armor, zealous expression
+
+[skitarii]
+----------
+
+adeptus mechanicus skitarii ranger, extremely wide hat brim,
+triple bionic optical array glowing red, respirator lower face,
+long dark coat collar, red and steel, ranger of mars
+
+[navigator]
+-----------
+
+navis nobilite navigator, noble high collar, third eye on forehead
+glowing warp-blue, two normal eyes below, patrician features,
+pale skin, flowing robes, house sigil, warp-touched aura
+
+
+================================================================================
+XENOS & EXOTIC ARCHETYPES
+================================================================================
+
+[ork-warboss]
+-------------
+
+ork warboss, massive green-skinned face, huge jutting tusks,
+one cybernetic eye glowing red, iron jaw plate, crude scrap metal armor,
+brutal grinning expression, scarred warty skin
+
+[ork-mekboy]
+------------
+
+ork mekboy, green skin, wild grin showing teeth,
+oversized welding goggles pushed up forehead,
+mechanical bits bolted to skull, grease-stained,
+manic genius expression, copper and rust tones
+
+[farseer]
+---------
+
+eldar aeldari farseer, elongated alien skull, high psychic helm with runes,
+huge dark almond eyes, pale bone-white skin, solemn ancient expression,
+wraithbone armor collar, glowing runic forehead gem
+
+[archon]
+--------
+
+dark eldar drukhari archon, sharp cruel alien features, pale grey skin,
+spiked ornate collar, narrow gleaming eyes full of malice,
+high cheekbones, dark gothic armor, elaborate headdress, predatory smirk
+
+[tau-ethereal]
+--------------
+
+tau ethereal, smooth blue-grey alien face, no nose just slits,
+small mouth, calm authoritative expression, ritual topknot,
+clean white and gold armor collar, large dark eyes, serene
+
+[necron-overlord]
+-----------------
+
+necron overlord, skeletal metallic face, living metal cheeks,
+glowing green eyes in hollow sockets, ancient expressionless death mask,
+ornate gold and black armor collar, alien runes, impassive and eternal
+
+[genestealer-patriarch]
+-----------------------
+
+genestealer cult patriarch, hybrid alien face, elongated ridged skull,
+four eyes two human two xenos, pale grey skin,
+psychic aura, hypnotic gaze, alien jaw, purple-blue tones, robes collar
+
+[chaos-sorcerer]
+----------------
+
+chaos sorcerer of tzeentch, shifting inhuman face half hidden by ornate
+horned helm, one eye replaced by warp flame,
+arcane symbols on armor, chaos star, blue and gold, knowing cruel smile
+
+[votann-kin]
+------------
+
+leagues of votann kin squat, stocky broad face, thick beard with iron
+runes braided in, deep set eyes, ancient stone-grey armor collar,
+ancestor rune on forehead, stubborn determined expression
+
+
+================================================================================
+FILE NAMING CONVENTION
+================================================================================
+
+Save generated portraits as:
+  {archetype-key}-{n}.png
+
+Examples:
+  space-marine-1.png  ...  space-marine-12.png
+  ork-warboss-1.png   ...  ork-warboss-12.png
+  farseer-1.png       ...  farseer-12.png
+
+Target: 10–15 portraits per archetype
+Total archetypes: 18  (9 imperial + 9 xenos)
+Target total: ~180 portraits
+
+================================================================================

@@ -1,0 +1,169 @@
+@using Aria.Agent
+@using Aria.Web.Data
+@using Aria.Tools
+@using Aria.Web.Helpers
+@using Aria.Web.Components.Pages
+@using Aria.Web.Components.Shared
+@using Markdig
+@using System.Text.Json
+@using System.Security.Cryptography
+@namespace Aria.Web.Components.Layout
+
+@code {
+    [CascadingParameter(Name = "NavMenu")]
+    public NavMenu Menu { get; set; } = null!;
+}
+
+@if (true)
+{
+    @* ── Your Soul ─────────────────────────────────────────────── *@
+    var activeSoul  = Menu.SessionState.CurrentUser;
+    // Verification is keyed by this circuit's session token (see Menu.SoulVerified), not userId.
+    var verified    = Menu.SoulVerified;
+    var bridgeOn    = verified;
+    var hasPubKey   = activeSoul?.PublicKey != null;
+    
+    <div class="souls-section-lbl">YOUR SOUL</div>
+    @if (activeSoul != null && !verified)
+    {
+        <div class="souls-bridge-unavail">
+            <span class="bridge-unavail-dot"></span>BRIDGE UNAVAILABLE
+        </div>
+    }
+    else if (activeSoul == null)
+    {
+        <div class="souls-hint">Select a soul below to activate.</div>
+    }
+    else
+    {
+        <div class="soul-identity-card">
+            <div class="soul-id-header">
+                <span class="soul-id-name">@activeSoul.Name</span>
+                <span class="bridge-dot @(bridgeOn ? "online" : "offline")"
+                      data-tip="@(bridgeOn ? "Bridge connected" : hasPubKey ? "Bridge offline" : "Bridge not configured")"></span>
+            </div>
+            @if (hasPubKey)
+            {
+                var fingerprint = activeSoul.PublicKey!.Length > 12 ? activeSoul.PublicKey[..12] + "…" : activeSoul.PublicKey;
+                <div class="soul-fingerprint">
+                    <span class="fingerprint-val" data-tip="@activeSoul.PublicKey">@fingerprint</span>
+                    <button class="copy-key-btn" data-tip="Copy public key"
+                            @onclick="() => Menu.CopyPublicKey(activeSoul.PublicKey!)">⧉ COPY KEY</button>
+                </div>
+                @if (Menu._keyCopied)
+                {
+                    <div class="copy-feedback">✓ copied</div>
+                }
+                <div class="soul-fingerprint" style="margin-top:4px">
+                    <span class="fingerprint-val" data-tip="@activeSoul.Id">@(activeSoul.Id.Length > 12 ? activeSoul.Id[..12] + "…" : activeSoul.Id)</span>
+                    <button class="copy-key-btn" data-tip="Copy Soul GUID — enter on a new machine's Join existing soul form"
+                            @onclick="() => Menu.CopyGuid(activeSoul.Id)">⧉ COPY GUID</button>
+                </div>
+                @if (Menu._guidCopied)
+                {
+                    <div class="copy-feedback">✓ copied</div>
+                }
+            }
+            else
+            {
+                <div class="souls-hint" style="margin-top:4px">Open bridge to configure identity.</div>
+            }
+        </div>
+    }
+    
+    @* ── Contacts ───────────────────────────────────────────────── *@
+    <div class="souls-section-lbl" style="margin-top:10px">
+        CONTACTS
+        @if (bridgeOn && Menu._contactsLoaded)
+        {
+            <button class="contacts-reload-btn" @onclick="Menu.LoadContactsAsync" data-tip="Reload contacts">↺</button>
+        }
+    </div>
+    
+    @* Pending invites — always show if any *@
+    @foreach (var inv in Menu._pendingInvites)
+    {
+        <div class="contact-invite-pending">
+            <div class="inv-pending-label">INCOMING EXCHANGE</div>
+            <div class="inv-pending-from">@inv.InitiatorName / @inv.InitiatorAgentLabel</div>
+            <div class="inv-pending-topic">@inv.Topic</div>
+            <div class="inv-pending-meta">@inv.TotalRounds ROUNDS</div>
+            <div class="inv-pending-actions">
+                <button class="inv-btn inv-accept" @onclick="() => Menu.AcceptInvite(inv)">ACCEPT</button>
+                <button class="inv-btn inv-decline" @onclick="() => Menu.DeclineInvite(inv)">DECLINE</button>
+            </div>
+        </div>
+    }
+    
+    @if (!bridgeOn)
+    {
+        <div class="souls-hint">Bridge required to manage contacts.</div>
+    }
+    else if (!Menu._contactsLoaded)
+    {
+        <div class="souls-hint" style="font-style:italic;opacity:.6">Loading…</div>
+    }
+    else if (Menu._contacts.Count == 0)
+    {
+        <div class="souls-hint">No contacts yet. Add one below.</div>
+    }
+    else
+    {
+        @foreach (var c in Menu._contacts)
+        {
+            var cfp = c.PublicKey.Length > 12 ? c.PublicKey[..12] + "…" : c.PublicKey;
+            var cPk = c.PublicKey;
+            <div class="contact-row">
+                <div class="contact-info">
+                    <span class="contact-name" data-tip="@cPk">@c.Name</span>
+                    <span class="contact-fp">@cfp</span>
+                </div>
+                <button class="contact-invite-btn" data-tip="Start exchange"
+                        @onclick="() => Menu.ToggleInviteForm(cPk)">⇄</button>
+            </div>
+            @if (Menu._inviteFormKey == cPk)
+            {
+                var cForSend = c;
+                <div class="invite-form">
+                    <textarea class="invite-topic-input" placeholder="Topic or question for the exchange…"
+                              @bind="Menu._inviteTopic" rows="2"></textarea>
+                    <div class="invite-rounds-row">
+                        <span>Rounds: @Menu._inviteRounds</span>
+                        <input type="range" min="1" max="10" @bind="Menu._inviteRounds" />
+                    </div>
+                    <div class="invite-form-btns">
+                        <button class="inv-btn inv-accept"
+                                disabled="@(string.IsNullOrWhiteSpace(Menu._inviteTopic) || Menu._inviteSending)"
+                                @onclick="() => Menu.SendInviteAsync(cForSend)">SEND</button>
+                        <button class="inv-btn inv-cancel" @onclick="Menu.CloseInviteForm">✕</button>
+                    </div>
+                    @if (Menu._inviteError != null)
+                    {
+                        <div class="invite-error">@Menu._inviteError</div>
+                    }
+                </div>
+            }
+        }
+    }
+    
+    @if (bridgeOn)
+    {
+        <div class="contact-add-toggle" @onclick="Menu.ToggleAddContact">+ ADD CONTACT</div>
+        @if (Menu._showAddContact)
+        {
+            <div class="contact-add-form">
+                <input class="ca-input" placeholder="Name…" @bind="Menu._addContactName" maxlength="40" />
+                <textarea class="ca-textarea" placeholder="Their public key…"
+                          @bind="Menu._addContactKey" rows="3"></textarea>
+                <button class="ca-btn"
+                        disabled="@(string.IsNullOrWhiteSpace(Menu._addContactName) || string.IsNullOrWhiteSpace(Menu._addContactKey))"
+                        @onclick="Menu.AddContactAsync">ADD</button>
+                @if (Menu._addContactError != null)
+                {
+                    <div class="invite-error">@Menu._addContactError</div>
+                }
+            </div>
+        }
+    }
+}
+

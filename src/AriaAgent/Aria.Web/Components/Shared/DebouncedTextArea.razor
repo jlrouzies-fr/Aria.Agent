@@ -1,0 +1,11 @@
+@inherits DebouncedInputBase
+
+@* No @Value in the markup: after JS init the DOM owns the text (see DebouncedInputBase). Rendering
+   it here would let a re-render mid-typing rewrite the textarea with stale committed text. *@
+<textarea @ref="InputElement"
+          class="@Class"
+          placeholder="@Placeholder"
+          id="@Id"
+          @attributes="AdditionalAttributes"
+          @onkeydown="HandleKeyDown"
+          @onblur="HandleBlur"></textarea>

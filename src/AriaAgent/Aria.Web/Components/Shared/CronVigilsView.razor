@@ -1,0 +1,86 @@
+@using Aria.Web.Data
+@using Aria.Web.Services
+
+@* ── Vigils list ──────────────────────────────────────── *@
+@if (Parent._userJobs.Count == 0 && Parent._recentCompleted.Count == 0)
+{
+    <p class="vc-hint">No vigils scheduled yet. Use the SCHEDULE tab to book a slot.</p>
+}
+else
+{
+    <div class="vc-lists">
+        @if (Parent._userJobs.Count > 0)
+        {
+            <div class="vc-list-section">
+                <div class="vc-list-title">// PENDING VIGILS</div>
+                @foreach (var job in Parent._userJobs)
+                {
+                    <div class="vc-job-row">
+                        <div class="vc-job-status-dot vc-status-@job.Status.ToString().ToLower()"></div>
+                        <div class="vc-job-body">
+                            <div class="vc-job-when">
+                                @job.ScheduledDate.ToString("ddd dd MMM").ToUpperInvariant()
+                                <span class="vc-job-at">@job.ScheduledHour.ToString("D2"):00 UTC</span>
+                                <span class="vc-job-badge vc-badge-@job.Status.ToString().ToLower()">@job.Status.ToString().ToUpperInvariant()</span>
+                            </div>
+                            <div class="vc-job-prompt">@Truncate(job.TaskPrompt, 80)</div>
+                        </div>
+                        @if (job.Status == CronJobStatus.Pending)
+                        {
+                            <button class="vc-btn-small-cancel" @onclick="() => CancelJob(job.Id)">✕</button>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        @if (Parent._recentCompleted.Count > 0)
+        {
+            <div class="vc-list-section">
+                <div class="vc-list-title">// RECENT VIGILS</div>
+                @foreach (var job in Parent._recentCompleted)
+                {
+                    <div class="vc-job-row vc-job-done">
+                        <div class="vc-job-status-dot vc-status-@job.Status.ToString().ToLower()"></div>
+                        <div class="vc-job-body">
+                            <div class="vc-job-when">
+                                @job.ScheduledDate.ToString("ddd dd MMM").ToUpperInvariant()
+                                <span class="vc-job-at">@job.ScheduledHour.ToString("D2"):00</span>
+                                <span class="vc-job-badge vc-badge-@job.Status.ToString().ToLower()">@job.Status.ToString().ToUpperInvariant()</span>
+                                @if (!job.IsSeenByUser)
+                                {
+                                    <span class="vigil-unseen-dot" title="New"></span>
+                                }
+                            </div>
+                            <div class="vc-job-prompt">@Truncate(job.TaskPrompt, 80)</div>
+                        </div>
+                        @if (job.CogitationId.HasValue)
+                        {
+                            <button class="vc-btn-view" @onclick="() => OpenCogitation(job.CogitationId!.Value)">VIEW ▶</button>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [CascadingParameter] public CronSchedulerPanel Parent { get; set; } = null!;
+
+    [Inject] private UserSessionState SessionState { get; set; } = null!;
+    [Inject] private CronSlotService CronService { get; set; } = null!;
+
+    private async Task CancelJob(int jobId)
+    {
+        if (SessionState.CurrentUser == null) return;
+        await CronService.CancelAsync(jobId, SessionState.CurrentUser.Id);
+        await Parent.LoadAsync();
+        Parent.Refresh();
+    }
+
+    private async Task OpenCogitation(int cogId) => await Parent.OnOpenCogitation.InvokeAsync(cogId);
+
+    private static string Truncate(string s, int max) =>
+        s.Length <= max ? s : s[..max] + "…";
+}

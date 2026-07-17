@@ -1,0 +1,648 @@
+
+/* ── Cogitation List ────────────────────────────────────── */
+.cog-empty {
+    padding: 4px 12px;
+    font-size: 10px;
+    color: var(--text-dead);
+}
+
+.cog-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: background 0.1s, color 0.1s;
+    user-select: none;
+}
+
+.cog-row:hover { background: var(--bg-hover); color: var(--text-normal); }
+
+.cog-row.active {
+    color: var(--text-bright);
+    background: var(--bg-hover);
+    border-left: 2px solid var(--border-glow);
+}
+
+.cog-dot { font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+.cog-row.active .cog-dot { color: var(--border-glow); }
+
+/* Agent rows — bigger dot + more visible edit icon */
+.agent-row { cursor: default; }
+.agent-row .cog-dot  { font-size: 14px; }
+.agent-row .tool-cfg-btn { color: var(--text-muted); font-size: 16px; cursor: pointer; }
+.agent-row .tool-cfg-btn:hover { color: var(--border-glow); }
+/* Name wraps (the avatar already gives the row height) instead of truncating */
+.agent-row .cog-title {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    word-break: break-word;
+    line-height: 1.25;
+    cursor: default;
+}
+/* Play button: explicit activate affordance next to the configure (⊙) button */
+.agent-row .agent-play-btn { font-size: 12px; }
+.agent-row .agent-play-btn.active { color: var(--border-glow); text-shadow: 0 0 6px var(--border-glow); }
+
+.cog-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.cog-title {
+    font-size: 10px;
+    /* Mostly white with a faint red cast — brighter than the muted row colour so titles read clearly,
+       while still keeping the cogitator's red identity. */
+    color: #ecd8d8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cog-row.active .cog-title { color: var(--text-bright); }
+
+.cog-subtitle {
+    display: inline-flex;
+    align-self: flex-start;
+    max-width: 100%;
+    padding: 1px 6px;
+    border-radius: 2px;
+    font-size: 8px;
+    background: color-mix(in srgb, var(--badge, var(--text-dead)) 20%, transparent);
+    border: 1px solid color-mix(in srgb, var(--badge, var(--text-dead)) 50%, transparent);
+    /* Text is always lightened toward white — a dark accent (navy, maroon…) would otherwise land at
+       nearly the same luminance as its own tinted background and read as unreadably low-contrast. */
+    color: color-mix(in srgb, var(--badge, var(--text-normal)) 55%, white 45%);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Subtitle row: agent pill + optional green origin-bridge badge, side by side. */
+.cog-subtitle-wrap {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    width: 100%;
+}
+.cog-node-badge {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    max-width: 80px;
+    padding: 1px 5px;
+    border-radius: 2px;
+    font-size: 8px;
+    letter-spacing: 0.5px;
+    background: rgba(120, 160, 130, 0.12);
+    border: 1px solid rgba(120, 160, 130, 0.45);
+    color: #8fb39a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* Cross-bridge migration ("continue on…") status / error notice. */
+.cog-migrate-notice {
+    margin: 6px 8px;
+    padding: 5px 8px;
+    font-size: 9px;
+    letter-spacing: 0.4px;
+    border-radius: 3px;
+    border: 1px solid rgba(120, 160, 130, 0.4);
+    background: rgba(120, 160, 130, 0.1);
+    color: #8fb39a;
+    cursor: pointer;
+}
+.cog-migrate-notice.busy {
+    cursor: default;
+    color: var(--text-muted);
+    border-color: var(--border-dim);
+    background: rgba(0,0,0,0.2);
+}
+
+/* Right-aligned relative timestamp in the subtitle row. */
+.cog-timestamp {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: 6px;
+    font-size: 8px;
+    color: var(--text-dead);
+    white-space: nowrap;
+}
+
+.cog-delete-btn {
+    font-size: 11px;
+    color: var(--text-dead);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0 2px;
+    opacity: 0;
+    transition: opacity 0.1s, color 0.1s;
+    flex-shrink: 0;
+}
+.cog-row:hover .cog-delete-btn { opacity: 1; }
+.cog-delete-btn:hover { color: var(--text-bright); }
+
+/* Dim the row's own content when its origin bridge is offline — but NOT the ⋮ popup menu, which is a
+   descendant: applying opacity to the whole row would make the popup half-transparent too (opacity
+   can't be restored on a child). So dim each child except the menu wrapper. */
+.cog-row-offline > *:not(.cog-row-menu-wrap) { opacity: 0.6; }
+.cog-row-offline .cog-title { color: var(--text-dead); }
+
+.cog-offline-badge {
+    font-size: 10px;
+    color: var(--text-dead);
+    flex-shrink: 0;
+    margin-right: 2px;
+}
+
+.cog-run-spinner {
+    font-size: 10px;
+    color: var(--border-glow);
+    flex-shrink: 0;
+    margin-right: 2px;
+    animation: cog-run-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes cog-run-pulse {
+    0%, 100% { opacity: 0.35; }
+    50%      { opacity: 1; }
+}
+
+/* ── Scrollbar global ───────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-normal); border-radius: 0; }
+
+/* ── Focus chip under New Cogitation button ───────────────────────────── */
+.cog-focus-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    margin-top: 4px;
+    border: 1px solid color-mix(in srgb, var(--folder-color, #8B0000) 40%, transparent);
+    background: color-mix(in srgb, var(--folder-color, #8B0000) 10%, transparent);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+}
+
+.cog-focus-dot {
+    font-size: 10px;
+    color: var(--folder-color, #8B0000);
+    flex-shrink: 0;
+}
+
+.cog-focus-name {
+    flex: 1;
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cog-focus-clear {
+    background: none;
+    border: none;
+    color: var(--text-dead);
+    font-size: 10px;
+    cursor: pointer;
+    padding: 0 2px;
+    flex-shrink: 0;
+}
+
+.cog-focus-clear:hover { color: var(--text-bright); }
+
+/* ── Panel header [+] menu ────────────────────────────────────────────── */
+.cog-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 6px 10px;
+    user-select: none;
+}
+
+.cog-header-menu-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.cog-header-add,
+.cog-bulk-toggle {
+    background: none;
+    border: 1px solid var(--border-dim);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1;
+    width: 22px;
+    height: 18px;
+    padding: 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    vertical-align: middle;
+}
+
+.cog-header-add:hover,
+.cog-bulk-toggle:hover {
+    border-color: var(--border-glow);
+    color: var(--text-bright);
+}
+
+.cog-bulk-toggle.active {
+    border-color: var(--border-glow);
+    color: var(--border-glow);
+    background: rgba(139, 0, 0, 0.15);
+}
+
+.cog-header-menu {
+    position: absolute;
+    top: 22px;
+    right: 0;
+    min-width: 160px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-glow);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    z-index: 200;
+}
+
+.cog-header-menu-item {
+    padding: 7px 12px;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--text-normal);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.cog-header-menu-item:hover {
+    background: var(--bg-hover);
+    color: var(--text-bright);
+}
+
+/* ── Folder section header ────────────────────────────────────────────── */
+.cog-folder-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px 7px 6px;
+    margin: 8px 6px 0;
+    cursor: pointer;
+    color: var(--text-muted);
+    /* Neutral, toward-white card so each group — especially collapsed ones — stands out from the
+       reddish list background instead of blending into it. */
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 3px;
+    user-select: none;
+    transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.cog-folder-header:hover {
+    background: rgba(255, 255, 255, 0.09);
+    color: var(--text-normal);
+    border-color: rgba(255, 255, 255, 0.32);
+}
+
+.cog-folder-header.focused {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--border-glow);
+}
+
+.cog-folder-focus-lbl {
+    font-size: 8px;
+    letter-spacing: 0.1em;
+    color: var(--text-bright);
+    flex-shrink: 0;
+}
+
+.cog-folder-header.unfiled {
+    border-top: 1px solid rgba(255,255,255,0.18);
+    margin-top: 8px;
+    cursor: default;
+}
+
+.cog-folder-header.hive {
+    color: #a080d0;
+}
+.cog-folder-header.hive .cog-folder-name {
+    color: inherit;
+}
+
+.cog-folder-chevron {
+    font-size: 10px;
+    width: 14px;
+    text-align: center;
+    flex-shrink: 0;
+    color: var(--text-dead);
+}
+
+.cog-folder-body {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.cog-folder-dot {
+    font-size: 10px;
+    color: var(--folder-color, #8B0000);
+    flex-shrink: 0;
+}
+
+.cog-folder-name {
+    flex: 1;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cog-folder-count {
+    font-size: 9px;
+    color: var(--text-dead);
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.cog-folder-menu-btn {
+    font-size: 12px;
+    color: var(--text-dead);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0 2px;
+    flex-shrink: 0;
+    opacity: 0.6;
+    transition: opacity 0.1s, color 0.1s;
+}
+
+.cog-folder-header:hover .cog-folder-menu-btn { opacity: 1; }
+.cog-folder-menu-btn:hover { color: var(--border-glow); }
+
+.cog-folder-empty {
+    padding: 6px 12px 10px 28px;
+    font-size: 10px;
+    color: var(--text-dead);
+    font-style: italic;
+}
+
+/* ── Row-level ⋮ menu ─────────────────────────────────────────────────── */
+.cog-row-menu-wrap {
+    position: relative;
+}
+
+.cog-row-menu-btn {
+    font-size: 12px;
+    color: var(--text-dead);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0 4px;
+    opacity: 0;
+    transition: opacity 0.1s, color 0.1s;
+    flex-shrink: 0;
+}
+
+.cog-row:hover .cog-row-menu-btn { opacity: 1; }
+.cog-row-menu-btn:hover { color: var(--border-glow); }
+
+.cog-row-menu {
+    position: absolute;
+    top: 18px;
+    right: 0;
+    min-width: 170px;
+    max-height: 260px;
+    overflow-y: auto;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-glow);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    z-index: 200;
+}
+
+.cog-row-menu-title {
+    padding: 5px 10px;
+    font-size: 8px;
+    letter-spacing: 0.12em;
+    color: var(--text-dead);
+    border-bottom: 1px solid rgba(139,0,0,0.25);
+}
+
+.cog-row-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    font-size: 10px;
+    color: var(--text-normal);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.cog-row-menu-item:hover {
+    background: var(--bg-hover);
+    color: var(--text-bright);
+}
+
+.cog-row-menu-dot {
+    font-size: 9px;
+    color: var(--folder-color, #8B0000);
+    flex-shrink: 0;
+}
+
+.cog-row-menu-divider {
+    height: 1px;
+    background: rgba(139,0,0,0.25);
+    margin: 3px 0;
+}
+
+/* ── Bulk multi-select filing ─────────────────────────────────────────── */
+.cog-row.selecting {
+    cursor: default;
+}
+
+.cog-row.selecting:hover {
+    background: var(--bg-hover);
+    color: var(--text-normal);
+}
+
+/* Custom checkbox that matches the dark theme */
+.cog-bulk-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    margin: 0;
+    flex-shrink: 0;
+    cursor: pointer;
+    background: transparent;
+    border: 1px solid var(--text-dead);
+    border-radius: 2px;
+    position: relative;
+    transition: border-color 0.1s, background 0.1s;
+}
+
+.cog-bulk-checkbox:hover {
+    border-color: var(--border-glow);
+}
+
+.cog-bulk-checkbox:checked {
+    background: var(--border-glow);
+    border-color: var(--border-glow);
+}
+
+.cog-bulk-checkbox:checked::after {
+    content: "✓";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    color: #000;
+    line-height: 1;
+}
+
+.cog-bulk-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 5px 8px;
+    border-top: 1px solid rgba(139, 0, 0, 0.4);
+    background: rgba(0, 0, 0, 0.2);
+    user-select: none;
+    white-space: nowrap;
+}
+
+.cog-bulk-count {
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cog-bulk-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.cog-bulk-menu-wrap {
+    /* not positioned — menu is positioned against .cog-bulk-actions */
+}
+
+.cog-bulk-btn {
+    background: rgba(139, 0, 0, 0.15);
+    border: 1px solid rgba(139, 0, 0, 0.4);
+    color: var(--text-normal);
+    font-family: var(--font-mono);
+    font-size: 8px;
+    letter-spacing: 0.06em;
+    padding: 3px 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1;
+}
+
+.cog-bulk-btn:hover:not(:disabled) {
+    background: rgba(139, 0, 0, 0.3);
+    color: var(--text-bright);
+    border-color: var(--border-glow);
+}
+
+.cog-bulk-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.cog-bulk-btn.secondary {
+    background: transparent;
+    border-color: var(--border-dim);
+}
+
+.cog-bulk-btn.secondary:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-glow);
+}
+
+.cog-bulk-menu {
+    bottom: 26px;
+    top: auto;
+    right: 0;
+    min-width: 150px;
+    width: max-content;
+    max-width: 200px;
+}
+
+.cog-bulk-menu .cog-row-menu-item {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── Suggested filing banner under chat header ────────────────────────── */
+.suggested-filing-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    background: rgba(0,0,0,0.25);
+    border-bottom: 1px solid rgba(139,0,0,0.3);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    user-select: none;
+}
+
+.suggested-filing-dot {
+    font-size: 10px;
+    color: var(--folder-color, #8B0000);
+}
+
+.suggested-filing-name {
+    color: var(--text-bright);
+    font-weight: bold;
+}
+
+.suggested-filing-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.suggested-filing-actions button {
+    background: rgba(139,0,0,0.15);
+    border: 1px solid rgba(139,0,0,0.4);
+    color: var(--text-normal);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    padding: 2px 8px;
+    cursor: pointer;
+}
+
+.suggested-filing-actions button:hover {
+    background: rgba(139,0,0,0.3);
+    color: var(--text-bright);
+    border-color: var(--border-glow);
+}

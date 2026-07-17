@@ -1,0 +1,161 @@
+@page "/exchange/{Id}"
+@implements IDisposable
+@using Aria.Web.Services
+
+<div class="exchange-page">
+    @if (_session == null)
+    {
+        <div class="exchange-empty">
+            <div class="exchange-empty-title">// EXCHANGE NOT FOUND</div>
+            <div class="exchange-empty-sub">Session expired or does not exist.</div>
+        </div>
+    }
+    else
+    {
+        <div class="exchange-header">
+            <div class="exchange-topic">@_session.Topic</div>
+            <div class="exchange-meta">
+                <span class="xmeta-agent">@_session.InitiatorAgentLabel</span>
+                <span class="xmeta-sep">⇄</span>
+                <span class="xmeta-agent">@_session.RecipientAgentLabel</span>
+                <span class="xmeta-pipe">·</span>
+                <span class="xmeta-rounds">Round @_session.CompletedRounds of @_session.TotalRounds</span>
+                <span class="xmeta-pipe">·</span>
+                <span class="xmeta-status @StatusClass">@StatusLabel</span>
+            </div>
+        </div>
+
+        @if (_session.Status == ExchangeStatus.Pending && _isRecipient)
+        {
+            <div class="exchange-invite-box">
+                <div class="xib-label">// INCOMING EXCHANGE INVITE</div>
+                <div class="xib-from">FROM: @_session.InitiatorName / @_session.InitiatorAgentLabel</div>
+                <div class="xib-topic">@_session.Topic</div>
+                <div class="xib-rounds">@_session.TotalRounds ROUNDS</div>
+                <div class="xib-actions">
+                    <button class="inv-btn inv-accept" @onclick="Accept">ACCEPT</button>
+                    <button class="inv-btn inv-decline" @onclick="Decline">DECLINE</button>
+                </div>
+            </div>
+        }
+        else if (_session.Status == ExchangeStatus.Pending)
+        {
+            <div class="exchange-waiting">
+                <div class="xw-dot"></div>
+                <span>Invite sent to @_session.RecipientName — awaiting acceptance…</span>
+            </div>
+        }
+        else if (_session.Status == ExchangeStatus.Declined)
+        {
+            <div class="exchange-declined">// EXCHANGE DECLINED BY @_session.RecipientName.ToUpperInvariant()</div>
+        }
+
+        <div class="exchange-transcript">
+            @foreach (var turn in GetTurns())
+            {
+                var turnSide = turn.IsInitiator ? "left" : "right";
+                <div class="exchange-turn @turnSide">
+                    <div class="xt-header">
+                        <span class="xt-agent">@turn.AgentLabel</span>
+                        <span class="xt-round">R@(turn.Round)</span>
+                        <span class="xt-time">@turn.At.ToString("HH:mm")</span>
+                    </div>
+                    <div class="xt-content">@turn.Content</div>
+                </div>
+            }
+
+            @if (_session.Status == ExchangeStatus.Active)
+            {
+                <div class="exchange-thinking">
+                    <span class="thinking-dot"></span>
+                    <span class="thinking-dot"></span>
+                    <span class="thinking-dot"></span>
+                    <span class="thinking-label">processing…</span>
+                </div>
+            }
+            else if (_session.Status == ExchangeStatus.Completed)
+            {
+                <div class="exchange-complete">
+                    // EXCHANGE COMPLETE — @_session.CompletedRounds ROUNDS
+                </div>
+            }
+            else if (_session.Status == ExchangeStatus.Error)
+            {
+                <div class="exchange-error">// ERROR: @_session.ErrorMessage</div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    [Inject] private ExchangeSessionService ExchangeService { get; set; } = null!;
+    [Inject] private UserSessionState       SessionState    { get; set; } = null!;
+    [Inject] private NavigationManager      Nav             { get; set; } = null!;
+
+    private ExchangeSession? _session;
+    private bool             _isRecipient;
+
+    private string StatusLabel => _session?.Status switch
+    {
+        ExchangeStatus.Pending   => "PENDING",
+        ExchangeStatus.Active    => "IN PROGRESS",
+        ExchangeStatus.Completed => "COMPLETED",
+        ExchangeStatus.Declined  => "DECLINED",
+        ExchangeStatus.Error     => "ERROR",
+        _                        => "",
+    };
+
+    private string StatusClass => _session?.Status switch
+    {
+        ExchangeStatus.Active    => "status-active",
+        ExchangeStatus.Completed => "status-done",
+        ExchangeStatus.Error     => "status-error",
+        _                        => "",
+    };
+
+    protected override void OnInitialized()
+    {
+        _session     = ExchangeService.GetSession(Id);
+        _isRecipient = _session?.RecipientUserId == SessionState.CurrentUser?.Id;
+        ExchangeService.TurnCompleted += OnTurnCompleted;
+        ExchangeService.StatusChanged += OnStatusChanged;
+    }
+
+    private List<ExchangeTurn> GetTurns()
+    {
+        if (_session == null) return [];
+        lock (_session.TurnsLock) return [.. _session.Turns];
+    }
+
+    private void OnTurnCompleted(string exchangeId, ExchangeTurn _)
+    {
+        if (exchangeId != Id) return;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnStatusChanged(string exchangeId)
+    {
+        if (exchangeId != Id) return;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void Accept()
+    {
+        var label = SessionState.ActiveSubAgent?.GeneratedName ?? "ARIA";
+        var agId  = SessionState.ActiveSubAgent?.Id;
+        ExchangeService.AcceptInvite(Id, label, agId);
+    }
+
+    private void Decline()
+    {
+        ExchangeService.DeclineInvite(Id);
+    }
+
+    public void Dispose()
+    {
+        ExchangeService.TurnCompleted -= OnTurnCompleted;
+        ExchangeService.StatusChanged -= OnStatusChanged;
+    }
+}

@@ -1,0 +1,83 @@
+@page "/hive"
+@page "/hive/{InitialCollectiveId:int}"
+
+<PageTitle>@(_collective != null ? $"⬡ {_collective.Name.ToUpperInvariant()} // HIVE" : "ARIA // HIVE")</PageTitle>
+@using Aria.Web.Data
+@using Aria.Web.Services
+@using Aria.Web.Helpers
+@implements IDisposable
+
+@inject CollectiveService      CollectiveService
+@inject CollectiveOrchestrator Orchestrator
+@inject SubAgentService        SubAgentService
+@inject AgentService           AgentService
+@inject UserSessionState       SessionState
+@inject NavigationManager      Nav
+@inject IJSRuntime             JS
+@inject ModelBridgeRegistry    BridgeRegistry
+@inject Aria.Web.Services.ModelBridge.ContextApprovalService ContextApproval
+
+<div class="hv-shell">
+
+    @* ── Header ── *@
+    <div class="hv-header">
+        <div class="hv-header-left">
+            <span class="hv-title">⬡ // HIVE</span>
+            @if (_collective != null)
+            {
+                <span class="hv-collective-name">@_collective.Name.ToUpperInvariant()</span>
+            }
+        </div>
+        <div class="hv-header-center">
+            @if (_collective != null)
+            {
+                <span class="hv-round-badge">
+                    ROUND @_collective.CurrentRound/@_collective.MaxRounds
+                    · @_collective.Status.ToString().ToUpperInvariant()
+                    · @(_members.Count) DRONES
+                </span>
+            }
+        </div>
+        <div class="hv-header-right">
+            @if (_collective != null)
+            {
+                <button class="hv-btn hv-btn-confirm"
+                        disabled="@(!CanStart || _starting)"
+                        @onclick="StartCollectiveAsync">@(_starting ? "… STARTING" : "▶ START")</button>
+                <button class="hv-btn"
+                        disabled="@(!IsRunning)"
+                        @onclick="PauseCollectiveAsync">⏸ PAUSE</button>
+                <button class="hv-btn hv-btn-danger"
+                        disabled="@IsRunning"
+                        @onclick="ResetCollectiveAsync">⟳ RESET</button>
+                <button class="hv-btn hv-btn-cogitate"
+                        disabled="@(IsRunning || _collective == null || _members.Count == 0 || _startingHiveChat)"
+                        @onclick="StartHiveChatAsync">@(_startingHiveChat ? "… OPENING" : "⬡ COGITATE")</button>
+            }
+        </div>
+    </div>
+
+    @if (_startError != null)
+    {
+        <div class="hv-start-error" role="alert">⛨ @_startError</div>
+    }
+
+    @if (IsContentOffline)
+    {
+        <div class="hv-offline-banner">
+            ⚠ This Hive is held on a bridge device that is currently offline. Content is unavailable and runs are blocked until the device reconnects.
+        </div>
+    }
+
+    <div class="hv-body">
+        <HiveSidebar Parent="this" />
+
+        <div class="hv-main">
+            <HiveCanvas Parent="this" />
+            <HiveTimeline Events="_events" GetActorName="GetActorName" />
+        </div>
+    </div>
+</div>
+
+<HiveOvermindDrawer Show="_showOvermindDrawer" Collective="_collective" OnClose="() => _showOvermindDrawer = false" />
+<HiveDroneDrawer SelectedDrone="_selectedDrone" Tasks="_tasks" OnClose="CloseDroneDrawer" />

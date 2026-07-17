@@ -1,0 +1,283 @@
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   // NOOSPHERE — full-page Memory graph  (mem- namespace)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.mem-shell {
+    --mem-current: #3fe27a;
+    --mem-current-dim: #2f8a5c;
+    /* Passive (non-selected) edge trace — plain white/grey rather than green so it reads clearly
+       against the grey-green background without needing an animated pulse to draw the eye. */
+    --mem-passive: rgba(232, 240, 236, 0.55);
+
+    /* The app's core theme variables (--bg-*, --text-*, --border-glow, --glow-*) are shared globally
+       and follow whichever accent the user has picked elsewhere (gold/blue/purple/green/bone/the red
+       default) — every element in this page reads them too, which is why "green stylized" additions
+       above kept getting drowned out by red/gold text and panels underneath. Redefining them here
+       fully decorrelates the Noosphere from the global theme: everything inside .mem-shell resolves
+       to this fixed dark grey-green palette no matter what's active anywhere else in the app. */
+    --bg-base:      #121815;
+    --bg-panel:     #182019;
+    --bg-surface:   #1c2620;
+    --bg-hover:     #1c3324;
+    --bg-input:     #101a15;
+    --border-dim:   #2f4a3c;
+    --border-normal:#3a6650;
+    --border-active:#3fe27a;
+    --border-glow:  #3fe27a;
+    --text-dead:    #5c7d6c;
+    --text-muted:   #7fae94;
+    --text-normal:  #a8c9b8;
+    --text-bright:  #3fe27a;
+    --glow-sm:      0 0 6px rgba(63,226,122,0.4);
+    --glow-md:      0 0 12px rgba(63,226,122,0.45);
+    --glow-lg:      0 0 24px rgba(63,226,122,0.35);
+    --gold-normal:  #3fe27a;
+
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg-base);
+    color: var(--text-normal);
+    font-family: inherit;
+    overflow: hidden;
+}
+.main-content > .mem-shell {
+    flex: 1;
+    min-height: 0;
+}
+
+/* ── Header ── */
+.mem-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 18px;
+    border-bottom: 1px solid var(--border-glow, #8b0000);
+    background: rgba(0,0,0,0.3);
+    flex-shrink: 0;
+    gap: 12px;
+}
+.mem-header-left   { display: flex; align-items: center; gap: 12px; }
+.mem-header-center { flex: 1; display: flex; justify-content: center; align-items: center; gap: 8px; }
+.mem-header-right  { display: flex; align-items: center; gap: 8px; }
+
+.mem-header-icon {
+    width: 26px;
+    height: 26px;
+    object-fit: cover;
+    border: 1px solid var(--border-glow);
+    box-shadow: 0 0 6px rgba(63,226,122,0.35);
+}
+
+.mem-title {
+    font-size: 13px;
+    letter-spacing: 4px;
+    color: var(--text-bright, #f0d060);
+    text-shadow: var(--glow-sm, 0 0 6px rgba(240,208,96,0.4));
+    white-space: nowrap;
+}
+.mem-stat-badge {
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    color: var(--text-muted, #888);
+}
+
+/* Per-node switcher — memory vaults are node-local, so the page is scoped to one node at a time. */
+.mem-node-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 18px;
+    border-bottom: 1px solid var(--border-dim, #2a2a2a);
+    background: rgba(0,0,0,0.2);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+.mem-node-bar-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--text-muted, #888);
+}
+.mem-node-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    color: var(--text-muted, #999);
+    background: var(--bg-panel, #222);
+    border: 1px solid var(--border-dim, #2a2a2a);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.12s ease;
+}
+.mem-node-pill:hover { color: var(--mem-current); border-color: var(--mem-current-dim); }
+.mem-node-pill--active {
+    color: var(--mem-current);
+    border-color: var(--mem-current-dim);
+    background: rgba(63,226,122,0.15);
+}
+.mem-node-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 5px currentColor;
+}
+.mem-node-bar-hint {
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    color: var(--text-muted, #666);
+    font-style: italic;
+    margin-left: auto;
+}
+
+.mem-search-input {
+    background: var(--bg-panel, #222);
+    border: 1px solid var(--border-dim, #2a2a2a);
+    color: var(--text-normal, #aaa);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 5px 10px;
+    width: 320px;
+    max-width: 46vw;
+}
+.mem-search-input:focus {
+    outline: none;
+    border-color: var(--mem-current-dim);
+    box-shadow: 0 0 6px rgba(63,226,122,0.4);
+}
+
+/* Shared components (buttons / inputs / ThemedSelect) default to the app's red-amber theme —
+   override them within the Noosphere page only, so the rest of the app is untouched. */
+.mem-shell .hv-btn:hover:not(:disabled) {
+    border-color: var(--mem-current-dim);
+    color: var(--mem-current);
+    box-shadow: 0 0 6px rgba(63,226,122,0.3);
+}
+.mem-shell .hv-input,
+.mem-shell .tsel-control {
+    border-color: var(--border-dim, #2a2a2a);
+}
+.mem-shell .hv-input:focus,
+.mem-shell .tsel-control:focus {
+    border-color: var(--mem-current-dim);
+}
+.mem-shell .tsel-arrow { color: var(--mem-current-dim); }
+.mem-shell .tsel-list {
+    background: var(--bg-panel, #2d2d2d);
+    border: 1px solid var(--mem-current-dim);
+    box-shadow: 0 0 12px rgba(63,226,122,0.2);
+}
+.mem-shell .tsel-opt:hover { background: rgba(63,226,122,0.12); color: var(--mem-current); }
+.mem-shell .tsel-opt.tsel-sel {
+    background: rgba(63,226,122,0.12);
+    color: var(--mem-current);
+    border-left: 2px solid var(--mem-current);
+}
+
+/* ── Body split ── */
+.mem-body {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+}
+
+/* ── Right-hand drawer (search results / selected entity) — green circuit styling, matching the graph ── */
+.mem-drawer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 320px;
+    max-width: 40vw;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-left: 1px solid var(--mem-current-dim);
+    background:
+        linear-gradient(180deg, rgba(63,226,122,0.06), rgba(63,226,122,0.02) 30%, transparent 60%),
+        var(--bg-panel, #222);
+    box-shadow: -8px 0 20px -12px rgba(63,226,122,0.25);
+    display: flex;
+    flex-direction: column;
+}
+.mem-drawer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--mem-current-dim);
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--mem-current);
+    text-shadow: 0 0 6px rgba(63,226,122,0.4);
+    flex-shrink: 0;
+}
+.mem-drawer-close {
+    background: none;
+    border: none;
+    color: var(--text-dead, #555);
+    cursor: pointer;
+    font-size: 12px;
+}
+.mem-drawer-close:hover { color: #e07070; }
+.mem-merge-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--mem-current-dim);
+    flex-shrink: 0;
+}
+.mem-merge-row > .tsel { flex: 1; min-width: 0; }
+.mem-merge-row .mem-merge-select { font-size: 11px; }
+.mem-drawer-body { flex: 1; overflow-y: auto; padding: 8px 10px; }
+.mem-drawer-empty {
+    font-size: 11px;
+    color: var(--text-dead, #555);
+    letter-spacing: 1px;
+    padding: 10px 2px;
+}
+
+.mem-engram-row {
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(63,226,122,0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.mem-engram-row:last-child { border-bottom: none; }
+.mem-engram-text {
+    font-size: 11px;
+    color: var(--text-normal, #aaa);
+    line-height: 1.4;
+}
+.mem-engram-meta {
+    font-size: 9px;
+    color: var(--mem-current-dim);
+    letter-spacing: 0.5px;
+}
+.mem-engram-delete {
+    align-self: flex-start;
+    background: none;
+    border: none;
+    color: var(--text-dead, #555);
+    font-size: 9px;
+    cursor: pointer;
+    padding: 0;
+    letter-spacing: 1px;
+}
+.mem-engram-delete:hover { color: #e07070; }
+
+.mem-loading-badge {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    color: var(--text-dead, #555);
+    background: rgba(0,0,0,0.4);
+    padding: 4px 8px;
+}

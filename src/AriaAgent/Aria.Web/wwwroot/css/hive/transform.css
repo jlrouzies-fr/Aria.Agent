@@ -1,0 +1,92 @@
+
+/* ── Transform editor overlay ────────────────────────────────────────── */
+.hv-transform-editor {
+    position: fixed;
+    z-index: 9990;
+    background: var(--bg-panel, #2d2d2d);
+    border: 1px solid #2ab8b8;
+    padding: 10px 12px;
+    min-width: 260px;
+    font-family: monospace;
+    font-size: 9px;
+    letter-spacing: 1px;
+    box-shadow: 0 0 12px rgba(42,184,184,0.2), 0 2px 8px rgba(0,0,0,0.6);
+}
+.hv-transform-hint {
+    color: var(--text-dead, #555);
+    font-size: 8px;
+    line-height: 1.5;
+    margin-bottom: 8px;
+}
+.hv-transform-hint code {
+    color: #2ab8b8;
+    background: rgba(42,184,184,0.1);
+    padding: 0 3px;
+}
+.hv-transform-textarea {
+    width: 100%;
+    background: var(--bg-base, #1a1a1a);
+    border: 1px solid #2a4444;
+    color: #2ab8b8;
+    font-family: monospace;
+    font-size: 9px;
+    padding: 6px;
+    resize: vertical;
+    box-sizing: border-box;
+    margin-bottom: 8px;
+    outline: none;
+}
+.hv-transform-textarea:focus {
+    border-color: #2ab8b8;
+}
+.hv-transform-actions {
+    display: flex;
+    gap: 6px;
+}
+
+/* ── Node hover tooltip ──────────────────────────────────────────────── */
+.hv-node-tooltip {
+    position: fixed;
+    z-index: 9999;
+    pointer-events: none;
+    background: var(--bg-panel, #2d2d2d);
+    border: 1px solid #d4a020;
+    padding: 7px 11px 6px;
+    font-family: monospace;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    color: var(--text-normal, #e08888);
+    white-space: nowrap;
+    box-shadow: 0 0 12px rgba(212,160,32,0.25), 0 2px 8px rgba(0,0,0,0.6);
+}
+.hv-tooltip-title {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #d4a020;
+    margin-bottom: 4px;
+}
+.hv-tooltip-drone {
+    color: var(--text-muted, #888);
+    margin-bottom: 3px;
+    font-size: 8px;
+}
+.hv-tooltip-status {
+    color: var(--text-dead, #555);
+    margin-bottom: 5px;
+}
+.hv-tooltip-status.hv-tooltip-pending {
+    color: #ffaa00;
+    animation: hv-pulse-text 1.2s ease-in-out infinite;
+}
+.hv-tooltip-hint {
+    font-size: 8px;
+    letter-spacing: 1px;
+    color: var(--text-dead, #555);
+    border-top: 1px solid #3a3a3a;
+    padding-top: 4px;
+    margin-top: 2px;
+}
+.hv-node-tooltip-transform {
+    border-color: #2ab8b8;
+    box-shadow: 0 0 12px rgba(42,184,184,0.2), 0 2px 8px rgba(0,0,0,0.6);
+}

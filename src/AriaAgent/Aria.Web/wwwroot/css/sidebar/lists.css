@@ -1,0 +1,370 @@
+/* ── New Chat button (pinned to top of sidebar) ────────── */
+.sidebar-pinned-top {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg-panel);
+}
+
+.new-chat-btn {
+    width: 100%;
+    background: color-mix(in srgb, var(--border-glow) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border-glow) 45%, transparent);
+    color: var(--text-normal);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 14px;
+    padding: 6px 0;
+    cursor: pointer;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+    overflow: hidden;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.new-chat-btn:hover {
+    background: color-mix(in srgb, var(--border-glow) 32%, transparent);
+    color: var(--text-bright);
+    border-color: var(--border-glow);
+}
+.new-chat-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* ── Probing state (format detection in flight) ─────────────────────────── */
+.new-chat-btn-wrap { display: block; }
+.new-chat-btn-probing .new-chat-btn {
+    opacity: 0.5;
+    cursor: wait;
+    background: color-mix(in srgb, var(--border-glow) 6%, transparent);
+    border-color: color-mix(in srgb, var(--border-glow) 22%, transparent);
+    animation: newChatProbingPulse 1.6s ease-in-out infinite;
+}
+@keyframes newChatProbingPulse {
+    0%, 100% { opacity: 0.5; }
+    50%       { opacity: 0.28; }
+}
+
+.new-chat-btn.warning {
+    background: rgba(80,60,0,0.35);
+    border-color: rgba(192,160,16,0.7);
+    color: #c0a010;
+    animation: warnPulse 1.5s ease-in-out infinite;
+}
+.new-chat-btn.warning:hover {
+    background: rgba(100,80,0,0.55);
+    color: #e0c020;
+    border-color: #c0a010;
+}
+@keyframes warnPulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.7; }
+}
+
+/* ── User List ──────────────────────────────────────────── */
+.user-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: background 0.1s, color 0.1s;
+    user-select: none;
+}
+
+.user-row:hover { background: var(--bg-hover); color: var(--text-normal); }
+
+.user-row.active {
+    color: var(--text-bright);
+    background: rgba(139, 0, 0, 0.15);
+    border-left: 2px solid var(--border-glow);
+}
+
+.user-row .user-dot { font-size: 10px; color: var(--text-muted); }
+.user-row.active .user-dot { color: var(--border-glow); }
+
+.user-row .user-name { flex: 1; font-size: 11px; }
+
+.user-row .user-id {
+    font-size: 9px;
+    color: var(--text-dead);
+    letter-spacing: 0;
+    margin-right: 4px;
+}
+
+.new-user-error {
+    font-size: 9px;
+    color: #c0a010;
+    padding: 2px 12px 0;
+    letter-spacing: 1px;
+}
+
+.user-delete-btn {
+    font-size: 11px;
+    color: var(--text-dead);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0 2px;
+    opacity: 0;
+    transition: opacity 0.1s, color 0.1s;
+}
+.user-row:hover .user-delete-btn { opacity: 1; }
+.user-delete-btn:hover { color: var(--text-bright); }
+
+.new-user-form {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+}
+
+.new-user-input {
+    flex: 1;
+    background: var(--bg-input);
+    border: 1px solid var(--border-dim);
+    color: var(--text-body);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 3px 6px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+.new-user-input::placeholder { color: var(--text-dead); }
+.new-user-input:focus { border-color: var(--border-active); }
+
+.new-user-btn {
+    background: none;
+    border: 1px solid var(--border-normal);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 3px 8px;
+    cursor: pointer;
+    transition: border-color 0.1s, color 0.1s;
+    white-space: nowrap;
+}
+.new-user-btn:hover:not(:disabled) { border-color: var(--border-glow); color: var(--text-bright); }
+.new-user-btn:disabled { opacity: 0.3; cursor: default; }
+
+/* ── Init log lines ─────────────────────────────────────────────────────
+   The scrolling terminal itself now lives in the chat tab bar's pinned status
+   dropdown (see .chat-tab-status-drop in css/chat/tabs.css) — these two rules
+   are what it renders each line with. */
+.init-log-line {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    line-height: 1.8;
+    color: var(--text-muted);
+}
+.init-log-line:last-child { color: var(--text-normal); }
+
+.init-log-cursor {
+    display: inline-block;
+    width: 7px;
+    height: 12px;
+    margin-left: 4px;
+    background: var(--text-normal);
+    vertical-align: -2px;
+    animation: init-log-cursor-blink 1s steps(1) infinite;
+}
+@keyframes init-log-cursor-blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+}
+
+/* ── Model sub-list ──────────────────────────────────────── */
+.model-list { padding: 2px 0 2px 20px; }
+.model-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 2px 12px 2px 24px;
+    cursor: pointer; font-size: 10px; color: var(--text-dead);
+    letter-spacing: 1px;
+}
+.model-row:hover { color: var(--text-normal); background: var(--bg-hover); }
+.model-row.active { color: var(--text-bright); }
+.model-dot { font-size: 9px; }
+.model-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Channel / Source List ──────────────────────────────── */
+.source-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: background 0.1s, color 0.1s;
+    user-select: none;
+}
+
+.source-row:hover { background: var(--bg-hover); color: var(--text-normal); }
+
+.source-row.active {
+    color: var(--text-bright);
+    background: rgba(139, 0, 0, 0.15);
+    border-left: 2px solid var(--border-glow);
+}
+
+.source-row.unavailable { opacity: 0.35; cursor: default; }
+
+.source-warn {
+    font-size: 9px;
+    color: #c0a010;
+    padding: 2px 12px 4px 28px;
+    letter-spacing: 1px;
+    animation: warnPulse 2s ease-in-out infinite;
+}
+
+.source-row .source-dot  { font-size: 10px; color: var(--text-muted); }
+.source-row.active .source-dot  { color: var(--border-glow); }
+.source-row .source-icon { font-size: 11px; width: 16px; flex-shrink: 0; }
+.source-row .source-name { flex: 1; font-size: 11px; }
+
+/* Per-channel "refresh models" button — deliberately a large, obvious tap target (the old ⟳ was a
+   tiny glyph most users never found). Boxed, glows on hover, spins while re-querying the endpoint. */
+.channel-refresh-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    margin-left: 2px;
+    padding: 0;
+    font-family: inherit;
+    font-size: 16px;
+    line-height: 1;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-dim, #2a2a2a);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: color .12s, border-color .12s, background .12s, box-shadow .12s;
+}
+.channel-refresh-btn:hover {
+    color: var(--text-bright);
+    border-color: var(--border-glow);
+    background: rgba(139, 0, 0, 0.18);
+    box-shadow: var(--glow-sm, 0 0 6px rgba(192, 174, 130, 0.35));
+}
+.channel-refresh-btn:active { transform: scale(0.92); }
+.channel-refresh-btn.spinning {
+    color: var(--border-glow);
+    animation: channel-refresh-spin 0.9s linear infinite;
+    pointer-events: none;
+}
+@keyframes channel-refresh-spin { to { transform: rotate(360deg); } }
+
+.channel-section-lbl {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 2px;
+    color: #e8e8ea;
+    padding: 8px 12px 3px;
+    text-transform: uppercase;
+}
+
+.source-add-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    border: 1px dashed var(--border-dim, #2a2a2a);
+    color: var(--text-muted, #777);
+    transition: border-color .15s, color .15s, background .15s;
+    user-select: none;
+}
+.source-add-row:hover {
+    border-color: var(--border-glow, #8b0000);
+    color: var(--text-normal, #aaa);
+    background: rgba(139,0,0,0.06);
+}
+.source-add-row .source-dot { font-size: 14px; color: var(--border-glow, #8b0000); line-height: 1; }
+.source-add-row .source-name { font-size: 10px; letter-spacing: 1.5px; }
+
+/* CTA variant — a brighter, filled call-to-action (configure channels / clear cache)
+   so it stands out from the read-only channel rows around it. */
+.source-add-row--cta {
+    border: 1px solid var(--border-glow, #8b0000);
+    background: rgba(139, 0, 0, 0.16);
+    color: var(--text-bright);
+}
+.source-add-row--cta:hover {
+    background: rgba(139, 0, 0, 0.3);
+    border-color: var(--border-glow, #8b0000);
+    color: var(--text-bright);
+}
+.source-add-row--cta .source-name { color: var(--text-bright) !important; }
+
+/* Warning variant — amber/orange, for maintenance actions that discard state (clear format cache). */
+.source-add-row--warn {
+    border: 1px solid #c0902080;
+    background: rgba(200, 144, 32, 0.14);
+    color: #e0b040;
+}
+.source-add-row--warn:hover {
+    background: rgba(200, 144, 32, 0.26);
+    border-color: #e0b040;
+    color: #f0c860;
+}
+.source-add-row--warn .source-dot { color: #e0b040; }
+.source-add-row--warn .source-name { color: #e0b040 !important; }
+
+/* ── Node picker (channel panel) & fingerprint preview (devices panel) ── */
+.node-picker-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 1px 12px 4px 28px;
+    font-size: 9px; color: var(--text-dead); letter-spacing: 1px;
+}
+.node-picker-lbl { white-space: nowrap; flex-shrink: 0; }
+.node-picker-sel {
+    flex: 1; max-width: 140px;
+    background: var(--bg-surface, #111); color: var(--text-muted);
+    border: 1px solid var(--border-dim); font-size: 9px;
+    letter-spacing: 0.5px; padding: 1px 3px; cursor: pointer;
+    font-family: var(--font-mono, monospace);
+}
+.node-picker-sel:focus { outline: none; border-color: var(--border-glow); }
+.node-picker-row.unbound .node-picker-sel { border-color: #c0a010; color: #c0a010; }
+
+/* ── Soul ID callout (devices panel) ── */
+.soul-id-callout {
+    margin: 6px 8px 2px; padding: 8px 10px;
+    border: 1px solid var(--border-dim); background: rgba(0,0,0,0.2);
+    font-size: 11px; letter-spacing: 1px; color: var(--text-muted);
+}
+.soul-id-callout strong { color: var(--text-bright); font-size: 14px; margin: 0 4px; }
+.soul-id-callout .copy-key-btn { vertical-align: middle; }
+.soul-id-hint { font-size: 9px; color: var(--text-dead); letter-spacing: .3px; margin-top: 4px; }
+
+/* ── Pending device pairing (devices panel) ── */
+.pending-device {
+    margin: 4px 8px; padding: 6px 8px;
+    border: 1px dashed var(--border-dim); background: rgba(0,0,0,0.2);
+}
+.pending-device-head { display: flex; align-items: center; gap: 6px; }
+.pending-device-head .source-name { font-size: 11px; color: var(--text-normal); }
+.pending-device-id {
+    font-size: 9px; color: var(--text-dead); letter-spacing: 0.8px;
+    padding: 2px 0 4px 22px; font-family: var(--font-mono, monospace);
+}
+.pending-device-row { display: flex; align-items: center; gap: 6px; }
+.pending-code-input {
+    flex: 1; letter-spacing: 3px; text-align: center; font-size: 12px;
+}
+.pending-approve-btn {
+    background: rgba(139,0,0,0.15); border: 1px solid var(--border-glow);
+    color: var(--text-bright); font-family: var(--font-mono, monospace);
+    font-size: 9px; letter-spacing: 1.5px; padding: 5px 8px; cursor: pointer;
+    white-space: nowrap;
+}
+.pending-approve-btn:hover:not(:disabled) { background: rgba(139,0,0,0.3); }
+.pending-approve-btn:disabled { opacity: 0.5; cursor: default; }
+.trust-browser-btn { display: flex; justify-content: center; width: fit-content; margin: 6px auto 4px; padding: 5px 12px; text-align: center; }
+.device-pairing-hint {
+    font-size: 9px; color: var(--text-dead); line-height: 1.5;
+    padding: 8px 12px; letter-spacing: 0.5px;
+}
+

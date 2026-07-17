@@ -1,0 +1,150 @@
+@* Left-menu INDEX — the full catalogue of chat "/" commands and "#" references.
+   Data comes from ChatCatalog (shared with the inline "/" palette). Tabs split commands from
+   references; groups collapse (collapsed by default); a search box filters across both. *@
+
+<div class="idx-panel">
+    <div class="idx-intro">
+        Type <code>/</code> or <code>#</code> in the transmit field to summon the inline palette.
+        <span class="idx-badge idx-badge-available">READY</span> work now;
+        <span class="idx-badge idx-badge-planned">PLANNED</span> are charted in
+        <code>docs/commands-and-references-plan.md</code>.
+    </div>
+
+    <div class="idx-tabs">
+        <button class="idx-tab @(_tab == Tab.Commands ? "active" : "")" @onclick="() => SetTab(Tab.Commands)">
+            // COMMANDS <span class="idx-tab-count">@_commandCount</span>
+        </button>
+        <button class="idx-tab @(_tab == Tab.References ? "active" : "")" @onclick="() => SetTab(Tab.References)">
+            // REFERENCES <span class="idx-tab-count">@_referenceCount</span>
+        </button>
+    </div>
+
+    <div class="idx-search-wrap">
+        <span class="idx-search-icon">⌕</span>
+        <input class="idx-search" placeholder="search @(_tab == Tab.Commands ? "commands" : "references")…"
+               @bind="_search" @bind:event="oninput" />
+        @if (!string.IsNullOrEmpty(_search))
+        {
+            <button class="idx-search-clear" @onclick="ClearSearch" title="Clear">✕</button>
+        }
+    </div>
+
+    @if (_tab == Tab.Commands)
+    {
+        var groups = FilterCommands().GroupBy(c => c.Group).ToList();
+        @if (groups.Count == 0)
+        {
+            <div class="idx-empty">No commands match “@_search”.</div>
+        }
+        @foreach (var group in groups)
+        {
+            var key      = $"cmd:{group.Key}";
+            var expanded = IsExpanded(key);
+            <div class="idx-group-header" @onclick="() => Toggle(key)">
+                <span class="idx-group-toggle">@(expanded ? "▼" : "▶")</span>
+                <span class="idx-group-name">@group.Key</span>
+                <span class="idx-count">@group.Count()</span>
+            </div>
+            @if (expanded)
+            {
+                @foreach (var c in group)
+                {
+                    <div class="idx-row @(c.Status == CatalogStatus.Planned ? "idx-planned" : "")">
+                        <div class="idx-row-head">
+                            <span class="idx-token">@c.Name@(string.IsNullOrEmpty(c.ArgHint) ? "" : " " + c.ArgHint)</span>
+                            @StatusBadge(c.Status)
+                        </div>
+                        <div class="idx-desc">@c.Description</div>
+                    </div>
+                }
+            }
+        }
+    }
+    else
+    {
+        var groups = FilterReferences().GroupBy(r => r.Group).ToList();
+        @if (groups.Count == 0)
+        {
+            <div class="idx-empty">No references match “@_search”.</div>
+        }
+        @foreach (var group in groups)
+        {
+            var key      = $"ref:{group.Key}";
+            var expanded = IsExpanded(key);
+            <div class="idx-group-header" @onclick="() => Toggle(key)">
+                <span class="idx-group-toggle">@(expanded ? "▼" : "▶")</span>
+                <span class="idx-group-name">@group.Key</span>
+                <span class="idx-count">@group.Count()</span>
+            </div>
+            @if (expanded)
+            {
+                @foreach (var r in group)
+                {
+                    <div class="idx-row @(r.Status == CatalogStatus.Planned ? "idx-planned" : "")">
+                        <div class="idx-row-head">
+                            <span class="idx-token">@r.Token</span>
+                            @StatusBadge(r.Status)
+                        </div>
+                        <div class="idx-desc">@r.Description</div>
+                        @if (!string.IsNullOrEmpty(r.Backing))
+                        {
+                            <div class="idx-backing">↳ @r.Backing</div>
+                        }
+                    </div>
+                }
+            }
+        }
+    }
+</div>
+
+@code {
+    private enum Tab { Commands, References }
+    private Tab _tab = Tab.Commands;
+    private string _search = "";
+
+    // Groups collapsed by default: a group is open only if the user expanded it, OR a search is
+    // active (then every matching group auto-expands so results are visible without extra clicks).
+    private readonly HashSet<string> _expanded = new();
+
+    private bool Searching => !string.IsNullOrWhiteSpace(_search);
+
+    private int _commandCount   => FilterCommands().Count();
+    private int _referenceCount => FilterReferences().Count();
+
+    private void SetTab(Tab tab) => _tab = tab;
+    private void ClearSearch() => _search = "";
+
+    private bool IsExpanded(string key) => Searching || _expanded.Contains(key);
+
+    private void Toggle(string key)
+    {
+        if (Searching) return;   // groups are forced open while searching
+        if (!_expanded.Add(key)) _expanded.Remove(key);
+    }
+
+    // Only surface commands that actually work — planned/not-yet-implemented ones are hidden here.
+    private IEnumerable<CatalogCommand> FilterCommands() =>
+        ChatCatalog.Commands
+            .Where(c => c.Status == CatalogStatus.Available)
+            .Where(c => Matches(c.Name, c.ArgHint, c.Description, c.Group));
+
+    private IEnumerable<CatalogReference> FilterReferences() =>
+        ChatCatalog.References.Where(r => Matches(r.Token, r.Description, r.Backing, r.Group));
+
+    private bool Matches(params string[] fields)
+    {
+        if (!Searching) return true;
+        var needle = _search.Trim();
+        return fields.Any(f => !string.IsNullOrEmpty(f)
+            && f.Contains(needle, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static RenderFragment StatusBadge(CatalogStatus status) => builder =>
+    {
+        var ready = status == CatalogStatus.Available;
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", ready ? "idx-badge idx-badge-available" : "idx-badge idx-badge-planned");
+        builder.AddContent(2, ready ? "READY" : "PLANNED");
+        builder.CloseElement();
+    };
+}

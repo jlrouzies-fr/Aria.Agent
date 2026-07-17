@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <ResourcePreloader />
+
+    <!-- Tailwind Play CDN — scans DOM for classes dynamically -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'bg-base':    '#252525',
+                        'bg-panel':   '#2d2d2d',
+                        'bg-surface': '#353535',
+                        'bg-hover':   '#3a2424',
+                        'b-dim':      '#5a4040',
+                        'b-normal':   '#8a5252',
+                        'b-active':   '#b06060',
+                        'b-glow':     '#e07070',
+                        't-dead':     '#9a8282',
+                        't-muted':    '#cc9898',
+                        't-normal':   '#e08888',
+                        't-bright':   '#f5a0a0',
+                        't-title':    '#f06060',
+                        't-body':     '#eed0d0',
+                        'gold-dim':   '#6a5010',
+                        'gold':       '#9b7920',
+                        'gold-bright':'#d4a020',
+                    },
+                    fontFamily: {
+                        terminal: ['Consolas', 'Courier New', 'monospace'],
+                    },
+                    boxShadow: {
+                        'glow-sm': '0 0 6px rgba(204,0,0,0.4)',
+                        'glow-md': '0 0 12px rgba(204,0,0,0.5)',
+                        'glow-lg': '0 0 24px rgba(204,0,0,0.4)',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Google Fonts fallback for Consolas-like monospace -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+
+    <link rel="stylesheet" href="@Assets["css/theme/theme.css"]" />
+    <link rel="stylesheet" href="@Assets["css/layout/layout.css"]" />
+    <link rel="stylesheet" href="@Assets["css/bridge/bridge.css"]" />
+    <link rel="stylesheet" href="@Assets["css/sidebar/sidebar.css"]" />
+    <link rel="stylesheet" href="@Assets["css/sidebar/tools.css"]" />
+    <link rel="stylesheet" href="@Assets["css/index/index.css"]" />
+    <link rel="stylesheet" href="@Assets["css/modals/modals.css"]" />
+    <link rel="stylesheet" href="@Assets["css/modals/mcp.css"]" />
+    <link rel="stylesheet" href="@Assets["css/sidebar/souls.css"]" />
+    <link rel="stylesheet" href="@Assets["css/sidebar/lists.css"]" />
+    <link rel="stylesheet" href="@Assets["css/modals/local-source.css"]" />
+    <link rel="stylesheet" href="@Assets["css/chat/shell.css"]" />
+    <link rel="stylesheet" href="@Assets["css/chat/messages.css"]" />
+    <link rel="stylesheet" href="@Assets["css/chat/input.css"]" />
+    <link rel="stylesheet" href="@Assets["css/chat/activities.css"]" />
+    <link rel="stylesheet" href="@Assets["css/chat/status.css"]" />
+    <link rel="stylesheet" href="@Assets["css/chat/tabs.css"]" />
+    <link rel="stylesheet" href="@Assets["css/chat/format-detect.css"]" />
+    <link rel="stylesheet" href="@Assets["css/cogitations/cogitations.css"]" />
+    <link rel="stylesheet" href="@Assets["css/warplanner/warplanner.css"]" />
+    <link rel="stylesheet" href="@Assets["css/agents/agents.css"]" />
+    <link rel="stylesheet" href="@Assets["css/skills/skills.css"]" />
+    <link rel="stylesheet" href="@Assets["css/theme/tooltip.css"]" />
+    <link rel="stylesheet" href="@Assets["css/warplanner/extras.css"]" />
+    <link rel="stylesheet" href="@Assets["css/vigil/calendar.css"]" />
+    <link rel="stylesheet" href="@Assets["css/vigil/booking.css"]" />
+    <link rel="stylesheet" href="@Assets["css/vigil/current-cog.css"]" />
+    <link rel="stylesheet" href="@Assets["css/vigil/modal.css"]" />
+    <link rel="stylesheet" href="@Assets["css/hive/shell.css"]" />
+    <link rel="stylesheet" href="@Assets["css/hive/forms.css"]" />
+    <link rel="stylesheet" href="@Assets["css/hive/canvas.css"]" />
+    <link rel="stylesheet" href="@Assets["css/hive/timeline.css"]" />
+    <link rel="stylesheet" href="@Assets["css/hive/drawer.css"]" />
+    <link rel="stylesheet" href="@Assets["css/hive/modal.css"]" />
+    <link rel="stylesheet" href="@Assets["css/hive/cogitate.css"]" />
+    <link rel="stylesheet" href="@Assets["css/hive/gate.css"]" />
+    <link rel="stylesheet" href="@Assets["css/hive/governance.css"]" />
+    <link rel="stylesheet" href="@Assets["css/hive/banners.css"]" />
+    <link rel="stylesheet" href="@Assets["css/hive/transform.css"]" />
+    <link rel="stylesheet" href="@Assets["css/memory/shell.css"]" />
+    <link rel="stylesheet" href="@Assets["css/memory/canvas.css"]" />
+    <link rel="stylesheet" href="@Assets["css/chat/refpicker.css"]" />
+    <link rel="stylesheet" href="@Assets["css/chat/telemetry.css"]" />
+    <link rel="stylesheet" href="@Assets["css/chat/explorer.css"]" />
+    <link rel="stylesheet" href="@Assets["css/chat/terminal.css"]" />
+    <link rel="stylesheet" href="lib/xterm/xterm.css" />
+    <link rel="stylesheet" href="@Assets["Aria.Web.styles.css"]" />
+    <ImportMap />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+
+<body class="font-terminal bg-bg-base">
+    @* Whole app is one interactive Server circuit → navigation is true SPA: the layout,
+       NavMenu and circuit persist across route changes (no per-route island rebuild). *@
+    <Routes @rendermode="InteractiveServer" />
+
+<ReconnectModal />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="lib/xterm/xterm.js"></script>
+    <script src="lib/xterm/xterm-addon-fit.js"></script>
+    <script src="@Assets["aria-interop.js"]"></script>
+</body>
+
+</html>

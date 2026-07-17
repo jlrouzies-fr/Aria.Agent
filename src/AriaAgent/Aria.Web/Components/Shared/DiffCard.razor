@@ -1,0 +1,104 @@
+@using System.Web
+
+<div class="diff-card @(_expanded ? "diff-card--expanded" : "") @(Reverted ? "diff-card--reverted" : "")">
+    <div class="diff-card-header">
+        <span class="diff-card-path" title="@Path">@Path</span>
+        <span class="diff-card-stats">
+            @if (Created)
+            {
+                <span class="diff-card-tag diff-card-tag--created">created</span>
+            }
+            else if (Deleted)
+            {
+                <span class="diff-card-tag diff-card-tag--deleted">deleted</span>
+            }
+            else
+            {
+                <span class="diff-card-adds">+@Adds</span>
+                <span class="diff-card-dels">−@Dels</span>
+            }
+        </span>
+        <span class="diff-card-actions">
+            <button class="diff-card-btn" @onclick="OnOpenAsync" title="Open in explorer">OPEN</button>
+            @if (ShowRevert)
+            {
+                @if (Reverted)
+                {
+                    <span class="diff-card-reverted">REVERTED</span>
+                }
+                else
+                {
+                    <button class="diff-card-btn diff-card-btn--revert" @onclick="OnRevertAsync">REVERT</button>
+                }
+            }
+        </span>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(Diff))
+    {
+        <div class="diff-card-body">
+            @{
+                var lines = Diff.ReplaceLineEndings("\n").Split('\n');
+                var showAll = _expanded || lines.Length <= CollapseThreshold;
+                var display = showAll ? lines : lines.Take(CollapseThreshold).ToArray();
+            }
+            @foreach (var line in display)
+            {
+                <div class="diff-line @GetLineClass(line)">
+                    <span class="diff-line-text">@((MarkupString)HttpUtility.HtmlEncode(line))</span>
+                </div>
+            }
+            @if (!showAll)
+            {
+                <button class="diff-card-expand" @onclick="() => _expanded = true">
+                    ▼ show @((lines.Length - CollapseThreshold).ToString()) more lines
+                </button>
+            }
+        </div>
+    }
+    else if (Created)
+    {
+        <div class="diff-card-body diff-card-body--empty">New file — @Adds lines written.</div>
+    }
+    else if (Deleted)
+    {
+        <div class="diff-card-body diff-card-body--empty">File deleted — @Dels lines removed.</div>
+    }
+</div>
+
+@code {
+    private const int CollapseThreshold = 40;
+    private bool _expanded;
+
+    [Parameter] public string Path { get; set; } = "";
+    [Parameter] public string? Diff { get; set; }
+    [Parameter] public int Adds { get; set; }
+    [Parameter] public int Dels { get; set; }
+    [Parameter] public string UndoToken { get; set; } = "";
+    [Parameter] public bool Created { get; set; }
+    [Parameter] public bool Deleted { get; set; }
+    [Parameter] public bool Reverted { get; set; }
+    [Parameter] public bool ShowRevert { get; set; } = true;
+    [Parameter] public EventCallback<bool> RevertedChanged { get; set; }
+    [Parameter] public EventCallback OnOpen { get; set; }
+    [Parameter] public EventCallback OnRevert { get; set; }
+
+    private static string GetLineClass(string line) => line switch
+    {
+        ['+', ..] => "diff-line-add",
+        ['-', ..] => "diff-line-del",
+        ['@', ..] => "diff-line-hunk",
+        _ => "diff-line-ctx"
+    };
+
+    private async Task OnOpenAsync()
+    {
+        if (OnOpen.HasDelegate)
+            await OnOpen.InvokeAsync();
+    }
+
+    private async Task OnRevertAsync()
+    {
+        if (OnRevert.HasDelegate)
+            await OnRevert.InvokeAsync();
+    }
+}

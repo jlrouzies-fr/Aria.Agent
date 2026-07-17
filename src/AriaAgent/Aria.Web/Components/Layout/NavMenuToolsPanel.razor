@@ -1,0 +1,766 @@
+@using Aria.Agent
+@using Aria.Harness.Core
+@using Aria.Harness.Governance
+@using Aria.Web.Data
+@using Aria.Tools
+@using Aria.Web.Helpers
+@using Aria.Web.Components.Pages
+@using Aria.Web.Components.Shared
+@using Markdig
+@using System.Text.Json
+@using System.Security.Cryptography
+@namespace Aria.Web.Components.Layout
+
+@code {
+    [CascadingParameter(Name = "NavMenu")]
+    public NavMenu Menu { get; set; } = null!;
+}
+
+@if (true)
+{
+    <div class="tool-category gov-category">
+        <span>GOVERNANCE</span>
+        <button class="gov-help-btn" title="What do these modes do?" @onclick="Menu.OpenGovHelp">?</button>
+    </div>
+    <div class="gov-block">
+        <div class="gov-selector">
+            @foreach (var mode in NavMenu.GovernanceModes)
+            {
+                var active = Menu.SessionState.Governance == mode;
+                <button class="gov-chip @(active ? "gov-chip--active" : "")"
+                        title="@NavMenu.GovernanceBlurb(mode)"
+                        @onclick="() => Menu.SetGovernanceModeAsync(mode)">
+                    @mode.ToString().ToUpperInvariant()
+                </button>
+            }
+        </div>
+        <div class="gov-blurb">
+            <span class="gov-blurb-icon">⛨</span>
+            <span>@NavMenu.GovernanceBlurb(Menu.SessionState.Governance)</span>
+        </div>
+    </div>
+
+    <div class="tool-category">VOX INPUT</div>
+    <div class="tool-row">
+        <span class="tool-icon" style="font-size:11px">🎙</span>
+        <span class="tool-label" style="flex:1">
+            Voice Input
+            @if (Menu._voxSettings?.TranscriptionChannelName is { } ch)
+            {
+                <span class="tool-warn" style="color:var(--text-muted);font-size:9px"> @NavMenu.VoxChannelLabel(ch)</span>
+            }
+        </span>
+        <span class="tool-cfg-btn" title="Configure voice input" @onclick="Menu.OpenVoxModal">⚙</span>
+    </div>
+    
+    @foreach (var group in ToolRegistry.ByCategory())
+    {
+        <div class="tool-category">@group.Key</div>
+        @foreach (var def in group)
+        {
+            var enabled      = Menu.SessionState.IsToolEnabled(def.Id);
+            var isMcp        = def.Id == "mcp";
+            var available    = !isMcp || Menu.AgentService.HasMcpEnabled || Menu._bridgeMcpServers.Count > 0;
+            var cfg          = Menu.SessionState.GetToolConfig(def.Id);
+            var needsCfg     = def.HasConfig && def.ConfigFields.Any(f => f.Required && string.IsNullOrEmpty(cfg.GetValueOrDefault(f.Key, "")));
+            var isOAuth      = NavMenu.OAuthProvider(def.Id) is not null;
+            var oauthNotConn = isOAuth && enabled && Menu._oauthConnectedTools.TryGetValue(def.Id, out var conn) && !conn;
+    
+            <div class="tool-row @(!available ? "unavailable" : enabled ? "enabled" : "")"
+                 title="@def.Description">
+                <span class="tool-check" @onclick="() => Menu.ToggleTool(def)" style="cursor:pointer">
+                    @(enabled ? "■" : "□")
+                </span>
+                <span class="tool-icon" @onclick="() => Menu.ToggleTool(def)" style="cursor:pointer">@def.Icon</span>
+                <span class="tool-label" @onclick="() => Menu.ToggleTool(def)" style="cursor:pointer; flex:1">
+                    @def.Label
+                    @if (def.Id == "memory")
+                    {
+                        // <span class="tool-label-aka">(noosphere)</span>
+                    }
+                    @if (enabled && needsCfg)
+                    {
+                        <span class="tool-warn" title="Missing required configuration">⚠</span>
+                    }
+                    @if (oauthNotConn)
+                    {
+                        <span class="tool-warn" title="Account not connected — click ⚙ to sign in">⚠</span>
+                    }
+                </span>
+                <span class="tool-cfg-btn" title="Configure / Setup guide" @onclick="() => Menu.OpenModal(def)">⚙</span>
+            </div>
+            @if (isMcp)
+            {
+                @foreach (var srv in Menu._bridgeMcpServers)
+                {
+                    var srvTransport = srv.Transport == Aria.Tools.McpTransport.Sse ? "SSE" : "LB";
+                    var srvCls       = srv.Transport == Aria.Tools.McpTransport.Sse ? "sse" : "localbridge";
+                    <div class="tool-row mcp-sub @(srv.Enabled ? "enabled" : "")" title="@srv.Name">
+                        <span class="mcp-sub-badge @srvCls">@srvTransport</span>
+                        <span class="tool-label" style="flex:1">
+                            @srv.Name
+                        </span>
+                    </div>
+                }
+            }
+        }
+    }
+}
+
+
+@* ── Tool Config Modal ─────────────────────────────────────────────────── *@
+@if (Menu._govHelpOpen)
+{
+    <div class="modal-backdrop" @onclick="Menu.CloseGovHelp">
+        <div class="modal-panel" @onclick:stopPropagation="true">
+
+            <div class="modal-header">
+                <span class="modal-icon">⛨</span>
+                <span class="modal-title">AGENT GOVERNANCE</span>
+                <button class="modal-close" @onclick="Menu.CloseGovHelp">✕</button>
+            </div>
+
+            <div class="modal-body">
+                <p class="modal-desc">
+                    Governance decides how much the agent is trusted to act on its own. It works in three
+                    layers: <strong>restraint</strong> (should it even attempt a tool call?),
+                    <strong>approval</strong> (may the call run?), and the
+                    <strong>Inquisitorial Seal</strong> (is a human at your node authorising it?). Stricter
+                    modes save tokens by stopping the agent from wandering — reading whole folders, running
+                    commands, or looping — without your say-so. Changes take effect on your next message.
+                </p>
+
+                @foreach (var mode in NavMenu.GovernanceModes)
+                {
+                    var d        = NavMenu.GovernanceDetail(mode);
+                    var isActive = Menu.SessionState.Governance == mode;
+                    <div class="gov-help-card @(isActive ? "gov-help-card--active" : "")">
+                        <div class="gov-help-card-head">
+                            <span class="gov-help-card-name">@mode.ToString().ToUpperInvariant()</span>
+                            @if (isActive) { <span class="gov-help-card-badge">ACTIVE</span> }
+                        </div>
+                        <div class="gov-help-card-blurb">@NavMenu.GovernanceBlurb(mode)</div>
+                        <div class="gov-help-grid">
+                            <span class="gov-help-k">Tool calls</span><span class="gov-help-v">@d.Calls</span>
+                            <span class="gov-help-k">File reads</span><span class="gov-help-v">@d.Reads</span>
+                            <span class="gov-help-k">Out of scope</span><span class="gov-help-v">@d.Scope</span>
+                            <span class="gov-help-k">Mutations</span><span class="gov-help-v">@d.Mutations</span>
+                            <span class="gov-help-k">High-stakes</span><span class="gov-help-v">@d.Seal</span>
+                        </div>
+                    </div>
+                }
+
+                <div class="modal-section-title">// THE INQUISITORIAL SEAL</div>
+                <p class="modal-desc" style="margin-top:6px">
+                    In Paranoid mode, high-stakes actions (e.g. shell commands) must be authorised
+                    <strong>at your cogitator node</strong>: a window opens on your machine and the action is
+                    signed with your soul key. The terminal can never grant this itself — only you, locally, can.
+                </p>
+            </div>
+        </div>
+    </div>
+}
+
+
+@if (Menu._modalTool != null)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel" @onclick:stopPropagation="true">
+
+            <div class="modal-header">
+                <span class="modal-icon">@Menu._modalTool.Icon</span>
+                <span class="modal-title">@Menu._modalTool.Label.ToUpperInvariant()</span>
+                <button class="modal-close" @onclick="Menu.CloseModal">✕</button>
+            </div>
+
+            <div class="modal-body">
+
+                @* OAuth connection panel — pinned to the top for Microsoft / Google tools *@
+                @if (NavMenu.OAuthProvider(Menu._modalTool.Id) is { } oauthProvider)
+                {
+                    var isMs = oauthProvider == "microsoft";
+
+                    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;
+                                padding:10px 12px;margin-bottom:12px;
+                                border:1px solid var(--b-dim);background:var(--bg-surface)">
+
+                        @if (Menu._oauthConnected)
+                        {
+                            <div style="display:flex;align-items:center;gap:8px">
+                                <span style="color:#4caf50">●</span>
+                                <span style="color:var(--t-bright);font-size:0.85rem">
+                                    @(!string.IsNullOrEmpty(Menu._oauthEmail) ? Menu._oauthEmail : "Connected")
+                                </span>
+                            </div>
+                            <div style="display:flex;gap:8px">
+                                <button class="modal-cancel" style="margin:0;padding:4px 10px;font-size:0.75rem"
+                                        @onclick="Menu.DisconnectOAuthAsync">DISCONNECT</button>
+                                <button @onclick="Menu.CheckOAuthConnectionAsync"
+                                        style="padding:4px 10px;border:1px solid var(--b-normal);
+                                               background:transparent;color:var(--t-bright);
+                                               cursor:pointer;font-size:0.75rem;white-space:nowrap;
+                                               font-family:inherit">CHECK</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div style="display:flex;align-items:center;gap:8px">
+                                <span style="color:var(--t-dead)">○</span>
+                                <span style="color:var(--t-dead);font-size:0.85rem">Not connected</span>
+                            </div>
+                            <div style="display:flex;gap:8px">
+                                <button @onclick="@(() => Menu.OpenBridgeOAuthPage(oauthProvider))"
+                                        style="padding:4px 12px;border:1px solid var(--b-normal);
+                                               background:transparent;color:var(--t-bright);
+                                               cursor:pointer;font-size:0.8rem;white-space:nowrap;
+                                               font-family:inherit">
+                                    OPEN BRIDGE LOGIN
+                                </button>
+                                <button @onclick="Menu.CheckOAuthConnectionAsync"
+                                        style="padding:4px 10px;border:1px solid var(--b-normal);
+                                               background:transparent;color:var(--t-bright);
+                                               cursor:pointer;font-size:0.75rem;white-space:nowrap;
+                                               font-family:inherit">CHECK</button>
+                            </div>
+                        }
+                    </div>
+
+                    <div style="font-size:10px;color:var(--t-dead);margin:-8px 0 12px 0">
+                        Authentication happens in the Aria Bridge UI on your local machine
+                        (<code>http://localhost:5741</code>). The server never sees your OAuth secrets or tokens.
+                    </div>
+                }
+
+                @if (Menu._modalTool.Id == "terminal")
+                {
+                    <div class="modal-tabs">
+                        <button class="@(Menu._terminalModalTab == "projects" ? "modal-tab-active" : "modal-tab")"
+                                @onclick='() => Menu._terminalModalTab = "projects"'>
+                            PROJECTS
+                        </button>
+                        <button class="@(Menu._terminalModalTab == "terminal" ? "modal-tab-active" : "modal-tab")"
+                                @onclick='() => Menu._terminalModalTab = "terminal"'>
+                            REAL TERMINAL
+                        </button>
+                    </div>
+
+                    @if (Menu._terminalModalTab == "projects")
+                    {
+                        <p class="modal-desc">
+                            Project paths are declared on the Aria Bridge, not here. The web can only
+                            display them; editing happens locally on the machine running the bridge.
+                        </p>
+
+                        <div class="modal-section-title">// ALLOWED PROJECTS</div>
+                        @if (Menu._terminalProjectsRefreshing)
+                        {
+                            <p class="modal-desc" style="color:var(--text-muted)">Loading projects from bridge…</p>
+                        }
+                        else if (Menu._terminalProjects.Count == 0)
+                        {
+                            <p class="modal-desc" style="color:var(--text-muted)">
+                                No projects declared on the bridge. Add paths under
+                                <strong>Terminal Policy</strong> on the bridge status page.
+                            </p>
+                        }
+                        else
+                        {
+                            <div class="path-list">
+                                @foreach (var proj in Menu._terminalProjects)
+                                {
+                                    <div class="path-entry-group">
+                                        <div class="path-entry">
+                                            <span class="path-entry-name" style="color:var(--t-bright)">@proj.Name</span>
+                                            <span class="path-entry-path" style="color:var(--text-muted);font-family:monospace">@proj.Path</span>
+                                        </div>
+                                        @if (!string.IsNullOrEmpty(proj.Description))
+                                        {
+                                            <div class="path-entry-desc" style="color:var(--text-dead)">@proj.Description</div>
+                                        }
+                                        <div class="path-entry-node">
+                                            <span style="font-size:10px;color:var(--text-muted)">
+                                                @(!string.IsNullOrEmpty(proj.Platform) ? proj.Platform : "unknown OS")
+                                            </span>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <div style="margin-top:12px">
+                            <a href="http://localhost:5741/#terminal" target="_blank"
+                               style="font-size:0.8rem;color:var(--t-bright);text-decoration:underline">
+                                OPEN TERMINAL / PROJECTS ON BRIDGE →
+                            </a>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="modal-desc">
+                            Built-in shell tools: run commands, read/write/edit files, search the filesystem.
+                            Requires the Aria Bridge and the Terminal Capability to be enabled on it.
+                        </p>
+
+                        <div class="modal-section-title">// BRIDGE CAPABILITY</div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;
+                                    padding:10px 12px;margin-bottom:12px;
+                                    border:1px solid var(--b-dim);background:var(--bg-surface)">
+                            @if (Menu._terminalStatusChecking)
+                            {
+                                <div style="display:flex;align-items:center;gap:8px">
+                                    <span style="color:var(--text-muted)">●</span>
+                                    <span style="color:var(--text-muted);font-size:0.85rem">Checking bridge…</span>
+                                </div>
+                            }
+                            else if (Menu._terminalEnabledOnBridge)
+                            {
+                                <div style="display:flex;align-items:center;gap:8px">
+                                    <span style="color:#4caf50">●</span>
+                                    <span style="color:var(--t-bright);font-size:0.85rem">Enabled on bridge</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div style="display:flex;align-items:center;gap:8px">
+                                    <span style="color:var(--t-dead)">●</span>
+                                    <span style="color:var(--t-dead);font-size:0.85rem">Disabled on bridge</span>
+                                </div>
+                            }
+                            <button @onclick="Menu.CheckTerminalStatusAsync"
+                                    disabled="@Menu._terminalStatusChecking"
+                                    style="padding:4px 10px;border:1px solid var(--b-normal);
+                                           background:transparent;color:var(--t-bright);
+                                           cursor:pointer;font-size:0.75rem;white-space:nowrap;
+                                           font-family:inherit">
+                                CHECK
+                            </button>
+                        </div>
+
+                        @if (!Menu._terminalEnabledOnBridge && !Menu._terminalStatusChecking)
+                        {
+                            <div style="font-size:10px;color:var(--t-dead);margin:-8px 0 12px 0">
+                                Quick Exec is refused until it is enabled on the Aria Bridge. Open
+                                <code>http://localhost:5741</code> on the machine running the bridge, go to the
+                                <strong>Terminal / Projects</strong> section, and enable <strong>Quick Exec</strong>.
+                            </div>
+                        }
+
+                        <div class="modal-section-title">// BRIDGE POLICY</div>
+                        @if (Menu._terminalConfigRefreshing)
+                        {
+                            <p class="modal-desc" style="color:var(--text-muted)">Loading policy from bridge…</p>
+                        }
+                        else
+                        {
+                            <div style="margin-bottom:12px">
+                                <div style="font-size:10px;color:var(--dim);margin-bottom:4px;letter-spacing:1px;text-transform:uppercase">Allowed Paths</div>
+                                @if (Menu._terminalAllowedPaths.Length == 0)
+                                {
+                                    <p class="modal-desc" style="color:var(--text-muted)">No allowed paths declared on the bridge. All filesystem access is blocked.</p>
+                                }
+                                else
+                                {
+                                    <div class="path-list">
+                                        @foreach (var path in Menu._terminalAllowedPaths)
+                                        {
+                                            <div class="path-entry">
+                                                <span class="path-entry-path" style="color:var(--text-muted);font-family:monospace">@path</span>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <div>
+                                <div style="font-size:10px;color:var(--dim);margin-bottom:4px;letter-spacing:1px;text-transform:uppercase">Blocked Patterns</div>
+                                @if (Menu._terminalBlockedCommands.Length == 0)
+                                {
+                                    <p class="modal-desc" style="color:var(--text-muted)">Only the built-in dangerous defaults are blocked.</p>
+                                }
+                                else
+                                {
+                                    <div class="path-list">
+                                        @foreach (var pattern in Menu._terminalBlockedCommands)
+                                        {
+                                            <div class="path-entry">
+                                                <span class="path-entry-path" style="color:var(--text-muted);font-family:monospace">@pattern</span>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <div style="margin-top:12px">
+                            <a href="http://localhost:5741/#terminal" target="_blank"
+                               style="font-size:0.8rem;color:var(--t-bright);text-decoration:underline">
+                                OPEN TERMINAL / PROJECTS ON BRIDGE →
+                            </a>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <p class="modal-desc">@Menu._modalTool.Description</p>
+                }
+
+                @if (Menu._modalTool.Id == "memory")
+                {
+                    <div class="modal-section-title mem-modal-section-flex">
+                        <span>// AUTO-MEMORY</span>
+                        <button class="gov-help-btn" data-tip="What do these modes do?" @onclick="Menu.OpenMemGovHelp">?</button>
+                    </div>
+                    <div class="gov-block">
+                        <div class="gov-selector">
+                            @foreach (var mode in NavMenu.AutoMemoryModes)
+                            {
+                                var active = Menu.SessionState.AutoMemory == mode;
+                                <button class="gov-chip @(active ? "gov-chip--active" : "")"
+                                        data-tip="@NavMenu.AutoMemoryBlurb(mode)"
+                                        @onclick="() => Menu.SetAutoMemoryModeAsync(mode)">
+                                    @mode.ToString().ToUpperInvariant()
+                                </button>
+                            }
+                        </div>
+                        <div class="gov-blurb">
+                            <span class="gov-blurb-icon">🧠</span>
+                            <span>@NavMenu.AutoMemoryBlurb(Menu.SessionState.AutoMemory)</span>
+                        </div>
+                        @if (Menu.SessionState.AutoMemory == AutoMemoryMode.Regular)
+                        {
+                            <div class="gov-blurb" style="padding-top:0">
+                                <span class="gov-blurb-icon">⟳</span>
+                                <span>every</span>
+                                <input type="number" min="1" max="50" class="modal-input" style="width:52px;padding:2px 4px;text-align:center"
+                                       value="@Menu.SessionState.AutoMemoryInterval"
+                                       @onchange="(e) => Menu.SetAutoMemoryIntervalAsync(int.TryParse(e.Value?.ToString(), out var n) ? n : Menu.SessionState.AutoMemoryInterval)" />
+                                <span>exchanges</span>
+                            </div>
+                        }
+                        @if (Menu.SessionState.AutoMemory == AutoMemoryMode.Always)
+                        {
+                            <div class="gov-blurb" style="padding-top:0;color:#c8a020">
+                                <span class="gov-blurb-icon">⚠</span>
+                                <span>Every turn triggers an extraction (and embedding) call — watch usage on metered channels.</span>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="modal-section-title" style="margin-top:14px">// RECALL SCOPE</div>
+                    <div class="gov-block">
+                        <div class="gov-selector">
+                            @foreach (var scope in NavMenu.RecallScopes)
+                            {
+                                var active = Menu.SessionState.RecallScope == scope;
+                                <button class="gov-chip @(active ? "gov-chip--active" : "")"
+                                        data-tip="@NavMenu.RecallScopeBlurb(scope)"
+                                        @onclick="() => Menu.SetRecallScopeAsync(scope)">
+                                    @NavMenu.RecallScopeLabel(scope)
+                                </button>
+                            }
+                        </div>
+                        <div class="gov-blurb">
+                            <span class="gov-blurb-icon">🕸</span>
+                            <span>@NavMenu.RecallScopeBlurb(Menu.SessionState.RecallScope)</span>
+                        </div>
+                        @if (Menu.SessionState.RecallScope == RecallScope.AllNodes && !Menu.MultipleNodesConnected)
+                        {
+                            <div class="gov-blurb" style="padding-top:0;color:#c8a020">
+                                <span class="gov-blurb-icon">ℹ</span>
+                                <span>Only one node is connected — this behaves like “This node” until another node is online.</span>
+                            </div>
+                        }
+                    </div>
+
+                    <div style="margin-top:12px">
+                        <a href="http://localhost:5741/#memory" target="_blank"
+                           style="font-size:0.8rem;color:var(--t-bright);text-decoration:underline">
+                            OPEN MEMORY ON BRIDGE →
+                        </a>
+                    </div>
+                }
+
+                @if (Menu._modalTool.SetupGuide.Count > 0 && Menu._modalTool.Id != "terminal")
+                {
+                    <div class="modal-section-title">// SETUP GUIDE</div>
+                    <ul class="setup-guide">
+                        @foreach (var step in Menu._modalTool.SetupGuide)
+                        {
+                            <li class="setup-step">
+                                <span>@((MarkupString)step.Html)</span>
+                                @if (step.Code != null)
+                                {
+                                    <pre class="setup-code">@step.Code</pre>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+
+                @if (Menu._modalTool.HasConfig && Menu._modalTool.Id != "terminal")
+                {
+                    <div class="modal-section-title">// CONFIGURATION</div>
+                    @foreach (var field in Menu._modalTool.ConfigFields)
+                    {
+                        var val = Menu._editBuffer.GetValueOrDefault(field.Key, string.Empty);
+                        <div class="modal-field">
+                            <label class="modal-field-label">
+                                @field.Label
+                                @if (field.Required) { <span class="modal-required">*</span> }
+                            </label>
+                            @if (field.InputType == "pathlist")
+                            {
+                                <div class="path-list">
+                                    @for (int pi = 0; pi < Menu._pathListEntries.Count; pi++)
+                                    {
+                                        var idx = pi;
+                                        <div class="path-entry-group">
+                                            <div class="path-entry">
+                                                <DebouncedInput class="path-entry-name" placeholder="Project name"
+                                                                Value="@Menu._pathListEntries[idx].Name"
+                                                                ValueChanged="v => Menu.UpdatePathEntryName(idx, v)" />
+                                                <DebouncedInput class="path-entry-path" placeholder="/absolute/path"
+                                                                Value="@Menu._pathListEntries[idx].Path"
+                                                                ValueChanged="v => Menu.UpdatePathEntryPath(idx, v)" />
+                                                <button class="path-entry-remove" @onclick="() => Menu.RemovePathEntry(idx)">✕</button>
+                                            </div>
+                                            <DebouncedInput class="path-entry-desc" placeholder="What is this project? (e.g. Blazor web app in C# .NET 10)"
+                                                            Value="@Menu._pathListEntries[idx].Description"
+                                                            ValueChanged="v => Menu.UpdatePathEntryDesc(idx, v)" />
+                                            <div class="path-entry-node">
+                                                <ThemedSelect Value="@(Menu._pathListEntries[idx].NodeId ?? "")"
+                                                              ValueChanged="@(v => Menu.UpdatePathEntryNodeId(idx, string.IsNullOrEmpty(v) ? null : v))"
+                                                              Options="Menu.BridgeNodeSelectOptions()" Placeholder="— use LLM node —"
+                                                              ControlClass="modal-input" />
+                                                @if (!string.IsNullOrEmpty(Menu._pathListEntries[idx].Platform))
+                                                {
+                                                    <span class="path-entry-platform">@Menu._pathListEntries[idx].Platform</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                    <button class="path-add-btn" @onclick="Menu.AddPathEntry">+ ADD PROJECT</button>
+                                </div>
+                            }
+                            else if (field.InputType == "textarea")
+                            {
+                                <DebouncedTextArea class="modal-textarea" rows="5"
+                                                   Placeholder="@field.Placeholder"
+                                                   Value="@val"
+                                                   ValueChanged="v => Menu.OnFieldInput(field.Key, v)" />
+                            }
+                            else
+                            {
+                                <DebouncedInput class="modal-input"
+                                                type="@(field.InputType == "password" ? "password" : "text")"
+                                                Placeholder="@field.Placeholder"
+                                                Value="@val"
+                                                ValueChanged="v => Menu.OnFieldInput(field.Key, v)" />
+                            }
+                        </div>
+                    }
+                }
+
+                @if (Menu._modalTool.Id == "mcp")
+                {
+                    @* ── Local Bridge status ── *@
+                    <div class="bridge-status-bar">
+                        <span class="bridge-dot @(Menu._bridgeOnline ? "online" : "offline")"></span>
+                        <span class="bridge-label">LOCAL BRIDGE</span>
+                        <span class="bridge-state">@(Menu._bridgeOnline ? "CONNECTED" : Menu._bridgeChecking ? "CHECKING…" : "NOT RUNNING")</span>
+                        <button class="bridge-check-btn" disabled="@Menu._bridgeChecking" @onclick="Menu.CheckBridgeStatusAsync">CHECK</button>
+                        <a class="bridge-download-link" href="https://github.com/your-org/aria-agent/releases" target="_blank">↓ DOWNLOAD</a>
+                    </div>
+
+                    <div class="modal-section-title">// AVAILABLE MCP SERVERS</div>
+
+                    <p class="modal-empty" style="font-size:11px">
+                        Servers are configured on the bridge at
+                        <a href="http://localhost:5741" target="_blank">http://localhost:5741</a>.
+                        This panel only shows which ones are available.
+                    </p>
+
+                    @if (Menu._bridgeMcpServers.Count == 0)
+                    {
+                        <p class="modal-empty">No bridge MCP servers configured yet.</p>
+                    }
+                    else
+                    {
+                        @foreach (var srv in Menu._bridgeMcpServers)
+                        {
+                            var badge = srv.Transport == Aria.Tools.McpTransport.Sse ? "SSE" : "LB";
+                            var detail = srv.Transport == Aria.Tools.McpTransport.Sse ? srv.Url : srv.Command;
+                            <div class="mcp-server-card">
+                                <div class="mcp-server-card-header">
+                                    <span class="mcp-transport-badge @srv.Transport.ToString().ToLower()">@badge</span>
+                                    <span class="mcp-name">@srv.Name</span>
+                                    <span style="font-size:10px;color:@(srv.Enabled ? "var(--success)" : "var(--text-dead)")">
+                                        @(srv.Enabled ? "enabled" : "disabled")
+                                    </span>
+                                </div>
+                                <div class="mcp-server-card-detail">
+                                    <div class="mcp-detail-row"><span class="mcp-detail-label">@(srv.Transport == Aria.Tools.McpTransport.Sse ? "url" : "cmd")</span><span class="mcp-detail-val">@detail</span></div>
+                                </div>
+                            </div>
+                        }
+                    }
+                }
+            </div>
+
+            <div class="modal-footer">
+                @if (Menu._modalTool.HasConfig)
+                {
+                    <button class="modal-apply" @onclick="Menu.ApplyModal">APPLY</button>
+                }
+                <button class="modal-cancel" @onclick="Menu.CloseModal">CLOSE</button>
+                @if (Menu._modalSaved)
+                {
+                    <span class="modal-saved-msg">// COMMITTED //</span>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Auto-Memory Help Modal ── opened from inside the Memory tool's config modal above, so this
+     must come after it in the DOM to stack on top (same z-index, later element wins). ──────────── *@
+@if (Menu._memGovHelpOpen)
+{
+    <div class="modal-backdrop" @onclick="Menu.CloseMemGovHelp">
+        <div class="modal-panel" @onclick:stopPropagation="true">
+
+            <div class="modal-header">
+                <span class="modal-icon">🧠</span>
+                <span class="modal-title">AUTO-MEMORY</span>
+                <button class="modal-close" @onclick="Menu.CloseMemGovHelp">✕</button>
+            </div>
+
+            <div class="modal-body">
+                <p class="modal-desc">
+                    Controls how proactively the agent commits information to the Noosphere without you
+                    explicitly asking. It only matters once the Memory tool is enabled. <strong>Off</strong>
+                    and <strong>Model Auto</strong> leave the decision to the model's own <code>Inscribe</code>
+                    tool calls; <strong>Regular</strong> and <strong>Always</strong> have the harness call
+                    Inscribe automatically, on a schedule you don't have to think about. Changes take effect
+                    on your next message.
+                </p>
+
+                @foreach (var mode in NavMenu.AutoMemoryModes)
+                {
+                    var isActive = Menu.SessionState.AutoMemory == mode;
+                    <div class="gov-help-card @(isActive ? "gov-help-card--active" : "")">
+                        <div class="gov-help-card-head">
+                            <span class="gov-help-card-name">@mode.ToString().ToUpperInvariant()</span>
+                            @if (isActive) { <span class="gov-help-card-badge">ACTIVE</span> }
+                        </div>
+                        <div class="gov-help-card-blurb">@NavMenu.AutoMemoryDetail(mode)</div>
+                    </div>
+                }
+
+                <div class="modal-section-title">// ON "ALWAYS"</div>
+                <p class="modal-desc" style="margin-top:6px;color:#c8a020">
+                    Every reply inscribes through the full extraction pipeline (an LLM call to pull out facts,
+                    plus an embedding call if configured) — on a busy conversation this can mean one extra
+                    model round-trip per turn. Fine for a local, free channel; worth avoiding on a metered
+                    cloud channel unless you want that granularity.
+                </p>
+            </div>
+        </div>
+    </div>
+}
+
+
+@* ── Vox Config Modal ─────────────────────────────────────────────────── *@
+@if (Menu._voxModal)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel" @onclick:stopPropagation="true">
+
+            <div class="modal-header">
+                <span class="modal-icon">🎙</span>
+                <span class="modal-title">VOX — VOICE INPUT</span>
+                <button class="modal-close" @onclick="Menu.CloseVoxModal">✕</button>
+            </div>
+
+            <div class="modal-body">
+                <p class="modal-desc">
+                    Records via browser microphone, sends audio to a cloud transcription service (Whisper),
+                    then optionally fixes the text through any configured channel.
+                </p>
+
+                <div class="modal-section-title">// TRANSCRIPTION</div>
+                <div class="modal-field">
+                    <label class="modal-field-label">Transcription Channel</label>
+                    <ThemedSelect Value="@(Menu._voxTranscriptionSelect ?? "")"
+                                  ValueChanged="@(v => Menu._voxTranscriptionSelect = string.IsNullOrEmpty(v) ? null : v)"
+                                  Options="Menu.TranscriptionOptions()" Placeholder="Browser (built-in, no setup)"
+                                  ControlClass="modal-input" />
+                </div>
+                <p style="font-size:10px;color:var(--text-dead);margin-top:4px">
+                    Default: browser built-in speech recognition (no setup needed). <strong>Local Whisper</strong> runs
+                    entirely on your node — fully offline, works in any browser (incl. Edge/Safari), no API key.
+                    OpenAI/Groq offer cloud Whisper — configure an API key in Channel first.
+                </p>
+
+                @if (Menu.SelectedLocalSize is { } localSize)
+                {
+                    var m = Menu.SelectedLocalModel;
+                    <div class="vox-local-model">
+                        @if (m is null)
+                        {
+                            <span class="vox-local-status">Checking node…</span>
+                        }
+                        else if (m.Downloaded)
+                        {
+                            <span class="vox-local-status vox-local-ok">✓ Installed on node — ready, fully offline</span>
+                        }
+                        else if (m.Downloading)
+                        {
+                            <div class="vox-local-progress-wrap">
+                                <div class="vox-local-progress-bar" style="width:@(m.Progress)%"></div>
+                            </div>
+                            <span class="vox-local-status">Downloading @m.Label model… @m.Progress%</span>
+                        }
+                        else
+                        {
+                            <button class="modal-apply vox-local-dl" @onclick="() => Menu.DownloadLocalModelAsync(localSize)">
+                                ⬇ Download @m.Label model (~@(m.ApproxBytes / 1_000_000) MB)
+                            </button>
+                            @if (m.Error is { } err)
+                            {
+                                <span class="vox-local-status vox-local-err">Download failed: @err</span>
+                            }
+                            else
+                            {
+                                <span class="vox-local-status">One-time download, then works offline forever.</span>
+                            }
+                        }
+                        @if (Menu._voxLocalError is { } lerr)
+                        {
+                            <span class="vox-local-status vox-local-err">@lerr</span>
+                        }
+                    </div>
+                }
+
+                <div class="modal-section-title" style="margin-top:14px">// TEXT FIXING (optional)</div>
+                <div class="modal-field">
+                    <label class="modal-field-label">Fixing Channel</label>
+                    <ThemedSelect Value="@(Menu._voxFixingSelect ?? "")"
+                                  ValueChanged="@(v => Menu._voxFixingSelect = string.IsNullOrEmpty(v) ? null : v)"
+                                  Options="Menu.FixingOptions()" Placeholder="None — use raw transcript"
+                                  ControlClass="modal-input" />
+                </div>
+                <p style="font-size:10px;color:var(--text-dead);margin-top:4px">
+                    Runs the transcript through an LLM to fix punctuation, mishearings, and filler words.
+                </p>
+
+                @if (Menu._voxSaved) { <div class="modal-saved-msg" style="margin-top:8px">// COMMITTED //</div> }
+            </div>
+
+            <div class="modal-footer">
+                <button class="modal-apply" @onclick="Menu.SaveVoxSettingsAsync">SAVE</button>
+                <button class="modal-cancel" @onclick="Menu.CloseVoxModal">CLOSE</button>
+            </div>
+        </div>
+    </div>
+}
+

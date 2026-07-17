@@ -1,0 +1,80 @@
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@implements IDisposable
+
+@* The always-on bridge version is hidden; only the update-available badge is surfaced (without the
+   version number), so the header stays clean but the user is still prompted when an update exists. *@
+@if (_currentVersion != null && _hasUpdate)
+{
+    <span class="header-bridge-version update"
+          data-tip="Bridge update available (@_currentVersion → @_latestVersion). Click to update."
+          @onclick="RequestUpdate">
+        ⟁ UPDATE
+        <span class="bridge-version-update-dot"></span>
+    </span>
+}
+
+@code {
+    private string? _currentVersion;
+    private string? _latestVersion;
+    private bool    _hasUpdate;
+    private Timer?  _timer;
+
+    protected override void OnInitialized()
+    {
+        _ = PollAsync();
+        _timer = new Timer(async _ => await PollAsync(), null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30));
+    }
+
+    private void RequestUpdate()
+    {
+        if (_currentVersion != null && _latestVersion != null)
+        {
+            BridgeGatewayModal.RequestUpdate(_currentVersion, _latestVersion);
+        }
+    }
+
+    private async Task PollAsync()
+    {
+        try
+        {
+            var current = await JS.InvokeAsync<BridgeVersionResult>("ariaInterop.getLocalBridgeVersion");
+            if (current?.Ok == true)
+            {
+                _currentVersion = current.Version;
+            }
+
+            // Debug override: append ?simulateBridgeUpdate=0.3.99-test to force the update badge.
+            var simulated = System.Web.HttpUtility.ParseQueryString(new Uri(Navigation.Uri).Query).Get("simulateBridgeUpdate");
+            if (!string.IsNullOrWhiteSpace(simulated))
+            {
+                _latestVersion = simulated;
+            }
+            else
+            {
+                var latest = await JS.InvokeAsync<BridgeVersionResult>("ariaInterop.getLatestBridgeVersion");
+                if (latest?.Ok == true)
+                {
+                    _latestVersion = latest.Version;
+                }
+            }
+
+            _hasUpdate = !string.IsNullOrEmpty(_currentVersion)
+                && !string.IsNullOrEmpty(_latestVersion)
+                && !string.Equals(_currentVersion, _latestVersion, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            // JS interop may fail during prerender or if the circuit disconnects.
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+
+    private sealed record BridgeVersionResult(bool Ok, string? Version, string? Error);
+}

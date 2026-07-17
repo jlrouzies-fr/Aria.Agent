@@ -1,0 +1,151 @@
+.components-reconnect-first-attempt-visible,
+.components-reconnect-repeated-attempt-visible,
+.components-reconnect-failed-visible,
+.components-pause-visible,
+.components-resume-failed-visible,
+.components-rejoining-animation {
+    display: none;
+}
+
+#components-reconnect-modal.components-reconnect-show .components-reconnect-first-attempt-visible,
+#components-reconnect-modal.components-reconnect-show .components-rejoining-animation,
+#components-reconnect-modal.components-reconnect-paused .components-pause-visible,
+#components-reconnect-modal.components-reconnect-resume-failed .components-resume-failed-visible,
+#components-reconnect-modal.components-reconnect-retrying,
+#components-reconnect-modal.components-reconnect-retrying .components-reconnect-repeated-attempt-visible,
+#components-reconnect-modal.components-reconnect-retrying .components-rejoining-animation,
+#components-reconnect-modal.components-reconnect-failed,
+#components-reconnect-modal.components-reconnect-failed .components-reconnect-failed-visible {
+    display: block;
+}
+
+#components-reconnect-modal {
+    background: rgba(10, 5, 5, 0.92);
+    border: 1px solid #b06060;
+    color: #f5a0a0;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    width: 30rem;
+    margin: 28vh auto;
+    padding: 28px 36px;
+    border-radius: 0;
+    box-shadow: 0 0 40px rgba(176, 60, 60, 0.5), inset 0 0 30px rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    transition: display 0.4s allow-discrete, overlay 0.4s allow-discrete;
+    animation: aria-reconnect-fadeout 0.4s both;
+}
+
+#components-reconnect-modal[open] {
+    animation: aria-reconnect-slidein 0.5s cubic-bezier(.05, .89, .25, 1.02) 0.1s,
+               aria-reconnect-fadein  0.4s ease-in-out 0.1s;
+    animation-fill-mode: both;
+}
+
+#components-reconnect-modal::backdrop {
+    background: rgba(0, 0, 0, 0.7);
+    animation: aria-reconnect-fadein 0.4s ease-in-out;
+    opacity: 1;
+}
+
+@keyframes aria-reconnect-slidein {
+    0%   { transform: translateY(20px) scale(0.97); }
+    100% { transform: translateY(0) scale(1); }
+}
+
+@keyframes aria-reconnect-fadein {
+    0%   { opacity: 0; }
+    100% { opacity: 1; }
+}
+
+@keyframes aria-reconnect-fadeout {
+    0%   { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+.components-reconnect-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+}
+
+.reconnect-header {
+    color: #e07070;
+    font-size: 13px;
+    letter-spacing: 4px;
+    text-shadow: 0 0 8px rgba(224, 112, 112, 0.6);
+    border-bottom: 1px solid #8a5252;
+    width: 100%;
+    text-align: center;
+    padding-bottom: 10px;
+    animation: warnPulse 2s ease-in-out infinite;
+}
+
+/* Auspex scan animation — horizontal sweep */
+.components-rejoining-animation {
+    width: 200px;
+    height: 3px;
+    background: rgba(176, 96, 96, 0.15);
+    border: 1px solid #8a5252;
+    position: relative;
+    overflow: hidden;
+    border-radius: 0;
+    margin: 4px 0;
+}
+
+.components-rejoining-animation div {
+    position: absolute;
+    top: 0;
+    left: -80px;
+    width: 80px;
+    height: 100%;
+    background: linear-gradient(to right, transparent, #e07070, transparent);
+    animation: aria-scan 1.6s linear infinite;
+    border-radius: 0;
+    border: none;
+    opacity: 1;
+}
+
+.components-rejoining-animation div:nth-child(2) {
+    animation-delay: -0.8s;
+}
+
+@keyframes aria-scan {
+    0%   { left: -80px; }
+    100% { left: 280px; }
+}
+
+@keyframes warnPulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.65; }
+}
+
+#components-reconnect-modal p {
+    margin: 0;
+    text-align: center;
+    color: #cc9898;
+    line-height: 1.8;
+}
+
+#components-reconnect-modal button {
+    background: rgba(80, 20, 20, 0.6);
+    border: 1px solid #b06060;
+    color: #f5a0a0;
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 6px 20px;
+    cursor: pointer;
+    transition: background 0.15s, box-shadow 0.15s;
+    border-radius: 0;
+    margin-top: 4px;
+}
+
+#components-reconnect-modal button:hover {
+    background: rgba(139, 0, 0, 0.5);
+    box-shadow: 0 0 10px rgba(176, 60, 60, 0.4);
+    color: #ffffff;
+}

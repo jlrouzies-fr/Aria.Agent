@@ -1,0 +1,158 @@
+/* Soul identity card in souls panel */
+.souls-section-lbl {
+    font-size: 10px; font-weight: 500; letter-spacing: .14em; color: #e8e8ea;
+    text-transform: uppercase; padding: 4px 12px 2px;
+}
+.souls-hint {
+    font-size: 10px; color: var(--text-dead); padding: 2px 12px 6px;
+    letter-spacing: .04em; line-height: 1.5;
+}
+.soul-identity-card {
+    margin: 4px 8px 2px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-dim);
+    border-radius: 2px;
+    padding: 8px 10px;
+}
+.soul-identity-card.soul-absent { border-color: rgba(224,123,57,0.35); }
+.soul-absent-warning {
+    font-size: 9px; letter-spacing: .12em; color: #e07b39;
+    text-transform: uppercase; margin-bottom: 2px;
+}
+.soul-nav-warning {
+    font-size: 10px; font-weight: bold; color: #e07b39;
+    margin-left: auto; padding-right: 6px; line-height: 1;
+}
+.soul-id-header {
+    display: flex; align-items: center; gap: 7px; margin-bottom: 6px;
+}
+.soul-id-name {
+    font-size: 12px; color: var(--text-bright); letter-spacing: .06em;
+    flex: 1; font-weight: bold;
+}
+.soul-fingerprint {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.fingerprint-val {
+    font-size: 10px; color: var(--text-dead); letter-spacing: .04em;
+    font-family: 'Consolas', monospace; flex: 1;
+}
+.copy-key-btn {
+    background: none; border: 1px solid var(--border-dim);
+    color: var(--text-dead); font-size: 9px; letter-spacing: .08em;
+    padding: 2px 7px; cursor: pointer; border-radius: 2px;
+    font-family: 'Consolas', monospace;
+    transition: color .12s, border-color .12s;
+    /* Fixed width so COPY KEY and COPY GUID line up at the same size. */
+    min-width: 92px; text-align: center;
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+}
+.copy-key-btn:hover { color: var(--text-muted); border-color: var(--border-normal); }
+.copy-feedback {
+    font-size: 9px; color: #4caf50; letter-spacing: .1em;
+    padding-top: 3px;
+}
+/* ── Contacts section ─────────────────────────────────────────────────────── */
+
+.contacts-reload-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-dead); font-size: 12px; padding: 0 4px;
+    line-height: 1; float: right;
+}
+.contacts-reload-btn:hover { color: var(--text-normal); }
+
+.contact-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 6px;
+    border-bottom: 1px solid var(--border-dim);
+}
+.contact-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.contact-name {
+    font-size: 11px; color: var(--text-normal); letter-spacing: 1px;
+    text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.contact-fp { font-size: 9px; color: var(--text-dead); letter-spacing: .5px; }
+
+.contact-invite-btn {
+    background: none; border: 1px solid var(--border-dim); color: var(--text-muted);
+    font-size: 12px; padding: 2px 7px; cursor: pointer; transition: all .15s;
+    font-family: inherit;
+}
+.contact-invite-btn:hover { border-color: var(--border-glow); color: var(--text-bright); }
+
+/* Invite form (inline under contact row) */
+.invite-form {
+    padding: 8px 6px 10px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-dim);
+    border-top: none;
+    display: flex; flex-direction: column; gap: 6px;
+}
+.invite-topic-input {
+    width: 100%; resize: none; background: var(--bg-input);
+    border: 1px solid var(--border-dim); color: var(--text-normal);
+    font-family: var(--font-mono); font-size: 11px; padding: 5px 7px;
+    outline: none; box-sizing: border-box;
+}
+.invite-topic-input:focus { border-color: var(--border-glow); }
+.invite-rounds-row {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 10px; color: var(--text-muted); letter-spacing: 1px;
+}
+.invite-rounds-row input[type="range"] { flex: 1; accent-color: var(--border-glow); }
+.invite-form-btns { display: flex; gap: 6px; }
+.invite-error { font-size: 9px; color: #c0392b; letter-spacing: .5px; }
+
+/* Add-contact form */
+.contact-add-toggle {
+    font-size: 9px; color: var(--text-dead); letter-spacing: 2px;
+    text-transform: uppercase; cursor: pointer; padding: 6px 4px 2px;
+    transition: color .15s;
+}
+.contact-add-toggle:hover { color: var(--text-muted); }
+.contact-add-form {
+    padding: 8px 4px; display: flex; flex-direction: column; gap: 5px;
+}
+.ca-input, .ca-textarea {
+    width: 100%; background: var(--bg-input); border: 1px solid var(--border-dim);
+    color: var(--text-normal); font-family: var(--font-mono); font-size: 11px;
+    padding: 5px 7px; outline: none; box-sizing: border-box; resize: none;
+}
+.ca-input:focus, .ca-textarea:focus { border-color: var(--border-glow); }
+.ca-btn {
+    align-self: flex-start; background: none; border: 1px solid var(--border-dim);
+    color: var(--text-muted); font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: 2px; text-transform: uppercase; padding: 4px 10px; cursor: pointer;
+    transition: all .15s;
+}
+.ca-btn:hover:not(:disabled) { border-color: var(--border-glow); color: var(--text-bright); }
+.ca-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Pending exchange invites */
+.contact-invite-pending {
+    border: 1px solid var(--border-glow);
+    background: var(--bg-panel);
+    padding: 10px 10px 8px;
+    margin-bottom: 6px;
+    display: flex; flex-direction: column; gap: 4px;
+}
+.inv-pending-label { font-size: 10px; font-weight: 500; color: var(--text-bright); letter-spacing: 3px; text-transform: uppercase; }
+.inv-pending-from  { font-size: 10px; color: var(--text-normal); letter-spacing: 1px; }
+.inv-pending-topic { font-size: 11px; color: var(--text-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inv-pending-meta  { font-size: 8px; color: var(--text-dead); letter-spacing: 2px; text-transform: uppercase; }
+.inv-pending-actions { display: flex; gap: 6px; margin-top: 2px; }
+
+/* Shared invite action buttons */
+.inv-btn {
+    font-family: var(--font-mono); font-size: 9px; letter-spacing: 2px;
+    text-transform: uppercase; padding: 4px 10px;
+    border: 1px solid; background: transparent; cursor: pointer; transition: background .15s;
+}
+.inv-btn.inv-accept  { border-color: var(--border-glow); color: var(--border-glow); }
+.inv-btn.inv-accept:hover  { background: var(--bg-hover); }
+.inv-btn.inv-decline { border-color: var(--border-dim);  color: var(--text-muted);  }
+.inv-btn.inv-decline:hover { background: var(--bg-hover); }
+.inv-btn.inv-cancel  { border-color: var(--border-dim);  color: var(--text-dead);   }
+.inv-btn.inv-cancel:hover  { background: var(--bg-hover); }
+.inv-btn:disabled    { opacity: .4; cursor: not-allowed; }
+

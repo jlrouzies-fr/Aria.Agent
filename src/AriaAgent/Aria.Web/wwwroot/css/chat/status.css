@@ -1,0 +1,95 @@
+
+/* ── Error Banner ───────────────────────────────────────── */
+.error-banner {
+    background: rgba(139, 0, 0, 0.2);
+    border: 1px solid var(--border-active);
+    color: var(--text-bright);
+    font-size: 11px;
+    padding: 6px 14px;
+    letter-spacing: 1px;
+    flex-shrink: 0;
+}
+
+.status-vigil-btn {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid var(--border-dim, #2a2a2a);
+    color: var(--text-dead, #555);
+    font-size: 11px;
+    line-height: 1;
+    width: 22px;
+    height: 18px;
+    padding: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color .15s, color .15s, box-shadow .15s;
+}
+.status-vigil-btn[data-tip] { cursor: pointer; }
+.status-vigil-btn:hover {
+    border-color: var(--border-glow, #8b0000);
+    color: var(--text-normal, #aaa);
+    box-shadow: var(--glow-sm, 0 0 6px rgba(139,0,0,0.3));
+}
+
+.status-tokens {
+    flex-shrink: 0;
+    white-space: nowrap;
+    color: var(--text-dead);
+    min-width: 120px;
+    font-size: 9px;
+}
+
+/* ── Blazor error boundary ──────────────────────────────── */
+.blazor-error-boundary {
+    background: rgba(139, 0, 0, 0.2);
+    border: 1px solid var(--border-active);
+    padding: 8px 14px;
+    color: var(--text-bright);
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+/* ── Not Found page ─────────────────────────────────────── */
+.not-found-page {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 16px;
+    color: var(--text-muted);
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+.not-found-page h1 { color: var(--text-bright); font-size: 48px; letter-spacing: 8px; }
+
+/* ── Channel warning tooltip ────────────────────────────── */
+.channel-warn-tooltip {
+    position: fixed;
+    left: 228px;
+    background: rgba(80, 60, 0, 0.85);
+    border: 1px solid rgba(192, 160, 16, 0.8);
+    color: #c0a010;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    padding: 5px 10px;
+    white-space: nowrap;
+    z-index: 500;
+    pointer-events: none;
+    animation: warnPulse 1.5s ease-in-out infinite;
+}
+
+/* Left-pointing arrow toward the sidebar */
+.channel-warn-tooltip::before {
+    content: '';
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 5px solid transparent;
+    border-right-color: rgba(192, 160, 16, 0.8);
+}

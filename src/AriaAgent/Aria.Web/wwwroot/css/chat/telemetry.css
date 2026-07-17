@@ -1,0 +1,209 @@
+/* ── Bridge Telemetry panel (right-edge performance rail) ───────────────── */
+.telemetry-panel {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-panel);
+    border-left: 1px solid var(--border-dim);
+    overflow: hidden;
+    transition: width 0.2s ease;
+    width: 182px;
+}
+.telemetry-panel--collapsed {
+    width: 28px;
+    background: transparent;
+    border-left: none;
+}
+.telemetry-panel--collapsed .telemetry-body {
+    display: none;
+}
+.telemetry-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 4px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-dim);
+    cursor: pointer;
+    user-select: none;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+}
+.telemetry-panel--collapsed .telemetry-header {
+    flex-direction: column;
+    align-items: center;
+    /* Height fits the label itself — the bookmark is only as tall as "BRIDGE TELEMETRY" plus its padding. */
+    justify-content: center;
+    /* Flush to the outside (right) edge; small gap on the inside. */
+    margin: 10px 0 0 3px;
+    padding: 10px 4px;
+    gap: 6px;
+    border: 1px solid var(--border-dim);
+    /* Square on the outside (right), rounded on the inside (left). */
+    border-radius: 5px 0 0 5px;
+    background: var(--bg-surface);
+    transition: border-color .15s, background .15s;
+}
+.telemetry-panel--collapsed .telemetry-header:hover {
+    border-color: var(--border-normal);
+    background: var(--bg-panel);
+}
+.telemetry-toggle {
+    font-size: 8px;
+    opacity: 0.8;
+    flex-shrink: 0;
+}
+.telemetry-title {
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.telemetry-panel--collapsed .telemetry-title {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    transform: rotate(180deg);
+    font-size: 9px;
+    letter-spacing: 2px;
+    white-space: nowrap;
+}
+.telemetry-body {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-dim) transparent;
+}
+.telemetry-body::-webkit-scrollbar { width: 3px; }
+.telemetry-body::-webkit-scrollbar-thumb { background: var(--border-dim); }
+/* Per-node header (green badge) when a multi-node soul shows more than one bridge's telemetry.
+   Click to collapse/expand that bridge's metrics. */
+.telemetry-node-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    align-self: flex-start;
+    padding: 2px 8px;
+    border-radius: 2px;
+    border: 1px solid rgba(120, 160, 130, 0.4);
+    background: rgba(120, 160, 130, 0.1);
+    color: #8fb39a;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.12s ease;
+}
+.telemetry-node-badge:hover { background: rgba(120, 160, 130, 0.18); }
+.telemetry-node-caret { font-size: 8px; opacity: 0.8; }
+.telemetry-node-name { font-weight: 600; }
+.telemetry-body + .telemetry-body {
+    border-top: 1px solid var(--border-dim);
+    margin-top: 2px;
+    padding-top: 8px;
+}
+.telemetry-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 11px;
+}
+.telemetry-row span:first-child {
+    color: var(--text-dead);
+    flex-shrink: 0;
+}
+.telemetry-row span:last-child {
+    color: var(--text-bright);
+    font-family: var(--font-mono);
+    text-align: right;
+    word-break: break-word;
+}
+
+.telemetry-loading {
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dead);
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    min-height: 120px;
+    gap: 8px;
+}
+.telemetry-spinner {
+    width: 10px;
+    height: 10px;
+    border: 1px solid var(--border-dim);
+    border-top-color: var(--border-glow);
+    border-radius: 50%;
+    animation: telemetry-spin 0.8s linear infinite;
+}
+@keyframes telemetry-spin {
+    to { transform: rotate(360deg); }
+}
+.telemetry-tick-bar {
+    height: 2px;
+    width: 100%;
+    background: var(--border-dim);
+    overflow: hidden;
+    flex-shrink: 0;
+}
+.telemetry-tick-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--border-glow);
+    opacity: 0.15;
+    /* Duration is set from C# to the observed interval between metrics renders,
+       so the bar stays in sync with the real data refresh cycle. */
+    animation: telemetry-tick var(--telemetry-tick-duration, 2s) linear infinite;
+}
+@keyframes telemetry-tick {
+    0% { width: 0%; }
+    100% { width: 100%; }
+}
+.telemetry-pin {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.telemetry-pin[data-tip] { cursor: pointer; }
+.telemetry-pin input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.telemetry-pin-track {
+    width: 22px;
+    height: 12px;
+    background: var(--border-dim);
+    border-radius: 6px;
+    position: relative;
+    transition: background 0.2s ease;
+}
+.telemetry-pin-knob {
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 10px;
+    height: 10px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+.telemetry-pin input:checked + .telemetry-pin-track {
+    background: var(--border-glow);
+}
+.telemetry-pin input:checked + .telemetry-pin-track .telemetry-pin-knob {
+    transform: translateX(10px);
+    background: var(--text-bright);
+}
+.telemetry-panel--collapsed .telemetry-pin {
+    display: none;
+}

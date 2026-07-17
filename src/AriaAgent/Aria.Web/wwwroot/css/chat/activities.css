@@ -1,0 +1,316 @@
+/* Stop generation button — shown in place of TRANSMIT while the model is replying */
+/* ── Tool activity blocks ───────────────────────────────── */
+.tool-activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 6px 0 2px 0;
+}
+.tool-activity {
+    border: 1px solid var(--border-dim);
+    border-left: 2px solid var(--border-normal);
+    background: var(--bg-surface);
+    padding: 5px 8px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+}
+.tool-activity--running {
+    border-left-color: var(--border-glow);
+    opacity: 0.85;
+}
+.tool-activity-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+}
+.tool-activity-header:hover .tool-activity-name { color: var(--gold-normal); }
+.tool-activity-toggle { color: var(--text-dead); font-size: 8px; flex-shrink: 0; }
+.tool-activity-name {
+    color: var(--text-bright);
+    letter-spacing: 1px;
+    font-size: 10px;
+    flex-shrink: 0;
+}
+.tool-activity-summary {
+    color: var(--text-muted);
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+.tool-activity-args { margin-top: 3px; }
+.tool-activity-spinner {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--border-glow);
+    animation: tool-pulse 1s ease-in-out infinite;
+}
+@keyframes tool-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.2; }
+}
+.tool-activity-args {
+    color: var(--text-normal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+.tool-activity-result {
+    margin: 4px 0 0 0;
+    padding: 4px 6px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-dim);
+    color: var(--text-muted);
+    font-size: 10px;
+    white-space: pre-wrap;
+    overflow: hidden;
+    max-height: 180px;
+    font-family: var(--font-mono);
+}
+.tool-activity-diff {
+    border-left: 2px solid var(--gold-dim);
+}
+
+/* ── Diff cards for agent file edits ─────────────────────────────────────── */
+.diff-card {
+    border: 1px solid var(--border-dim);
+    background: var(--bg-panel);
+    margin: 4px 0 0 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+}
+.diff-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--border-dim);
+    background: var(--bg-surface);
+}
+.diff-card-path {
+    color: var(--text-bright);
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.diff-card-stats {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+    font-size: 10px;
+}
+.diff-card-adds { color: var(--success-bright); }
+.diff-card-dels  { color: var(--text-title); }
+.diff-card-tag {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 0 4px;
+    border: 1px solid var(--border-dim);
+}
+.diff-card-tag--created { color: var(--success-bright); border-color: var(--success-bright); }
+.diff-card-tag--deleted { color: var(--text-title); border-color: var(--text-title); }
+.diff-card-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+.diff-card-btn {
+    background: transparent;
+    border: 1px solid var(--border-normal);
+    color: var(--text-muted);
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    padding: 1px 5px;
+    cursor: pointer;
+}
+.diff-card-btn:hover {
+    border-color: var(--border-active);
+    color: var(--text-bright);
+}
+.diff-card-btn--revert:hover {
+    border-color: var(--text-title);
+    color: var(--text-title);
+}
+.diff-card-reverted {
+    color: var(--text-dead);
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    text-decoration: line-through;
+}
+.diff-card-body {
+    padding: 4px 6px;
+    max-height: 220px;
+    overflow-y: auto;
+    white-space: pre;
+}
+.diff-card-body--empty {
+    color: var(--text-dead);
+    font-style: italic;
+    white-space: normal;
+}
+.diff-card-expand {
+    display: block;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-top: 1px dashed var(--border-dim);
+    color: var(--text-muted);
+    font-size: 10px;
+    padding: 3px 0;
+    cursor: pointer;
+    text-align: center;
+}
+.diff-card-expand:hover { color: var(--text-bright); }
+.diff-card--reverted { opacity: 0.65; }
+
+.diff-line {
+    padding: 0 2px;
+    line-height: 1.45;
+}
+.diff-line-add { background: rgba(85, 170, 85, 0.12); color: #a8e0a8; }
+.diff-line-del { background: rgba(240, 96, 96, 0.12); color: #f5a0a0; }
+.diff-line-hunk { color: var(--gold-bright); }
+.diff-line-ctx { color: var(--text-muted); }
+.diff-line-text { display: inline-block; }
+/* Persisted screenshot rendered inline in the transcript (its own "screenshot" message). */
+.msg-image {
+    display: block;
+    margin: 4px 0 0 0;
+    max-width: 320px;
+    max-height: 220px;
+    width: auto;
+    border: 1px solid var(--border-normal);
+    background: var(--bg-panel);
+    cursor: zoom-in;
+}
+.msg-screenshot-label {
+    color: var(--text-muted);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+}
+
+/* ── Screenshot lightbox: click a .msg-image to open a full-size preview ─── */
+.image-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 300;
+}
+.image-modal-img {
+    max-width: 90vw;
+    max-height: 90vh;
+    width: auto;
+    height: auto;
+    border: 1px solid var(--border-normal);
+    cursor: default;
+}
+.image-modal-close {
+    position: fixed;
+    top: 16px;
+    right: 20px;
+    background: var(--bg-surface);
+    color: var(--text-muted);
+    border: 1px solid var(--border-dim);
+    font-size: 14px;
+    line-height: 1;
+    padding: 6px 10px;
+    cursor: pointer;
+}
+.image-modal-close:hover {
+    color: var(--text-bright);
+    border-color: var(--border-glow);
+}
+
+/* ── Task manifest (todo checklist) ──────────────────────────────────────── */
+.todo-manifest {
+    border: 1px solid var(--border-normal);
+    border-left: 2px solid var(--border-glow);
+    background: var(--bg-surface);
+    margin: 8px 0;
+    padding: 6px 10px 8px;
+    font-family: var(--font-mono);
+}
+/* Pinned just above the composer so directives stay in view as the chat scrolls. */
+.todo-manifest--pinned {
+    margin: 0 0 6px 0;
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.35);
+}
+.todo-manifest--pinned .todo-manifest-list {
+    max-height: 168px;
+    overflow-y: auto;
+}
+.todo-manifest--collapsed { padding-bottom: 6px; }
+.todo-manifest-toggle {
+    color: var(--text-dead);
+    font-size: 8px;
+    flex-shrink: 0;
+    margin-right: 2px;
+}
+.todo-manifest-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 5px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border-dim);
+}
+.todo-manifest--pinned .todo-manifest-header { cursor: pointer; user-select: none; }
+.todo-manifest--collapsed .todo-manifest-header { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+.todo-manifest-count { margin-left: auto; }
+.todo-manifest-title {
+    color: var(--gold-normal);
+    letter-spacing: 2px;
+    font-size: 10px;
+}
+.todo-manifest-count {
+    color: var(--text-muted);
+    font-size: 10px;
+    letter-spacing: 1px;
+}
+.todo-manifest-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.todo-item {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 1px 0;
+}
+.todo-mark { flex-shrink: 0; font-size: 11px; width: 12px; text-align: center; }
+.todo-text { flex: 1; min-width: 0; }
+
+.todo-pending     .todo-mark { color: var(--text-dead); }
+.todo-pending     .todo-text { color: var(--text-muted); }
+.todo-in_progress .todo-mark { color: var(--border-glow); animation: tool-pulse 1.4s ease-in-out infinite; }
+.todo-in_progress .todo-text { color: var(--text-bright); }
+.todo-completed   .todo-mark { color: var(--border-active); }
+.todo-completed   .todo-text { color: var(--text-muted); text-decoration: line-through; text-decoration-color: var(--border-dim); }
+
+.transmit-stop {
+    border-color: #8b0000;
+    color: #e07070;
+}
+.transmit-stop:hover {
+    background: rgba(139,0,0,0.18);
+    border-color: #c04040;
+    color: #ff9090;
+    box-shadow: 0 0 8px rgba(139,0,0,0.4);
+}
+.transmit-btn.transmit-queued:disabled { opacity: 0.7; border-color: var(--gold-dim); color: var(--gold-bright); }

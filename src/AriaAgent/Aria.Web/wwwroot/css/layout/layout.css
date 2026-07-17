@@ -1,0 +1,164 @@
+/* ── App Shell ──────────────────────────────────────────── */
+.app-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+.app-header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border-glow);
+    height: 36px;               /* kept in lockstep with the Bridge status bar */
+    padding: 0 12px;
+    box-sizing: border-box;
+    box-shadow: var(--glow-md);
+    z-index: 100;
+}
+
+.app-header .logo {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    text-transform: uppercase;
+}
+.app-header .logo-blocks {
+    color: var(--text-title);
+    font-size: 9px;
+    line-height: 1;
+    letter-spacing: 5px;
+    text-shadow: 0 0 12px rgba(255, 0, 0, 0.7);
+}
+.app-header .logo-text {
+    display: flex;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
+}
+.app-header .logo-title {
+    color: var(--text-title);
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 0.12em;
+    text-shadow: 0 0 6px rgba(180, 80, 80, 0.4);
+}
+.app-header .logo-sub {
+    color: var(--text-dead);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+}
+.app-header .logo-sub::before {
+    content: "|";
+    margin-right: 8px;
+    color: var(--text-dead);
+    opacity: 0.6;
+}
+
+.logo-img {
+    height: 36px;
+    width: 36px;
+    object-fit: contain;
+    filter: drop-shadow(0 0 6px rgba(204, 0, 0, 0.7));
+    flex-shrink: 0;
+}
+
+.app-header .logo-title span {
+    color: var(--gold-bright);
+    text-shadow: 0 0 8px rgba(212, 160, 32, 0.6);
+}
+
+.header-soul {
+    color: var(--text-muted);
+    font-size: 11px;
+    letter-spacing: 2px;
+    padding-left: 8px;
+    border-left: 1px solid var(--gold-dim);
+}
+
+.header-bridge-version {
+    color: var(--text-dead);
+    font-size: 10px;
+    letter-spacing: 1px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    margin-right: 10px;
+    cursor: default;
+}
+
+.header-bridge-version.update {
+    color: var(--border-glow);
+    cursor: pointer;
+}
+
+.bridge-version-update-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--border-glow);
+    box-shadow: 0 0 6px var(--border-glow);
+    margin-left: 5px;
+    animation: bridge-version-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes bridge-version-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.3; }
+}
+
+.header-soul em {
+    color: var(--text-bright);
+    font-style: normal;
+}
+
+.header-no-soul {
+    color: var(--border-glow);
+    text-shadow: var(--glow-sm);
+    animation: header-soul-blink 1s step-start infinite;
+}
+
+.header-bridge-summon {
+    margin-left: auto;
+    margin-right: 12px;
+    background: rgba(184, 134, 11, 0.08);
+    border: 1px solid var(--gold-dim);
+    color: var(--gold-bright);
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s, color .15s;
+    animation: header-bridge-summon-glow 2.2s ease-in-out infinite;
+}
+.header-bridge-summon:hover {
+    background: rgba(184, 134, 11, 0.18);
+    border-color: var(--gold-bright);
+    color: var(--gold-bright);
+    animation: none;
+}
+
+@keyframes header-bridge-summon-glow {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(184, 134, 11, 0);
+        border-color: var(--gold-dim);
+        text-shadow: 0 0 0 transparent;
+    }
+    50% {
+        box-shadow: 0 0 10px 1px rgba(184, 134, 11, 0.25);
+        border-color: var(--gold-bright);
+        text-shadow: 0 0 8px rgba(184, 134, 11, 0.5);
+    }
+}
+
+@keyframes header-soul-blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+}
+

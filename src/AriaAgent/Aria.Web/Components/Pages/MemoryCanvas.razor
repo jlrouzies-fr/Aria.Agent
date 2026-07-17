@@ -1,0 +1,221 @@
+@using Aria.Web.Services.Memory
+
+@{
+    // Relation labels are terse callouts, not sentences — cap at 2 words so a verbose
+    // relation like "has pending task" can't blow out the badge width or force wider spacing.
+    string ShortRelation(string relation)
+    {
+        var words = relation.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return words.Length <= 2 ? relation : string.Join(' ', words.Take(2)) + "…";
+    }
+
+    // Built once up here (rather than inside the static <svg>) so the animated-pulse overlay <svg> below
+    // can reuse the exact same computed geometry without recomputing it.
+    var groupOf = Parent._graph.Nodes.ToDictionary(n => n.Id, n => n.Group);
+    var edgeRenders = new List<(string PathD, double LabelX, double LabelY, bool Highlighted, bool Cross, string Relation, (double X, double Y) A, (double X, double Y) B)>();
+    foreach (var edge in Parent._graph.Edges)
+    {
+        if (!Parent._positions.TryGetValue(edge.From, out var a) || !Parent._positions.TryGetValue(edge.To, out var b))
+            continue;
+
+        var cross = groupOf.GetValueOrDefault(edge.From) != groupOf.GetValueOrDefault(edge.To);
+        string pathD; double labelX, labelY;
+        if (cross)
+        {
+            var gA = groupOf.GetValueOrDefault(edge.From);
+            var gB = groupOf.GetValueOrDefault(edge.To);
+            var obstacles = Parent._clusters
+                .Where(c => c.Group != gA && c.Group != gB)
+                .Select(c => (c.Cx, c.Cy, c.R))
+                .ToList();
+            (pathD, labelX, labelY) = MemoryGraphLayout.CircuitPathAvoiding(a.X, a.Y, b.X, b.Y, obstacles);
+        }
+        else
+        {
+            (pathD, labelX, labelY) = MemoryGraphLayout.CircuitPath(a.X, a.Y, b.X, b.Y);
+        }
+        var highlighted = Parent._selectedEntityId == edge.From || Parent._selectedEntityId == edge.To;
+        edgeRenders.Add((pathD, labelX, labelY, highlighted, cross, ShortRelation(edge.Relation), a, b));
+    }
+
+    // Several edges fanning out from the same hub often land their label anchor within a
+    // badge-width of each other (e.g. all the H-routed edges share the hub's Y). Union any
+    // anchors closer than a badge footprint into one cluster, then stack that cluster's
+    // labels vertically with even spacing — a fixed stacking axis (rather than each edge's
+    // own path-relative offset) is what actually guarantees separation, since the colliding
+    // edges routed differently and don't share a common "away from each other" direction.
+    const double closeX = 90.0, closeY = 16.0, rowHeight = 18.0;
+    var n = edgeRenders.Count;
+    var parent = Enumerable.Range(0, n).ToArray();
+    int Find(int x) => parent[x] == x ? x : (parent[x] = Find(parent[x]));
+    for (var i = 0; i < n; i++)
+    {
+        for (var j = i + 1; j < n; j++)
+        {
+            if (Math.Abs(edgeRenders[i].LabelX - edgeRenders[j].LabelX) < closeX &&
+                Math.Abs(edgeRenders[i].LabelY - edgeRenders[j].LabelY) < closeY)
+            {
+                var ri = Find(i); var rj = Find(j);
+                if (ri != rj) parent[ri] = rj;
+            }
+        }
+    }
+    // Split each cluster evenly above/below the shared point rather than centering a run
+    // through it — an odd member landing with a zero offset would sit right on the line.
+    // 2 -> 1 above/1 below, 3 -> 2 above/1 below, 4 -> 2/2, stacking outward from the line.
+    var labelOffsetY = new double[n];
+    foreach (var group in Enumerable.Range(0, n).GroupBy(Find))
+    {
+        var members = group.ToList();
+        if (members.Count < 2) continue;
+        var aboveCount = (members.Count + 1) / 2;
+        for (var k = 0; k < members.Count; k++)
+        {
+            labelOffsetY[members[k]] = k < aboveCount
+                ? -(k + 1) * rowHeight
+                : (k - aboveCount + 1) * rowHeight;
+        }
+    }
+
+    // Neighbourhood of the selected node (itself + everything one edge away). Drives focus mode: these
+    // stay bright and sit in front, everything else fades back (see .mem-has-selection in canvas.css).
+    var connectedNodeIds = new HashSet<string>();
+    if (Parent._selectedEntityId is not null)
+    {
+        connectedNodeIds.Add(Parent._selectedEntityId);
+        foreach (var edge in Parent._graph.Edges)
+        {
+            if (edge.From == Parent._selectedEntityId) connectedNodeIds.Add(edge.To);
+            else if (edge.To == Parent._selectedEntityId) connectedNodeIds.Add(edge.From);
+        }
+    }
+}
+
+<div class="mem-canvas-wrap">
+    <div class="mem-canvas-inner @(Parent._selectedEntityId is not null ? "mem-has-selection" : "")">
+        @* STATIC layer — hull, every base trace, vias, labels, cluster titles. Nothing here animates,
+           so once painted it stays cached and is never re-rendered while the pulse animates above it. *@
+        <svg class="mem-edges-svg" xmlns="http://www.w3.org/2000/svg"
+             width="@Parent._worldWidth.ToString("F0")" height="@Parent._worldHeight.ToString("F0")">
+            <defs>
+                <radialGradient id="mem-hull-glow" cx="50%" cy="50%" r="50%">
+                    <stop class="mem-hull-glow-inner" offset="0%" />
+                    <stop class="mem-hull-glow-mid" offset="65%" />
+                    <stop class="mem-hull-glow-outer" offset="100%" />
+                </radialGradient>
+            </defs>
+
+            @* Hull fill only here — its title badge renders last (see bottom of this svg) so a link
+               routed near the top of the circle can never paint over the cluster's name. *@
+            @foreach (var cluster in Parent._clusters)
+            {
+                <circle class="mem-hull" cx="@cluster.Cx.ToString("F0")" cy="@cluster.Cy.ToString("F0")" r="@cluster.R.ToString("F0")" />
+            }
+
+            @foreach (var e in edgeRenders)
+            {
+                <path d="@e.PathD" class="mem-edge-base @(e.Cross ? "mem-edge-cross" : "") @(e.Highlighted ? "mem-edge-active" : "")" fill="none" />
+                <circle class="mem-edge-node" cx="@e.A.X.ToString("F0")" cy="@e.A.Y.ToString("F0")" r="2.5" />
+                <circle class="mem-edge-node" cx="@e.B.X.ToString("F0")" cy="@e.B.Y.ToString("F0")" r="2.5" />
+            }
+            @* Relation labels only render for edges touching the selected node — with hundreds of edges,
+               drawing every label's badge + text unconditionally was a big chunk of the SVG's paint cost
+               (and thus part of the flicker/GPU load), for text that's mostly noise until you've picked
+               a node to focus on. *@
+            @foreach (var (e, idx) in edgeRenders.Select((e, i) => (e, i)))
+            {
+                if (!e.Highlighted) continue;
+                var ly = e.LabelY + labelOffsetY[idx];
+                var labelWidth = Math.Max(26, e.Relation.Length * 5.4 + 12);
+                <g class="mem-edge-label mem-edge-label-active"
+                   transform="@($"translate({e.LabelX:F0},{ly:F0})")">
+                    <rect class="mem-edge-label-badge" x="@((-labelWidth / 2).ToString("F0"))" y="-6" width="@labelWidth.ToString("F0")" height="12" rx="6" />
+                    <text dominant-baseline="middle">@e.Relation</text>
+                </g>
+            }
+            @foreach (var cluster in Parent._clusters)
+            {
+                var hullLabelText = cluster.Label.ToUpperInvariant();
+                var hullLabelWidth = Math.Max(60, hullLabelText.Length * 9.5 + 24);
+                <g class="mem-hull-label" transform="@($"translate({cluster.Cx:F0},{(cluster.Cy - cluster.R + 22):F0})")">
+                    <rect class="mem-hull-label-badge" x="@((-hullLabelWidth / 2).ToString("F0"))" y="-13" width="@hullLabelWidth.ToString("F0")" height="24" rx="5" />
+                    <text dominant-baseline="middle">@hullLabelText</text>
+                </g>
+            }
+        </svg>
+
+        @* ANIMATED layer — the flowing "current" pulse on the selected node's edges only. Split into its
+           own <svg> and promoted to a dedicated compositor layer (see .mem-edges-overlay in canvas.css)
+           so the per-frame stroke-dashoffset repaint stays confined to these few paths instead of
+           re-rendering the whole static graph beneath them (that shared-layer repaint was the 60-70% GPU
+           spike on select). Mounted only while a node is selected, so it costs literally nothing at rest. *@
+        @if (Parent._selectedEntityId is not null)
+        {
+            <svg class="mem-edges-svg mem-edges-overlay" xmlns="http://www.w3.org/2000/svg"
+                 width="@Parent._worldWidth.ToString("F0")" height="@Parent._worldHeight.ToString("F0")">
+                @foreach (var e in edgeRenders.Where(e => e.Highlighted))
+                {
+                    <path d="@e.PathD" class="mem-edge-signal-active" fill="none" />
+                }
+            </svg>
+        }
+
+        @foreach (var node in Parent._graph.Nodes)
+        {
+            if (!Parent._positions.TryGetValue(node.Id, out var pos)) continue;
+            var isSelected = Parent._selectedEntityId == node.Id;
+            var isConnected = connectedNodeIds.Contains(node.Id);
+            var color      = MemoryGraphLayout.KindColor(node.Kind);
+
+            <div class="mem-node @(isSelected ? "mem-node-selected" : "") @(isConnected ? "mem-node-connected" : "")"
+                 style="left:@((pos.X - 42).ToString("F0"))px; top:@((pos.Y - 32).ToString("F0"))px; border-color:@color"
+                 title="@node.Kind"
+                 @onclick="() => Parent.SelectEntityAsync(node.Id)">
+                <div class="mem-node-glyph" style="color:@color">@MemoryGraphLayout.KindGlyph(node.Kind)</div>
+                <div class="mem-node-name">@node.Name</div>
+                @if (node.EngramCount > 1)
+                {
+                    <div class="mem-node-count">×@node.EngramCount</div>
+                }
+            </div>
+        }
+
+    </div>
+
+    <div class="mem-zoom-bar">
+        <button class="mem-zoom-btn mem-zoom-btn-in" title="Zoom in">+</button>
+        <div class="mem-zoom-track">
+            <div class="mem-zoom-fill"></div>
+            <div class="mem-zoom-thumb"></div>
+        </div>
+        <button class="mem-zoom-btn mem-zoom-btn-out" title="Zoom out">−</button>
+        <span class="mem-zoom-pct">100%</span>
+    </div>
+
+    @if (Parent._graph.Nodes.Count == 0 && !Parent._loading)
+    {
+        <div class="mem-canvas-empty">
+            <svg class="mem-canvas-empty-art" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+                <circle class="mem-empty-ring mem-empty-ring-outer" cx="60" cy="60" r="52" fill="none" />
+                <circle class="mem-empty-ring mem-empty-ring-inner" cx="60" cy="60" r="34" fill="none" />
+                <circle class="mem-empty-core" cx="60" cy="60" r="8" />
+                <path class="mem-empty-trace" d="M60,8 L60,26 M60,112 L60,94 M8,60 L26,60 M112,60 L94,60
+                                                  M22,22 L34,34 M98,22 L86,34 M22,98 L34,86 M98,98 L86,86" />
+                <circle class="mem-empty-node" cx="60" cy="8" r="3" />
+                <circle class="mem-empty-node" cx="60" cy="112" r="3" />
+                <circle class="mem-empty-node" cx="8" cy="60" r="3" />
+                <circle class="mem-empty-node" cx="112" cy="60" r="3" />
+                <circle class="mem-empty-node" cx="22" cy="22" r="3" />
+                <circle class="mem-empty-node" cx="98" cy="22" r="3" />
+                <circle class="mem-empty-node" cx="22" cy="98" r="3" />
+                <circle class="mem-empty-node" cx="98" cy="98" r="3" />
+            </svg>
+            <div class="mem-canvas-empty-text">// THE ARCHIVUM IS SILENT — inscribe a memory to see it here.</div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public Memory Parent { get; set; } = default!;
+}

@@ -1,0 +1,236 @@
+@implements IAsyncDisposable
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@using Microsoft.AspNetCore.SignalR.Client
+@using Microsoft.JSInterop
+@using Aria.Shared
+
+@* Invisible WASM component — maintains the SignalR bridge between the browser and the
+   server. Always mounted (with @key="wasm-bridge") when a user is selected so it is
+   never recreated by parent re-renders. Connects when ModelUrl is non-empty. *@
+
+@code {
+    [Parameter, EditorRequired] public string UserId    { get; set; } = "";
+    [Parameter, EditorRequired] public string SourceName { get; set; } = "";
+    [Parameter, EditorRequired] public string ModelUrl   { get; set; } = "";
+    [Parameter, EditorRequired] public string ModelId    { get; set; } = "";
+    [Parameter]                 public string? ApiKey   { get; set; }
+
+    private HubConnection? _hub;
+    private HttpClient     _http = new();
+    private string         _connectedUserId = "";
+    private string         _probedKey       = "";
+
+    // Effective runtime values — set by JS via UpdateBridgeAsync.
+    // Stored separately so Blazor [Parameter] resets (always "") don't wipe them.
+    private string  _effectiveUserId    = "";
+    private string  _effectiveSession   = "";
+    private string  _effectiveSource    = "";
+    private string  _effectiveModelUrl  = "";
+    private string  _effectiveModelId   = "";
+    private string? _effectiveApiKey;
+
+    // Serialises concurrent JS-invoked UpdateBridgeAsync calls
+    private readonly SemaphoreSlim _lock = new(1, 1);
+
+    private DotNetObjectReference<BridgeComponent>? _selfRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _selfRef = DotNetObjectReference.Create(this);
+        try { await JS.InvokeVoidAsync("ariaInterop.setBridgeRef", _selfRef); }
+        catch { }
+    }
+
+    // Called from JS (ariaInterop.notifyBridgeUser) by NavMenu after user/source changes.
+    [JSInvokable]
+    public async Task UpdateBridgeAsync(string userId, string sessionId, string sourceName, string modelUrl, string modelId, string? apiKey)
+    {
+        _effectiveUserId   = userId;
+        _effectiveSession  = sessionId;
+        _effectiveSource   = sourceName;
+        _effectiveModelUrl = modelUrl;
+        _effectiveModelId  = modelId;
+        _effectiveApiKey   = apiKey;
+        if (!await _lock.WaitAsync(5000)) return;
+        try { await ApplyParametersAsync(); }
+        finally { _lock.Release(); }
+    }
+
+    private async Task ApplyParametersAsync()
+    {
+        var active = !string.IsNullOrEmpty(_effectiveUserId);
+
+        if (!active)
+        {
+            if (_hub != null)
+            {
+                await _hub.DisposeAsync();
+                _hub             = null;
+                _connectedUserId = "";
+            }
+            return;
+        }
+
+        if (_hub == null || _connectedUserId != _effectiveUserId)
+        {
+            if (_hub != null) { await _hub.DisposeAsync(); _hub = null; }
+            await ConnectAsync();
+        }
+        else
+        {
+            var key = $"{_effectiveSource}/{_effectiveModelId}";
+            if (_probedKey != key)
+                _ = Task.Run(ProbeAndReportFormatsAsync);
+        }
+    }
+
+    private async Task ConnectAsync()
+    {
+        var baseUrl = Nav.BaseUri.TrimEnd('/');
+        var hubUrl  = baseUrl + "/api/modelbridge";
+
+        _hub = new HubConnectionBuilder()
+            .WithUrl(hubUrl)
+            .Build();
+
+        _hub.On<BridgeRequest>("HandleRequest",        HandleRequestAsync);
+        _hub.On<LocalRestRequest>("HandleLocalRest",   HandleLocalRestAsync);
+
+        _hub.Closed += async ex =>
+        {
+            if (_connectedUserId != _effectiveUserId || string.IsNullOrEmpty(_effectiveModelUrl)) return;
+            await Task.Delay(2000);
+            if (_connectedUserId != _effectiveUserId || string.IsNullOrEmpty(_effectiveModelUrl)) return;
+            try
+            {
+                await _hub.StartAsync();
+                await _hub.InvokeAsync("RegisterBridge", _effectiveUserId, _effectiveSession);
+            }
+            catch { }
+        };
+
+        try
+        {
+            await _hub.StartAsync();
+            await _hub.InvokeAsync("RegisterBridge", _effectiveUserId, _effectiveSession);
+            _connectedUserId = _effectiveUserId;
+            _ = Task.Run(ProbeAndReportFormatsAsync);
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                await _http.PostAsync(
+                    baseUrl + "/api/debug/bridge/report-error",
+                    new StringContent($"userId={_effectiveUserId}&error={Uri.EscapeDataString(ex.Message)}",
+                        System.Text.Encoding.UTF8, "text/plain"));
+            }
+            catch { }
+        }
+    }
+
+    private async Task ProbeAndReportFormatsAsync()
+    {
+        if (_hub == null || string.IsNullOrEmpty(_effectiveModelUrl)) return;
+        _probedKey = $"{_effectiveSource}/{_effectiveModelId}";
+        try
+        {
+            var endpoint = _effectiveModelUrl.TrimEnd('/') + "/chat/completions";
+            // Route the probe through the local node too (like all model traffic) so detection works
+            // for LAN/HTTP models under HTTPS hosting — not just localhost.
+            const string proxy = "http://localhost:5741/llm/proxy";
+            var thinking  = await FormatProber.ProbeThinkingAsync(endpoint, _effectiveModelId, _effectiveApiKey, proxyUrl: proxy, keyRef: _effectiveSource);
+            var toolCall  = await FormatProber.ProbeToolCallAsync(endpoint, _effectiveModelId, _effectiveApiKey, proxyUrl: proxy, keyRef: _effectiveSource);
+            await _hub.InvokeAsync("ReportFormats", _effectiveUserId, _effectiveSource, _effectiveModelId, thinking, toolCall);
+        }
+        catch { /* non-fatal */ }
+    }
+
+    private async void HandleLocalRestAsync(LocalRestRequest request)
+    {
+        if (_hub == null) return;
+        try
+        {
+            using var httpReq = new System.Net.Http.HttpRequestMessage(
+                new System.Net.Http.HttpMethod(request.Method),
+                "http://localhost:5741" + request.Path);
+
+            if (!string.IsNullOrEmpty(request.Body))
+                httpReq.Content = new System.Net.Http.StringContent(
+                    request.Body, System.Text.Encoding.UTF8, "application/json");
+
+            using var resp = await _http.SendAsync(httpReq);
+            var body = await resp.Content.ReadAsStringAsync();
+            await _hub.InvokeAsync("CompleteLocalRest", request.RequestId, (int)resp.StatusCode, body);
+        }
+        catch (Exception ex)
+        {
+            try { await _hub.InvokeAsync("CompleteLocalRest", request.RequestId, 0, ex.Message); } catch { }
+        }
+    }
+
+    private async void HandleRequestAsync(BridgeRequest request)
+    {
+        if (_hub == null) return;
+        try
+        {
+            // Everything — local models and cloud providers — routes through the local cogitator
+            // node's proxy. The node (a local process, not the browser) makes the outbound call: no
+            // CORS, no mixed-content blocking of LAN/HTTP endpoints, and cloud keys stay on the node.
+            // The node resolves the key: stored key for KeyRef (cloud), the request's own ApiKey for
+            // local models, or none.
+            var proxyBody = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                url        = request.Url,
+                body       = request.Body,
+                keyRef     = request.KeyRef,
+                apiKey     = request.ApiKey,
+                requireKey = request.RequireKey
+            });
+            using var httpReq = new HttpRequestMessage(HttpMethod.Post, "http://localhost:5741/llm/proxy")
+            {
+                Content = new StringContent(proxyBody, System.Text.Encoding.UTF8, "application/json")
+            };
+
+            using var resp = await _http.SendAsync(
+                httpReq, HttpCompletionOption.ResponseHeadersRead);
+
+            await using var stream = await resp.Content.ReadAsStreamAsync();
+            using var reader = new System.IO.StreamReader(stream);
+
+            const int maxChunk = 16 * 1024; // 16 KB — well under the 32 KB SignalR default
+            string? line;
+            while ((line = await reader.ReadLineAsync()) != null)
+            {
+                var payload = line + "\n";
+                for (int offset = 0; offset < payload.Length; offset += maxChunk)
+                    await _hub.InvokeAsync("SendChunk", request.RequestId,
+                        payload.Substring(offset, Math.Min(maxChunk, payload.Length - offset)));
+            }
+
+            await _hub.InvokeAsync("CompleteRequest", request.RequestId, true, (string?)null);
+        }
+        catch (Exception ex)
+        {
+            var raw = ex.Message;
+            var msg = (raw.Contains("Failed to fetch", StringComparison.OrdinalIgnoreCase)
+                       || raw.Contains("TypeError", StringComparison.OrdinalIgnoreCase)
+                       || raw.Contains("NetworkError", StringComparison.OrdinalIgnoreCase)
+                       || ex is HttpRequestException)
+                ? $"Cannot reach the local cogitator node (localhost:5741) to call {request.Url} — is the bridge running?"
+                : raw;
+            try { await _hub.InvokeAsync("CompleteRequest", request.RequestId, false, msg); }
+            catch { }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hub != null) await _hub.DisposeAsync();
+        _http.Dispose();
+        _lock.Dispose();
+        _selfRef?.Dispose();
+    }
+}

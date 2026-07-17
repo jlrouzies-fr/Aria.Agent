@@ -1,0 +1,75 @@
+@* Format-detection decision gate: shown once, during session init, when the probe couldn't
+   recognise a model's thinking / tool-call format. The human decides whether to lock it in, pick
+   the format by hand, re-probe, or skip. Extracted from Chat.razor as a self-contained component;
+   the parent awaits RequestConfirmationAsync via an @ref. *@
+@if (_pending is { } fd)
+{
+    <div class="fmt-backdrop">
+        <div class="fmt-modal" @onclick:stopPropagation>
+            <div class="fmt-sigil">⚠</div>
+            <div class="fmt-title">// FORMAT NOT RECOGNISED</div>
+            <div class="fmt-sub">@fd.SourceName@(fd.ModelId is { Length: > 0 } m ? " · " + m : "")</div>
+
+            <div class="fmt-body">
+                <p>
+                    Aria probed this model but couldn't confidently identify how it marks its
+                    <strong>thinking</strong> and <strong>tool-call</strong> blocks.
+                </p>
+                <div class="fmt-detected">
+                    <div><span>THINKING</span><code>@fd.Thinking</code></div>
+                    <div><span>TOOL CALLS</span><code>@fd.ToolCall</code></div>
+                </div>
+                <p class="fmt-hint">
+                    This might be a model Aria hasn't been taught yet. If its reasoning or tools don't
+                    render correctly, please
+                    <a href="https://github.com/jlrouzies-fr/Aria.Agent/issues/new" target="_blank">report it on GitHub</a>
+                    so support can be improved.
+                </p>
+            </div>
+
+            @if (_retryMsg is { } rmsg)
+            {
+                <div class="fmt-retry-status @(_unreachable ? "unreachable" : "")">
+                    @(_unreachable ? "⛔ " : "")@rmsg
+                </div>
+            }
+
+            <div class="fmt-override">
+                <div class="fmt-override-title">// SET FORMAT MANUALLY</div>
+                <p class="fmt-override-hint">
+                    Know how this model marks its blocks? Pick them and apply — default auto-detection
+                    stays as-is for every other model.
+                </p>
+                <div class="fmt-override-row">
+                    <label>THINKING</label>
+                    <ThemedSelect Options="ThinkingFormatOptions" @bind-Value="_overrideThinking"
+                                  Placeholder="— pick thinking —" />
+                </div>
+                <div class="fmt-override-row">
+                    <label>TOOL CALLS</label>
+                    <ThemedSelect Options="ToolCallFormatOptions" @bind-Value="_overrideTool"
+                                  Placeholder="— pick tool format —" />
+                </div>
+                <button class="fmt-btn fmt-apply" @onclick="ApplyOverrideAsync" disabled="@_retrying">
+                    <span class="fmt-btn-label">✓ APPLY SELECTED FORMAT</span>
+                    <span class="fmt-btn-sub">Use these formats for this model — saved, won't probe again</span>
+                </button>
+            </div>
+
+            <div class="fmt-actions">
+                <button class="fmt-btn fmt-retry" @onclick="RetryAsync" disabled="@_retrying">
+                    <span class="fmt-btn-label">@(_retrying ? "⟳ PROBING…" : "⟳ RETRY NOW")</span>
+                    <span class="fmt-btn-sub">Re-probe the model live — see the raw result</span>
+                </button>
+                <button class="fmt-btn fmt-save" @onclick="ConfirmAsync" disabled="@_retrying">
+                    <span class="fmt-btn-label">✓ SAVE AS DETECTED</span>
+                    <span class="fmt-btn-sub">Accept this result — won't probe again</span>
+                </button>
+                <button class="fmt-btn fmt-skip" @onclick="Refuse" disabled="@_retrying">
+                    <span class="fmt-btn-label">↻ SKIP — RETRY LATER</span>
+                    <span class="fmt-btn-sub">Don't save — re-probe next session</span>
+                </button>
+            </div>
+        </div>
+    </div>
+}

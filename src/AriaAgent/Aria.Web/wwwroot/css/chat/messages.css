@@ -1,0 +1,324 @@
+/* ── Messages Area ──────────────────────────────────────── */
+/* Row wrapper holds the scrollable messages + the right-edge timeline rail */
+.chat-body-row {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+}
+.messages-area {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-normal) transparent;
+}
+/* This is a column flex container whose content is MEANT to overflow (it scrolls). Its children
+   must therefore never flex-shrink: with the default shrink of 1, any overflow puts every child
+   under negative free space, and an element with no text content (e.g. the empty streaming-cursor
+   span, whose min-content height is 0) gets crushed to zero height and disappears. */
+.messages-area > * {
+    flex-shrink: 0;
+}
+
+/* ── /compact divider ────────────────────────────────────── */
+.compact-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 10px 0;
+    padding: 4px 0;
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    border-top: 1px dashed var(--border-dim);
+    border-bottom: 1px dashed var(--border-dim);
+}
+
+/* ── Chat timeline rail (jump to your past messages) ────── */
+.chat-timeline {
+    flex-shrink: 0;
+    width: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 10px 2px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
+}
+.chat-timeline::-webkit-scrollbar { width: 0; }
+.chat-timeline-dot {
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--border-normal);
+    background: var(--bg-input);
+    cursor: pointer;
+    transition: transform 0.12s, background 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+/* No transform here — a transformed element becomes the containing block for its
+   position:fixed [data-tip] tooltip, which would break tooltip positioning. */
+.chat-timeline-dot:hover {
+    background: var(--border-glow);
+    border-color: var(--border-glow);
+    box-shadow: 0 0 6px var(--border-glow), 0 0 0 2px var(--border-glow);
+}
+/* dots are clickable — keep pointer cursor even though [data-tip] defaults to help */
+.chat-timeline-dot[data-tip] { cursor: pointer; }
+
+.messages-area::-webkit-scrollbar { width: 4px; }
+.messages-area::-webkit-scrollbar-thumb { background: var(--border-normal); }
+
+.chat-scroll-down-btn {
+    position: sticky;
+    bottom: 10px;
+    align-self: flex-end;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-dim);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+    opacity: 0.5;
+    transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    z-index: 5;
+    margin-right: 4px;
+}
+.chat-scroll-down-btn:hover {
+    opacity: 1;
+    color: var(--text-bright);
+    border-color: var(--border-glow);
+}
+
+/* ── Thinking / Cogitation Block ───────────────────────── */
+/* Gold/amber colour language deliberately separates internal  */
+/* reasoning from the red main content — mirrors the console's */
+/* grey Spectre Panel at a glance.                             */
+/* --think-* vars are injected per-agent by applyTheme (same hue as the agent accent, but a   */
+/* light/washed shade so internal cogitation reads as the inverse of the main content).        */
+/* Fallbacks keep Aria's default gold/grey when no agent theme is applied.                     */
+.thinking-block {
+    border: 1px solid var(--think-border, var(--gold-dim));
+    border-left: 3px solid var(--think-accent, var(--gold-normal));
+    background: var(--think-bg, rgba(80, 55, 5, 0.15));
+    margin: 6px 0 8px 2px;
+    padding: 6px 10px;
+}
+
+.thinking-block.thinking-collapsed { padding: 4px 10px; }
+
+.thinking-header {
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--think-accent, var(--gold-normal));
+    text-transform: uppercase;
+    margin-bottom: 5px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--think-border, var(--gold-dim));
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.thinking-block.thinking-collapsed .thinking-header {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+    opacity: 0.7;
+}
+
+.thinking-toggle { font-size: 8px; opacity: 0.8; }
+
+.thinking-header::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--gold-dim);
+    opacity: 0.5;
+    display: none; /* separator already set by border-bottom */
+}
+
+.thinking-body {
+    font-size: 11px;
+    color: var(--think-text, #888);   /* light tint of the agent hue; grey fallback for Aria default */
+    font-style: italic;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.5;
+    max-height: 200px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--think-border, var(--gold-dim)) transparent;
+}
+
+/* ── Messages ───────────────────────────────────────────── */
+.msg { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; }
+
+.msg-prefix {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+
+.msg-content {
+    padding-left: 2px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.6;
+}
+
+/* Per-message token footer — rendered under an assistant reply (ChatGPT / Open WebUI style). */
+.msg-tokens {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px;
+    margin-top: 14px;
+    padding-left: 2px;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    transition: color 0.15s ease;
+}
+.msg-tokens:hover { color: var(--text-normal); }
+.tk-group {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+}
+.msg-tokens .tk-label {
+    color: var(--text-dead);
+    border-bottom: 1px dotted var(--border-normal);
+}
+.msg-tokens .tk-group span:not(.tk-label) { color: var(--text-normal); }
+
+.msg.user .msg-prefix { color: var(--text-normal); }
+.msg.user .msg-content { color: var(--text-body); }
+
+.msg.assistant .msg-prefix { color: var(--border-glow); text-shadow: var(--glow-sm); }
+.msg.assistant .msg-content { color: var(--text-bright); }
+
+.msg--soul { align-items: flex-end; }
+.msg--soul .msg-content { width: 88%; text-align: right; }
+.msg--soul .msg-prefix { justify-content: flex-end; }
+
+.msg.system .msg-prefix { display: none; }
+.msg.system .msg-content {
+    color: var(--text-system);
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-align: center;
+    border-top: 1px solid var(--border-dim);
+    border-bottom: 1px solid var(--border-dim);
+    padding: 4px 0;
+    margin: 4px 0;
+}
+
+/* ── Markdown-rendered assistant messages ───────────────── */
+/* Only applied to completed (non-streaming) assistant content */
+.msg-content.markdown {
+    white-space: normal;   /* override pre-wrap so block elements lay out correctly */
+}
+
+.msg-content.markdown p       { margin: 4px 0 8px; }
+.msg-content.markdown p:last-child { margin-bottom: 0; }
+
+/* Inline "context approval required" badge (see Chat.Rendering.razor.cs RenderMarkdown) — reads as a
+   sealed notice rather than plain transcript text. Same gold/seal language as .approval-bar--context,
+   the actionable panel pinned above the input; this is a passive marker, not a control. */
+.inline-approval-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 12px;
+    margin: 2px 0;
+    border: 1px solid var(--border-active, #b09040);
+    border-left: 3px solid var(--gold-normal, #d4a020);
+    background: rgba(24, 18, 4, 0.55);
+    box-shadow: 0 0 10px rgba(212,160,32,0.12);
+    font-family: var(--font-mono, monospace);
+}
+.inline-approval-badge-icon {
+    font-size: 13px;
+    line-height: 1;
+    color: var(--gold-normal, #d4a020);
+    text-shadow: 0 0 8px currentColor;
+    animation: inlineApprovalBadgePulse 1.6s ease-in-out infinite;
+    flex-shrink: 0;
+}
+.inline-approval-badge-text {
+    font-size: 10px;
+    letter-spacing: 0.6px;
+    color: var(--text-bright, #f0d060);
+    text-transform: uppercase;
+}
+@keyframes inlineApprovalBadgePulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.55; }
+}
+
+.msg-content.markdown strong,
+.msg-content.markdown b       { color: var(--text-bright); font-weight: bold; }
+
+.msg-content.markdown em,
+.msg-content.markdown i       { color: var(--text-normal); font-style: italic; }
+
+.msg-content.markdown h1      { color: var(--text-title); font-size: 1.15em; font-weight: bold; margin: 10px 0 4px; border-bottom: 1px solid var(--border-dim); padding-bottom: 3px; }
+.msg-content.markdown h2      { color: var(--text-title); font-size: 1.05em; font-weight: bold; margin: 8px 0 4px; }
+.msg-content.markdown h3,
+.msg-content.markdown h4,
+.msg-content.markdown h5,
+.msg-content.markdown h6      { color: var(--text-bright); font-weight: bold; margin: 6px 0 3px; }
+
+.msg-content.markdown :not(pre) code { color: var(--gold-bright); background: var(--bg-surface); padding: 1px 5px; font-family: var(--font-mono); font-size: 0.85em; border: 1px solid var(--border-dim); }
+.msg-content.markdown pre     { background: transparent; border: 1px solid var(--border-dim); padding: 8px 10px; margin: 6px 0; white-space: pre-wrap; font-size: 11px; line-height: 1.5; }
+.msg-content.markdown pre code { background: none; border: none; padding: 0; font-size: 11px; line-height: 1.5; }
+
+.msg-content.markdown ul,
+.msg-content.markdown ol      { padding-left: 20px; margin: 4px 0 8px; }
+.msg-content.markdown li      { margin: 2px 0; }
+.msg-content.markdown ul li::marker { color: var(--border-glow); }
+.msg-content.markdown ol li::marker { color: var(--border-glow); }
+
+.msg-content.markdown blockquote { border-left: 3px solid var(--border-dim); padding: 2px 10px; margin: 6px 0; color: #888; font-style: italic; }
+
+.msg-content.markdown a       { color: var(--gold-bright); text-decoration: underline; }
+.msg-content.markdown a:hover { color: var(--text-bright); }
+
+.msg-content.markdown hr      { border: none; border-top: 1px solid var(--border-dim); margin: 10px 0; }
+
+.msg-content.markdown table   { border-collapse: collapse; margin: 6px 0; }
+.msg-content.markdown th      { color: var(--text-bright); border: 1px solid var(--border-normal); padding: 3px 8px; background: var(--bg-surface); }
+.msg-content.markdown td      { color: var(--text-body); border: 1px solid var(--border-dim); padding: 3px 8px; }
+
+/* Streaming cursor blink */
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.streaming-cursor {
+    display: inline-block;
+    width: 8px;
+    height: 14px;
+    background: var(--border-glow);
+    vertical-align: middle;
+    animation: blink 1s step-end infinite;
+    box-shadow: var(--glow-sm);
+    margin-left: 2px;
+}

@@ -1,0 +1,119 @@
+/* ── Format-detection decision modal ─────────────────────────────────────
+   Shown once during session init when the probe can't recognise a local model's
+   thinking / tool-call format, so the human decides whether to lock it in.
+   Self-contained: the BridgeGatewayModal's bgm-* styles are component-scoped and
+   don't reach Chat.razor, so this feature owns its own fmt-* namespace. */
+
+.fmt-backdrop {
+    position: fixed; inset: 0; z-index: 4000;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(2px);
+}
+.fmt-modal {
+    width: min(520px, 92vw);
+    border: 1px solid var(--border-active, #b09040);
+    border-top: 3px solid var(--gold-normal, #d4a020);
+    background: rgba(20, 15, 4, 0.98);
+    box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+    padding: 22px 24px 20px;
+    font-family: var(--font-mono, monospace);
+    text-align: center;
+}
+.fmt-sigil {
+    font-size: 30px; color: var(--gold-normal, #d4a020);
+    text-shadow: 0 0 14px currentColor; margin-bottom: 6px;
+}
+.fmt-title {
+    font-size: 13px; letter-spacing: 2px; font-weight: bold;
+    color: var(--text-bright, #f0d060);
+}
+.fmt-sub {
+    font-size: 10px; letter-spacing: 1px; color: var(--text-muted, #999);
+    margin-top: 4px; word-break: break-all;
+}
+.fmt-body {
+    text-align: left; margin: 16px 0; font-size: 11px; line-height: 1.55;
+    color: var(--text-normal, #c8c0a8);
+}
+.fmt-body strong { color: var(--gold-normal, #d4a020); }
+
+.fmt-detected { display: flex; gap: 10px; margin: 12px 0; }
+.fmt-detected > div {
+    flex: 1; display: flex; flex-direction: column; gap: 3px;
+    border: 1px solid var(--border-dim, #444); padding: 7px 9px;
+    background: rgba(0,0,0,0.3);
+}
+.fmt-detected span { font-size: 8px; letter-spacing: 1.5px; color: var(--text-dead, #777); }
+.fmt-detected code { font-size: 11px; color: var(--gold-normal, #d4a020); word-break: break-all; }
+
+.fmt-hint {
+    font-size: 10px; color: var(--text-muted, #999); line-height: 1.5; margin-top: 10px;
+}
+.fmt-hint a { color: var(--gold-normal, #d4a020); text-decoration: underline; }
+
+.fmt-actions { display: flex; gap: 10px; margin-top: 6px; }
+.fmt-btn {
+    flex: 1; display: flex; flex-direction: column; gap: 3px; align-items: flex-start;
+    padding: 9px 12px; cursor: pointer; text-align: left;
+    border: 1px solid var(--border-dim, #444); background: rgba(0,0,0,0.4);
+    font-family: var(--font-mono, monospace);
+}
+.fmt-btn-label { font-size: 10px; letter-spacing: 1px; font-weight: bold; }
+.fmt-btn-sub   { font-size: 8px; letter-spacing: 0.5px; color: var(--text-dead, #777); }
+.fmt-save { border-color: var(--border-active, #b09040); color: var(--text-bright, #f0d060); }
+.fmt-save:hover { background: rgba(180,144,64,0.18); border-color: var(--gold-normal, #d4a020); }
+.fmt-skip { color: var(--text-muted, #999); }
+.fmt-skip:hover { border-color: var(--border-active, #b09040); color: var(--text-normal, #c8c0a8); }
+.fmt-retry { border-color: var(--border-normal, #6a8a6a); color: #8fb39a; }
+.fmt-retry:hover:not(:disabled) { background: rgba(120,160,130,0.15); border-color: #8fb39a; }
+.fmt-btn:disabled { opacity: 0.5; cursor: default; }
+.fmt-retry-status {
+    font-size: 10px; letter-spacing: 0.4px; color: var(--text-muted, #999);
+    font-family: var(--font-mono, monospace); margin-top: 4px; line-height: 1.5;
+}
+/* Server couldn't be reached (not merely unrecognised) — red so it reads as "fix your endpoint",
+   not "report a parsing gap". */
+.fmt-retry-status.unreachable {
+    color: #e08a6a;
+    border-left: 2px solid #b04a2a;
+    padding-left: 8px;
+    text-align: left;
+}
+
+/* ── Manual format override ──────────────────────────────────────────────── */
+.fmt-override {
+    margin-top: 10px;
+    padding: 12px;
+    border: 1px solid var(--border-dim, #444);
+    background: rgba(0,0,0,0.25);
+    display: flex; flex-direction: column; gap: 8px;
+}
+.fmt-override-title {
+    font-size: 10px; letter-spacing: 1.5px; font-weight: bold;
+    color: var(--text-normal, #c8c0a8);
+    font-family: var(--font-mono, monospace);
+}
+.fmt-override-hint {
+    font-size: 9px; letter-spacing: 0.3px; line-height: 1.5;
+    color: var(--text-muted, #999); margin: 0;
+}
+.fmt-override-row {
+    display: flex; align-items: center; gap: 10px;
+}
+.fmt-override-row > label {
+    flex: 0 0 78px;
+    font-size: 9px; letter-spacing: 1px; font-weight: bold;
+    color: var(--text-muted, #999);
+    font-family: var(--font-mono, monospace);
+}
+.fmt-override-row > :last-child { flex: 1; min-width: 0; }
+.fmt-apply {
+    margin-top: 2px;
+    border-color: var(--border-active, #b09040);
+    color: var(--text-bright, #f0d060);
+}
+.fmt-apply:hover:not(:disabled) {
+    background: rgba(180,144,64,0.18);
+    border-color: var(--gold-normal, #d4a020);
+}

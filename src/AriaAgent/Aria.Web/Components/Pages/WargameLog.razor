@@ -1,0 +1,23 @@
+@using Aria.Web.Data
+@using Aria.Web.Services
+
+@* ── Battle log ─────────────────────────────────────────── *@
+<div class="wg-section-title" style="margin-top:10px">// LOG</div>
+<div class="wg-log">
+    @foreach (var log in Parent.Game.RecentLogs)
+    {
+        <div class="wg-log-row">
+            <span class="wg-log-turn" style="color: @(Parent.Game.Factions.FirstOrDefault(f => f.Id == log.FactionId)?.Color ?? "#888")">
+                T@(log.TurnNumber) @(Parent.Game.Factions.FirstOrDefault(f => f.Id == log.FactionId)?.Name?.ToUpper() ?? "?")</span>
+            <span class="wg-log-summary">@log.Summary</span>
+        </div>
+    }
+    @if (Parent.Game.RecentLogs.Count == 0)
+    {
+        <div style="color: var(--text-dead); font-size: 10px">No engagements</div>
+    }
+</div>
+
+@code {
+    [CascadingParameter] public Wargame Parent { get; set; } = null!;
+}

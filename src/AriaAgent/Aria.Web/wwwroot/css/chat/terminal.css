@@ -1,0 +1,486 @@
+/* ── Shared terminal panel (retro phosphor terminal, tinted by agent accent) ─ */
+:root {
+    --terminal-bg: #050605;
+    --terminal-bg-soft: #0a0a0a;
+    --terminal-grid: #1a1a1a;
+    --terminal-amber: #ffb000;
+    /* Accent variables are injected inline on .terminal-panel from the agent's AccentColor. */
+    --terminal-accent: #33ff33;
+    --terminal-accent-dim: #22cc22;
+    --terminal-accent-faint: #158a15;
+}
+
+.terminal-btn-wrap {
+    display: inline-flex;
+    vertical-align: middle;
+}
+.terminal-btn-wrap[data-tip] {
+    cursor: help;
+}
+
+.terminal-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 10px;
+    flex-shrink: 0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-normal);
+    color: var(--text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    transition: border-color 0.1s, color 0.1s, box-shadow 0.1s;
+}
+.terminal-btn:hover:not(:disabled) {
+    border-color: var(--border-glow);
+    color: var(--text-bright);
+    box-shadow: var(--glow-sm);
+}
+.terminal-btn:disabled,
+.terminal-btn-disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+.terminal-btn-wrap .terminal-btn:disabled {
+    pointer-events: none;
+}
+.terminal-btn-label {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    font-family: var(--font-mono);
+}
+
+.terminal-resize-handle {
+    flex-shrink: 0;
+    height: 5px;
+    margin: -2px 0;
+    cursor: row-resize;
+    background: transparent;
+    position: relative;
+    z-index: 5;
+}
+.terminal-resize-handle:hover,
+.terminal-resize-handle:active {
+    background: var(--terminal-accent-faint);
+    opacity: 0.6;
+}
+
+.terminal-panel {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--terminal-bg);
+    border-top: 1px solid var(--terminal-grid);
+    overflow: hidden;
+    height: 260px;
+    min-height: 120px;
+    max-height: 600px;
+    font-family: var(--font-mono);
+    box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.65);
+}
+.terminal-panel.resizing { transition: none; }
+
+.terminal-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    background: var(--terminal-bg-soft);
+    border-bottom: 1px solid var(--terminal-grid);
+    font-size: 11px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    row-gap: 4px;
+}
+.terminal-title {
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--terminal-accent);
+    flex-shrink: 0;
+    text-shadow: 0 0 6px var(--terminal-accent-faint);
+}
+
+.terminal-mode-switch {
+    display: flex;
+    gap: 0;
+    flex-shrink: 0;
+}
+.terminal-mode-btn {
+    background: var(--terminal-bg);
+    border: 1px solid var(--terminal-grid);
+    color: var(--terminal-accent-faint);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    padding: 3px 8px;
+    cursor: pointer;
+    text-transform: uppercase;
+}
+.terminal-mode-btn:first-child { border-radius: 3px 0 0 3px; }
+.terminal-mode-btn:last-child { border-radius: 0 3px 3px 0; }
+.terminal-mode-btn:hover:not(:disabled) {
+    border-color: var(--terminal-accent-dim);
+    color: var(--terminal-accent);
+}
+.terminal-mode-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+.terminal-mode-active {
+    background: var(--terminal-accent-dim);
+    border-color: var(--terminal-accent-dim);
+    color: var(--terminal-bg);
+    font-weight: bold;
+}
+
+.terminal-pty-warning {
+    flex-shrink: 0;
+    padding: 4px 10px;
+    background: rgba(255, 48, 48, 0.12);
+    border-bottom: 1px solid var(--terminal-grid);
+    color: #ff9090;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.5px;
+}
+
+.terminal-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    min-width: 0;
+    flex-wrap: wrap;
+    row-gap: 4px;
+}
+.terminal-cwd {
+    color: var(--terminal-accent-dim);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    line-height: 1.3;
+    padding: 2px 6px;
+    background: var(--terminal-bg);
+    border: 1px solid var(--terminal-grid);
+    border-radius: 3px;
+    white-space: normal;
+    word-break: break-all;
+    max-width: none;
+}
+.terminal-project-select {
+    min-width: 120px;
+    max-width: 220px;
+}
+.terminal-project-select .tsel-control {
+    font-size: 10px;
+    padding: 3px 6px;
+    background: var(--terminal-bg);
+    border: 1px solid var(--terminal-grid);
+    color: var(--terminal-accent);
+}
+/* No project chosen yet: pulse the picker so the user knows to open it. Stops once one is selected. */
+.terminal-project-select-blink .tsel-control {
+    animation: terminal-project-pulse 1.2s ease-in-out infinite;
+}
+@keyframes terminal-project-pulse {
+    0%, 100% {
+        border-color: var(--terminal-grid);
+        box-shadow: none;
+        color: var(--terminal-accent-dim);
+    }
+    50% {
+        border-color: var(--terminal-accent);
+        box-shadow: 0 0 8px var(--terminal-accent-faint);
+        color: var(--terminal-accent);
+    }
+}
+.terminal-project-select .tsel-list {
+    background: var(--terminal-bg);
+    border: 1px solid var(--terminal-grid);
+}
+.terminal-project-select .tsel-opt {
+    color: var(--terminal-accent-dim);
+}
+.terminal-project-select .tsel-opt:hover,
+.terminal-project-select .tsel-sel {
+    background: var(--terminal-grid);
+    color: var(--terminal-accent);
+}
+
+.terminal-bridge-badge {
+    flex-shrink: 0;
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    background: var(--terminal-bg);
+    border: 1px solid var(--terminal-grid);
+    border-radius: 3px;
+    color: var(--terminal-accent-dim);
+    font-family: var(--font-mono);
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.terminal-agent-sees-btn,
+.terminal-close-btn {
+    flex-shrink: 0;
+    background: var(--terminal-bg);
+    border: 1px solid var(--terminal-grid);
+    color: var(--terminal-accent-dim);
+    font-size: 10px;
+    padding: 3px 8px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.terminal-agent-sees-btn:hover,
+.terminal-close-btn:hover {
+    border-color: var(--terminal-accent-dim);
+    color: var(--terminal-accent);
+    box-shadow: 0 0 6px var(--terminal-accent-faint);
+}
+.terminal-agent-sees-btn.agent-sees-on {
+    border-color: var(--terminal-accent);
+    color: var(--terminal-bg);
+    background: var(--terminal-accent);
+    text-shadow: none;
+}
+.terminal-agent-sees-btn.agent-sees-off {
+    color: var(--terminal-accent-faint);
+}
+
+.terminal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 8px 10px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--terminal-grid) transparent;
+}
+.terminal-body::-webkit-scrollbar { width: 4px; }
+.terminal-body::-webkit-scrollbar-thumb { background: var(--terminal-grid); }
+
+.terminal-empty {
+    color: var(--terminal-accent-faint);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    padding: 10px 0;
+}
+
+.terminal-scrollback {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--terminal-accent-dim);
+}
+
+.terminal-command-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    padding: 2px 0;
+    border-bottom: 1px solid var(--terminal-grid);
+}
+.terminal-command-row:hover .terminal-quote-btn { opacity: 1; }
+.terminal-prompt {
+    color: var(--terminal-accent);
+    flex-shrink: 0;
+    user-select: none;
+    text-shadow: 0 0 4px var(--terminal-accent-faint);
+}
+.terminal-command-text {
+    color: var(--terminal-accent);
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
+    white-space: pre-wrap;
+    text-shadow: 0 0 4px var(--terminal-accent-faint);
+}
+.terminal-quote-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--terminal-accent-faint);
+    font-size: 10px;
+    cursor: pointer;
+    opacity: 0;
+    padding: 0 4px;
+    font-family: var(--font-mono);
+}
+.terminal-quote-btn:hover { color: var(--terminal-accent); }
+
+.terminal-output-line {
+    color: var(--terminal-accent-dim);
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding-left: 14px;
+}
+.terminal-output-line.terminal-timed-out { color: var(--terminal-amber); text-shadow: 0 0 4px rgba(255, 176, 0, 0.35); }
+.terminal-output-line.terminal-running { color: var(--terminal-accent-faint); font-style: italic; }
+
+.terminal-prompt-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    background: var(--terminal-bg-soft);
+    border-top: 1px solid var(--terminal-grid);
+    flex-shrink: 0;
+}
+
+.terminal-input-wrap {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    position: relative;
+}
+.terminal-input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    color: var(--terminal-accent);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 0;
+    outline: none;
+    caret-color: transparent;
+    text-shadow: 0 0 4px var(--terminal-accent-faint);
+}
+.terminal-input::placeholder { color: var(--terminal-accent-faint); }
+.terminal-input:focus { outline: none; }
+
+.terminal-prompt-disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.terminal-input-disabled {
+    flex: 1;
+    color: var(--terminal-accent-faint);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-style: italic;
+    user-select: none;
+}
+
+.terminal-cursor {
+    position: absolute;
+    left: var(--terminal-cursor-left, 0);
+    top: 0;
+    bottom: 0;
+    margin: auto 0;
+    width: 9px;
+    height: 1.25em;
+    background-color: var(--terminal-accent);
+    animation: terminal-blink 1.05s step-end infinite;
+    box-shadow: 0 0 6px var(--terminal-accent);
+    pointer-events: none;
+    /* Only the focused prompt shows a blinking block cursor. */
+    display: none;
+}
+.terminal-input:focus ~ .terminal-cursor {
+    display: block;
+}
+
+@keyframes terminal-blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+}
+
+.terminal-run-btn {
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid var(--terminal-grid);
+    color: var(--terminal-accent-dim);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    padding: 5px 12px;
+    cursor: pointer;
+    text-transform: uppercase;
+}
+.terminal-run-btn:hover:not(:disabled) {
+    background: var(--terminal-grid);
+    border-color: var(--terminal-accent-dim);
+    color: var(--terminal-accent);
+}
+.terminal-run-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.terminal-completion-strip {
+    flex-shrink: 0;
+    max-height: 120px;
+    overflow-y: auto;
+    padding: 6px 10px;
+    background: var(--terminal-bg);
+    border-top: 1px solid var(--terminal-grid);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--terminal-grid) transparent;
+}
+.terminal-completion-strip::-webkit-scrollbar { width: 4px; }
+.terminal-completion-strip::-webkit-scrollbar-thumb { background: var(--terminal-grid); }
+
+.terminal-completion-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    line-height: 1.5;
+}
+
+.terminal-completion-item {
+    color: var(--terminal-accent);
+    cursor: pointer;
+    padding: 1px 4px;
+    border-radius: 2px;
+    user-select: none;
+    white-space: pre;
+}
+.terminal-completion-item:hover,
+.terminal-completion-selected {
+    background: var(--terminal-grid);
+    color: var(--terminal-accent);
+}
+
+.terminal-completion-dir {
+    color: var(--terminal-accent-dim);
+}
+
+.terminal-completion-more {
+    color: var(--terminal-accent-faint);
+    font-style: italic;
+    white-space: pre;
+}
+
+.terminal-body-pty {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.terminal-xterm {
+    flex: 1;
+    min-height: 0;
+    padding: 4px 6px;
+}
+
+/* Make xterm.js respect the panel's accent theming.
+   NB: do not override .xterm-screen font-family here — xterm measures cell width from
+   its own `fontFamily` option, and forcing a different font in CSS desyncs glyph advance
+   from cell width, which renders text horizontally stretched. Font is set in JS options. */
+.terminal-xterm .xterm-viewport {
+    background-color: transparent !important;
+}

@@ -1,0 +1,185 @@
+@using Aria.Web.Data
+@using Aria.Web.Services
+@inject CronSlotService CronService
+@inject SubAgentService SubAgentService
+@inject AgentService AgentService
+@inject CogitationService CogitationService
+@inject UserSessionState SessionState
+@inject UserService UserService
+@inject ModelBridgeRegistry BridgeRegistry
+
+@* ── Requirements warning ────────────────────────────────── *@
+<div class="vc-warning">
+    <span class="vc-warning-icon">⚠</span>
+    <div>
+        <strong>REQUIREMENTS</strong> — Aria Bridge must remain running after closing the browser.
+        If using a local LLM your model endpoint must also stay active for the vigil to execute.
+    </div>
+</div>
+
+@if (SessionState.CurrentUser == null)
+{
+    <p class="vc-hint">Select a soul to schedule a vigil.</p>
+}
+else
+{
+    @* ── Tabs ────────────────────────────────────────────── *@
+    <div class="vc-tabs">
+        <button class="vc-tab @(_activeTab == "schedule" ? "vc-tab-active" : "")"
+                @onclick='() => SwitchTab("schedule")'>SCHEDULE</button>
+        <button class="vc-tab @(_activeTab == "vigils" ? "vc-tab-active" : "")"
+                @onclick='() => SwitchTab("vigils")'>
+            VIGILS
+            @if (_userJobs.Count > 0)
+            {
+                <span class="vc-tab-badge">@_userJobs.Count</span>
+            }
+        </button>
+    </div>
+
+    <CascadingValue Value="this">
+        @if (_activeTab == "schedule")
+        {
+            <CronScheduleView />
+        }
+
+        @if (_activeTab == "vigils")
+        {
+            <CronVigilsView />
+        }
+    </CascadingValue>
+}
+
+@code {
+    [Parameter] public EventCallback<int> OnOpenCogitation    { get; set; }
+    [Parameter] public string             PrefillTask         { get; set; } = "";
+    [Parameter] public int?               PrefillCogitationId { get; set; }
+
+    internal static readonly DateOnly _today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+    // ── Shared state ─────────────────────────────────────────────────────
+    internal TimeZoneInfo? _tz;
+    internal bool          _tzOpen;
+
+    internal DateOnly                         _weekStart       = GetWeekStart();
+    internal Dictionary<(DateOnly, int), int> _weekBookings    = [];
+    internal HashSet<(DateOnly, int)>         _userSlots       = [];
+    internal List<AgentCronJob>               _userJobs        = [];
+    internal List<AgentCronJob>               _recentCompleted = [];
+    internal List<SubAgent>                   _subAgents       = [];
+
+    internal string    _activeTab          = "schedule";
+    internal DateOnly? _selectedDay;
+    internal int?      _selectedHour;
+    internal string    _taskPrompt         = "";
+    internal string    _selectedSubAgentId = "";
+    internal string?   _selectedBridgeNodeId = null;
+    internal bool      _booking;
+    internal string?   _bookError;
+
+    internal Cogitation?       _lockedCogitation = null;
+    internal string            _cogSearch        = "";
+    internal List<Cogitation>  _cogResults       = [];
+
+    internal ModelBridgeRegistry bridgeRegistry => BridgeRegistry;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _tz = CronScheduleView.TryGetTz(SessionState.CurrentUser?.Timezone ?? "");
+        if (!string.IsNullOrWhiteSpace(PrefillTask))
+            _taskPrompt = PrefillTask;
+        if (PrefillCogitationId.HasValue)
+            _lockedCogitation = await CogitationService.GetAsync(PrefillCogitationId.Value);
+        SessionState.OnChange += OnUserChange;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(PrefillTask) && string.IsNullOrWhiteSpace(_taskPrompt))
+            _taskPrompt = PrefillTask;
+        if (PrefillCogitationId.HasValue && _lockedCogitation?.Id != PrefillCogitationId)
+            _lockedCogitation = await CogitationService.GetAsync(PrefillCogitationId.Value);
+        else if (!PrefillCogitationId.HasValue && _lockedCogitation != null && _cogSearch == "")
+            _lockedCogitation = null;
+    }
+
+    private void OnUserChange() => _ = InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        _tz = CronScheduleView.TryGetTz(SessionState.CurrentUser?.Timezone ?? "");
+        StateHasChanged();
+    });
+
+    internal async Task LoadAsync()
+    {
+        if (SessionState.CurrentUser == null) return;
+        var uid = SessionState.CurrentUser.Id;
+        await Task.WhenAll(
+            Task.Run(async () => _weekBookings    = await CronService.GetWeekBookingsAsync(_weekStart)),
+            Task.Run(async () => _userSlots       = await CronService.GetUserWeekSlotsAsync(uid, _weekStart)),
+            Task.Run(async () => _userJobs        = await CronService.GetUserJobsAsync(uid)),
+            Task.Run(async () => _recentCompleted = await CronService.GetRecentCompletedAsync(uid)),
+            Task.Run(async () => _subAgents       = await SubAgentService.GetForUserAsync(uid)));
+    }
+
+    internal void SwitchTab(string tab)
+    {
+        _activeTab = tab;
+        if (tab != "schedule") ClearSelection();
+        if (tab == "vigils" && SessionState.CurrentUser != null)
+            _ = InvokeAsync(async () =>
+            {
+                await CronService.MarkAllSeenAsync(SessionState.CurrentUser.Id);
+                await LoadAsync();
+                StateHasChanged();
+            });
+    }
+
+    internal async Task PrevWeek() { _weekStart = _weekStart.AddDays(-7); ClearSelection(); await RefreshWeekAsync(); }
+    internal async Task NextWeek() { _weekStart = _weekStart.AddDays(7);  ClearSelection(); await RefreshWeekAsync(); }
+
+    internal async Task RefreshWeekAsync()
+    {
+        if (SessionState.CurrentUser == null) return;
+        _weekBookings = await CronService.GetWeekBookingsAsync(_weekStart);
+        _userSlots    = await CronService.GetUserWeekSlotsAsync(SessionState.CurrentUser.Id, _weekStart);
+        StateHasChanged();
+    }
+
+    internal void SelectSlot(DateOnly day, int hour)
+    {
+        if (_selectedDay == day && _selectedHour == hour) { ClearSelection(); return; }
+        _selectedDay  = day;
+        _selectedHour = hour;
+        _bookError    = null;
+        _booking      = false;
+        if (string.IsNullOrWhiteSpace(_taskPrompt) && !string.IsNullOrWhiteSpace(PrefillTask))
+            _taskPrompt = PrefillTask;
+        StateHasChanged();
+    }
+
+    internal void ClearSelection()
+    {
+        _selectedDay         = null;
+        _selectedHour        = null;
+        _taskPrompt          = string.IsNullOrWhiteSpace(PrefillTask) ? "" : PrefillTask;
+        _selectedSubAgentId  = "";
+        _selectedBridgeNodeId = null;
+        _bookError           = null;
+        _booking             = false;
+        if (!PrefillCogitationId.HasValue) { _lockedCogitation = null; _cogSearch = ""; _cogResults = []; }
+        StateHasChanged();
+    }
+
+    internal static DateOnly GetWeekStart()
+    {
+        var today  = DateOnly.FromDateTime(DateTime.UtcNow);
+        var offset = (int)today.DayOfWeek == 0 ? 6 : (int)today.DayOfWeek - 1;
+        return today.AddDays(-offset);
+    }
+
+    public void Dispose() => SessionState.OnChange -= OnUserChange;
+
+    internal void Refresh() => StateHasChanged();
+}

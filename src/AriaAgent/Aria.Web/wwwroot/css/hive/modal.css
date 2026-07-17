@@ -1,0 +1,55 @@
+.code-copy-btn.copied {
+    color: #8acc60;
+    border-color: #4a8a2a;
+}
+
+/* ── HIVE full-screen modal overlay ─────────────────────────────────── */
+.hive-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.88);
+    z-index: 9000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+    animation: vigilFadeIn .18s ease-out;
+}
+.hive-modal {
+    background: var(--bg-panel, #141414);
+    border: 1px solid var(--border-dim, #2a2a2a);
+    width: min(1400px, 97vw);
+    height: 94vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 0 0 1px rgba(139,0,0,0.10),
+                0 30px 80px rgba(0,0,0,0.95),
+                0 0 80px rgba(0,0,0,0.7);
+    animation: vigilSlideIn .2s ease-out;
+}
+.hive-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border-dim, #2a2a2a);
+    flex-shrink: 0;
+    background: rgba(0,0,0,0.2);
+}
+.hive-modal-title {
+    font-size: 12px;
+    color: var(--text-bright, #ccc);
+    letter-spacing: 4px;
+}
+.hive-modal-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.hive-modal-body .hv-shell {
+    flex: 1;
+    min-height: 0;
+}
+

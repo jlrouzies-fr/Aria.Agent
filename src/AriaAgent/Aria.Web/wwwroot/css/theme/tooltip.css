@@ -1,0 +1,39 @@
+/* Inline tooltip (data-tip attribute). The tooltip itself is a single shared #aria-tip element
+   positioned by JS (ariaInterop, top of aria-interop.js) — themed to match the terminal, not green. */
+[data-tip] { cursor: help; }
+/* Interactive controls keep the pointer (hand) cursor — the "help" (?) cursor is only for
+   informational, non-clickable elements. */
+button[data-tip], a[data-tip], [role="button"][data-tip], label[data-tip] { cursor: pointer; }
+button[data-tip]:disabled { cursor: default; }
+#aria-tip {
+    position: fixed;
+    left: -9999px;
+    top: -9999px;
+    z-index: 9998;
+    pointer-events: none;
+    max-width: 260px;
+    padding: 5px 9px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1.5;
+    background: var(--bg-panel, #14110a);
+    border: 1px solid var(--border-active, var(--gold-dim, #c0ae82));
+    color: var(--text-normal, #c0ae82);
+    box-shadow: var(--glow-sm, 0 0 6px rgba(192,174,130,0.35)), 0 2px 6px rgba(0,0,0,0.6);
+    white-space: normal;
+    word-break: break-word;
+    opacity: 0;
+    transition: opacity 0.1s;
+}
+/* Stylized "loading" variant — opt in via data-tip-variant="loading" on the source element (see
+   ariaInterop's tooltip handler in aria-interop.js). Used for e.g. "NEW COGITATION" while a model
+   format probe is in flight. */
+#aria-tip.aria-tip-loading {
+    border-color: color-mix(in srgb, var(--border-glow, #e07070) 70%, transparent);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--border-glow, #e07070) 45%, transparent), 0 2px 6px rgba(0,0,0,0.6);
+    animation: ariaTipLoadingPulse 1.4s ease-in-out infinite;
+}
+@keyframes ariaTipLoadingPulse {
+    0%, 100% { box-shadow: 0 0 8px color-mix(in srgb, var(--border-glow, #e07070) 45%, transparent), 0 2px 6px rgba(0,0,0,0.6); }
+    50%       { box-shadow: 0 0 14px color-mix(in srgb, var(--border-glow, #e07070) 75%, transparent), 0 2px 6px rgba(0,0,0,0.6); }
+}

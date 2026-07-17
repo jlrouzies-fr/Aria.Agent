@@ -1,0 +1,131 @@
+/* Config form fields */
+.hv-field {
+    margin-bottom: 8px;
+}
+.hv-label {
+    display: block;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    color: var(--text-dead, #555);
+    margin-bottom: 3px;
+}
+.hv-input {
+    width: 100%;
+    background: var(--bg-input, #181818);
+    border: 1px solid var(--border-dim, #2a2a2a);
+    color: var(--text-normal, #aaa);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 5px 8px;
+    box-sizing: border-box;
+}
+.hv-input:focus { outline: none; border-color: var(--border-glow, #8b0000); }
+.hv-input-sm { width: 80px; }
+
+/* ── ThemedSelect: a div-based dropdown replacing native <select> (whose open option list
+   can't be themed on macOS). Used by the Hive config dropdowns. ───────────────────────── */
+.tsel { position: relative; width: 100%; }
+.tsel-control {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+}
+.tsel-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tsel-placeholder { color: var(--text-dead, #777); }
+.tsel-arrow { color: var(--gold-normal, #c0ae82); font-size: 10px; flex-shrink: 0; }
+.tsel-backdrop { position: fixed; inset: 0; z-index: 50; }
+.tsel-list {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 51;
+    max-height: 240px;
+    overflow-y: auto;
+    background: var(--bg-panel, #2d2d2d);
+    border: 1px solid var(--border-glow, #8b0000);
+    box-shadow: var(--glow-md, 0 0 12px rgba(0,0,0,0.5));
+}
+.tsel-opt {
+    padding: 6px 9px;
+    font-size: 11px;
+    color: var(--text-normal, #aaa);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.tsel-opt:hover { background: var(--bg-hover, #3a2424); color: var(--text-bright, #ddd); }
+.tsel-opt.tsel-sel {
+    background: var(--bg-hover, #3a2424);
+    color: var(--text-bright, #ddd);
+    border-left: 2px solid var(--border-glow, #8b0000);
+}
+
+/* Booking-panel selects sit at the bottom of the scrollable vigil modal —
+   open the option list upward so it isn't clipped by .vigil-modal-body's overflow. */
+.vc-book-panel .tsel-list {
+    top: auto;
+    bottom: calc(100% + 2px);
+    z-index: 510;            /* above the in-modal tz dropdown (z-index 500) */
+}
+
+.hv-textarea {
+    width: 100%;
+    background: var(--bg-input, #181818);
+    border: 1px solid var(--border-dim, #2a2a2a);
+    color: var(--text-normal, #aaa);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 5px 8px;
+    resize: vertical;
+    box-sizing: border-box;
+}
+.hv-textarea:focus { outline: none; border-color: var(--border-glow, #8b0000); }
+
+/* Drone rows in sidebar */
+.hv-drone-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px 4px 8px;
+    margin-bottom: 2px;
+    background: rgba(0,0,0,0.15);
+    font-size: 11px;
+}
+.hv-drone-name { flex: 1; color: var(--text-normal, #aaa); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hv-drone-role { font-size: 9px; color: var(--text-dead, #555); letter-spacing: 1px; }
+
+/* Recruit section */
+.hv-recruit-section { padding-top: 4px; }
+.hv-recruit-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px;
+    cursor: pointer;
+    font-size: 11px;
+    border-left: 2px solid transparent;
+    transition: background .1s, border-color .1s;
+}
+.hv-recruit-row:hover {
+    background: var(--bg-hover, #2a2a2a);
+    border-left-color: var(--border-glow, #8b0000);
+}
+.hv-recruit-name { flex: 1; color: var(--text-muted, #888); }
+.hv-recruit-add  { font-size: 9px; letter-spacing: 1px; color: var(--border-glow, #8b0000); }
+
+.hv-saved-msg {
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--border-glow, #8b0000);
+    padding: 4px 0;
+    text-align: center;
+}
+.hv-empty { font-size: 10px; color: var(--text-dead, #555); padding: 4px 0; }
+
+/* ── Main area — absolute fill alongside the sidebar ── */

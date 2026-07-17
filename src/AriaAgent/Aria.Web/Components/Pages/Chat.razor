@@ -1,0 +1,1283 @@
+@page "/"
+@page "/chat"
+@page "/chat/{CogitationId:int}"
+@using Microsoft.Agents.AI
+@using OpenAI.Chat
+@using Markdig
+@using Aria.Web.Services.Chat
+@using Aria.Web.Helpers
+@implements IDisposable
+
+<PageTitle>@(SessionState.UnseenVigilCount > 0 ? "● " : "")ARIA // COGITATOR</PageTitle>
+
+<div class="chat-shell">
+    @if (SessionState.CurrentUser != null && SoulVerified)
+    {
+        <div class="chat-tabs-bar">
+            <div class="chat-tab-pinned">
+                <button class="chat-tab-pinned-btn @(_initError != null ? "fault" : "") @(_isInitializing ? "pulsing" : "")" title="Cogitator status — click for the init log"
+                        disabled="@(_initLog.Count == 0)"
+                        @onclick="() => _initLogExpanded = !_initLogExpanded">
+                    <span class="chat-tab-status-text">
+                        @if (_initError != null)
+                        {
+                            <text>// FAULT</text>
+                        }
+                        else if (_initLog.Count == 0)
+                        {
+                            <text>// COGITATOR</text>
+                        }
+                        else if (_isInitializing)
+                        {
+                            @FormatInitLogLine(_initLog[^1])
+                        }
+                        else
+                        {
+                            <text>// COGITATOR ONLINE</text>
+                        }
+                    </span>
+                </button>
+                @if (_initLogExpanded && _initLog.Count > 0)
+                {
+                    <div class="chat-tab-status-drop">
+                        @for (var i = 0; i < _initLog.Count; i++)
+                        {
+                            var isLast = i == _initLog.Count - 1;
+                            <div class="init-log-line">
+                                @FormatInitLogLine(_initLog[i])
+                                @if (isLast && _isInitializing)
+                                {
+                                    <span class="init-log-cursor"></span>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            <button class="chat-tabs-arrow chat-tabs-arrow-left" id="chat-tabs-arrow-left" data-tip="Scroll tabs left" tabindex="-1">‹</button>
+            <div class="chat-tabs-scroll" id="chat-tabs-scroll">
+                @foreach (var tabId in SessionState.OpenTabIds)
+                {
+                    var info = GetTabInfo(tabId);
+                    var isActive = tabId == _cogitationId;
+                    <div class="chat-tab @(isActive ? "active" : "")" style="--folder-color:@(info?.Color ?? "#8B0000")" @onclick="() => SelectTab(tabId)">
+                        @if (Registry.IsActive(tabId))
+                        {
+                            <span class="cog-run-spinner" data-tip="Cogitation in progress">◈</span>
+                        }
+                        else
+                        {
+                            <span class="chat-tab-dot">@(info?.IsHive == true ? "⬡" : "●")</span>
+                        }
+                        <span class="chat-tab-title" data-tip="@(info?.Title ?? "…")">@(info?.Title ?? "…")</span>
+                        <button class="chat-tab-close" data-tip="Close tab" @onclick:stopPropagation="true" @onclick="() => CloseTab(tabId)">✕</button>
+                    </div>
+                }
+            </div>
+            <button class="chat-tabs-arrow chat-tabs-arrow-right" id="chat-tabs-arrow-right" data-tip="Scroll tabs right" tabindex="-1">›</button>
+            <button class="chat-tab chat-tab-new" data-tip="New Cogitation" @onclick="OpenNewTab">+</button>
+        </div>
+    }
+    @if (SessionState.CurrentUser == null)
+    {
+        <div class="no-user-placeholder">
+            <div class="skull">☠</div>
+            <p>Bridge offline</p>
+            <p style="font-size:10px; color: var(--text-dead)">Initialize communion or start your existing bridge to begin</p>
+        </div>
+    }
+    else if (!SoulVerified)
+    {
+        @* Identity gate: render NOTHING soul-scoped (no history, no input) until the bridge has
+           cryptographically proven this soul. BridgeGatewayModal overlays onboarding; once dismissed,
+           this centred pairing form is how the user unlocks. *@
+        <div class="no-user-placeholder">
+            <span class="bridge-unavail-dot" style="width:10px;height:10px;margin-bottom:10px"></span>
+            <p>Soul unbound</p>
+            <p style="font-size:10px; color: var(--text-dead)">Start your local bridge to access this cogitator</p>
+
+            <div class="bridge-unlock" style="margin-top:22px">
+                <div class="bridge-unlock-title">⟁ PAIR THIS BROWSER</div>
+                <div class="bridge-unlock-sub">
+                    Open <span class="mono">http://localhost:5741</span> on <strong>this machine</strong>,
+                    copy the <strong>SESSION CODE</strong>, and paste it here. The soul your bridge holds
+                    is selected automatically.
+                </div>
+                <div class="bridge-unlock-row">
+                    <input class="bridge-unlock-input" placeholder="XXXX-XXXX" autocomplete="off"
+                           @bind="_unlockCode" @bind:event="oninput" @onkeydown="OnUnlockKey" />
+                    <button class="bridge-unlock-btn" @onclick="UnlockWithCodeAsync" disabled="@_unlocking">
+                        @(_unlocking ? "…" : "UNLOCK")
+                    </button>
+                </div>
+                @if (_unlockError != null)
+                {
+                    <div class="bridge-unlock-err">@_unlockError</div>
+                }
+            </div>
+        </div>
+    }
+    else if (SessionState.SelectedModelSource == null)
+    {
+        <div class="no-user-placeholder">
+            <div class="skull">⊗</div>
+            <p>No channel selected</p>
+            <p style="font-size:10px; color: var(--text-dead)">Select a channel in the sidebar to establish comms</p>
+        </div>
+    }
+    else if (_agent == null && _initError == null && !_isInitializing)
+    {
+        <div class="no-user-placeholder">
+            <div class="skull">⊙</div>
+            <p>Awaiting directive</p>
+            <p style="font-size:10px; color: var(--text-dead)">Start a new cogitation or select one from history</p>
+        </div>
+    }
+    else
+    {
+        @if (_initError != null)
+        {
+            <div class="error-banner">// COGITATOR FAULT: @_initError</div>
+        }
+
+        @if (_cogitationOffline)
+        {
+            <div class="error-banner">
+                ⚠ This cogitation is held on cogitator node «@GetCogitationOriginNodeLabel()», which is offline.
+                Connect that node to view its contents.
+            </div>
+        }
+
+        @if (_suggestedFilingVisible && _suggestedFolderId.HasValue)
+        {
+            <div class="suggested-filing-banner">
+                <span>▸ file this under</span>
+                <span class="suggested-filing-dot" style="--folder-color:@(_suggestedFolderColor ?? "#8B0000")">●</span>
+                <span class="suggested-filing-name">@_suggestedFolderName?.ToUpperInvariant()</span>
+                <span class="suggested-filing-actions">
+                    <button @onclick="AcceptSuggestedFilingAsync">FILE</button>
+                    <button @onclick="DismissSuggestedFilingAsync">✕</button>
+                </span>
+            </div>
+        }
+
+        <div class="chat-body-row">
+        @if (SessionState.IsToolEnabled("terminal"))
+        {
+        <div id="explorer-panel" class="explorer-panel @(_explorerCollapsed ? "explorer-panel--collapsed" : "")">
+            <div class="explorer-header" @onclick="ToggleExplorerAsync">
+                <span class="explorer-toggle">@(_explorerCollapsed ? "▶" : "▼")</span>
+                <span class="explorer-title">EXPLORER</span>
+            </div>
+            @if (!_explorerCollapsed)
+            {
+                <div class="explorer-body">
+                    @if (SessionState.Projects.Count == 0)
+                    {
+                        <div class="explorer-empty">No projects declared. Add one under <strong>Tools › Terminal › Allowed Projects</strong>.</div>
+                    }
+                    else
+                    {
+                        <div class="explorer-tabs">
+                            <button class="explorer-tab @(_changesTabActive ? "" : "explorer-tab--active")" @onclick="() => SetChangesTabAsync(false)">FILES</button>
+                            <button class="explorer-tab @(_changesTabActive ? "explorer-tab--active" : "")" @onclick="() => SetChangesTabAsync(true)">
+                                CHANGES
+                                @if (DirtyCount > 0)
+                                {
+                                    <span class="explorer-tab-badge">@DirtyCount</span>
+                                }
+                            </button>
+                        </div>
+                        <div class="explorer-toolbar">
+                            <div class="explorer-project-select">
+                                <ThemedSelect Value="@(SessionState.ActiveProject?.Path ?? "")"
+                                              ValueChanged="OnExplorerProjectSelectedAsync"
+                                              Options="ExplorerProjectOptions()" />
+                            </div>
+                            <button class="explorer-refresh-btn" title="Refresh" @onclick="RefreshActiveExplorerTabAsync">⟳</button>
+                        </div>
+                        @if (!_changesTabActive)
+                        {
+                            <input class="explorer-filter-input" placeholder="Filter files…"
+                                   @bind="_explorerFilter" @bind:event="oninput" />
+                            <div class="explorer-tree">
+                                @if (_explorerLoading)
+                                {
+                                    <div class="explorer-loading-overlay">
+                                        <div class="explorer-spinner"></div>
+                                        @if (_explorerAwaitingApproval)
+                                        {
+                                            <div class="explorer-approval-note">⛨ waiting for node approval — authorise on your bridge</div>
+                                        }
+                                    </div>
+                                }
+                                else if (_explorerTruncated)
+                                {
+                                    <div class="explorer-truncated-tag">⚠ tree truncated — too many files</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(_explorerFilter))
+                                {
+                                    @foreach (var node in FilteredExplorerFiles())
+                                    {
+                                        <div class="explorer-row" @onclick="() => OpenExplorerFileAsync(node)">
+                                            <span class="explorer-row-name">@node.RelPath</span>
+                                            <button class="explorer-row-ref" title="Reference in chat"
+                                                    @onclick="() => AddExplorerFileReferenceAsync(node)"
+                                                    @onclick:stopPropagation="true">#</button>
+                                        </div>
+                                    }
+                                }
+                                else
+                                {
+                                    <ExplorerTreeView Nodes="_explorerRoot" Depth="0" Expanded="_explorerExpanded"
+                                                      OnToggleDir="ToggleExplorerDir" OnOpenFile="OpenExplorerFileAsync"
+                                                      OnAddReference="AddExplorerFileReferenceAsync"
+                                                      DirtyPaths="_dirtyPaths" />
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="changes-list">
+                                @if (_changesLoading)
+                                {
+                                    <div class="explorer-loading-overlay">
+                                        <div class="explorer-spinner"></div>
+                                        @if (_explorerAwaitingApproval)
+                                        {
+                                            <div class="explorer-approval-note">⛨ waiting for node approval — authorise on your bridge</div>
+                                        }
+                                    </div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(_changesError))
+                                {
+                                    <div class="changes-error">@_changesError</div>
+                                }
+                                <div class="changes-branch">
+                                    <span class="changes-branch-name">@(_changesBranch.Length > 0 ? _changesBranch : "—")</span>
+                                    @if (_changesAhead > 0 || _changesBehind > 0)
+                                    {
+                                        <span class="changes-branch-ahead-behind">@(_changesAhead > 0 ? $"↑{_changesAhead}" : "")@(_changesBehind > 0 ? $"↓{_changesBehind}" : "")</span>
+                                    }
+                                </div>
+                                @if (StagedCount > 0)
+                                {
+                                    <div class="changes-section-title">STAGED</div>
+                                    @foreach (var entry in _changesEntries.Where(e => e.Staged))
+                                    {
+                                        <ChangesRow Entry="entry" OnOpen="OpenExplorerDiffAsync" OnStage="StageEntryAsync" OnUnstage="UnstageEntryAsync" OnDiscard="BeginDiscard" />
+                                    }
+                                }
+                                @if (UnstagedCount > 0)
+                                {
+                                    <div class="changes-section-title">UNSTAGED</div>
+                                    @foreach (var entry in _changesEntries.Where(e => !e.Staged))
+                                    {
+                                        <ChangesRow Entry="entry" OnOpen="OpenExplorerDiffAsync" OnStage="StageEntryAsync" OnUnstage="UnstageEntryAsync" OnDiscard="BeginDiscard" />
+                                    }
+                                }
+                                @if (DirtyCount == 0 && !_changesLoading)
+                                {
+                                    <div class="explorer-empty">Working tree clean.</div>
+                                }
+                                @if (_discardConfirmPath != null)
+                                {
+                                    var entry = _changesEntries.FirstOrDefault(e => e.Path == _discardConfirmPath);
+                                    @if (entry != null)
+                                    {
+                                        <div class="changes-discard-confirm">
+                                            <div class="changes-discard-title">DISCARD @entry.Path?</div>
+                                            <div class="changes-discard-hint">This cannot be undone.</div>
+                                            <div class="changes-discard-actions">
+                                                <button class="changes-discard-btn changes-discard-btn--cancel" @onclick="CancelDiscard">CANCEL</button>
+                                                <button class="changes-discard-btn changes-discard-btn--confirm" @onclick="() => ConfirmDiscardAsync(entry)">DISCARD</button>
+                                            </div>
+                                        </div>
+                                    }
+                                }
+                                <div class="changes-commit-box">
+                                    <div class="changes-commit-row">
+                                        <button class="changes-draft-btn" @onclick="DraftCommitMessageAsync" disabled="@(_draftingCommitMessage || StagedCount == 0)">@(_draftingCommitMessage ? "…" : "[DRAFT]")</button>
+                                        <button class="changes-commit-btn" @onclick="CommitAsync" disabled="@(StagedCount == 0 || string.IsNullOrWhiteSpace(_commitMessage))">COMMIT @StagedCount STAGED</button>
+                                    </div>
+                                    <DebouncedTextArea Class="changes-commit-message" Placeholder="Commit message…" @bind-Value="_commitMessage" rows="3" />
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            }
+        </div>
+        @if (!_explorerCollapsed)
+        {
+            <div id="explorer-panel-resize-handle" class="explorer-resize-handle"></div>
+        }
+        }
+        @if (_viewerOpen && !_viewerModalMode && SessionState.IsToolEnabled("terminal"))
+        {
+            <div id="explorer-viewer-panel" class="explorer-viewer-panel">
+                <div class="explorer-viewer-header">
+                    @if (_viewerRevertConfirming)
+                    {
+                        <span class="explorer-viewer-revert-label">REVERT @Path.GetFileName(_viewerRelPath ?? "")?</span>
+                        <button class="explorer-viewer-revert-btn" @onclick="CancelViewerRevert">CANCEL</button>
+                        <button class="explorer-viewer-revert-btn explorer-viewer-revert-btn--confirm" @onclick="ConfirmViewerRevertAsync">REVERT</button>
+                    }
+                    else if (_viewerEditing)
+                    {
+                        <span class="explorer-viewer-path @(_viewerDirty ? "explorer-viewer-path--dirty" : "")">@(_viewerDirty ? "● " : "")@_viewerRelPath</span>
+                        @if (_viewerSavePending)
+                        {
+                            <span class="explorer-viewer-saved-label">saving…</span>
+                        }
+                        else if (_viewerSavedTick)
+                        {
+                            <span class="explorer-viewer-saved-label">saved ✓</span>
+                        }
+                        <button class="explorer-viewer-save-btn" @onclick="SaveEditAsync">save</button>
+                        <button class="explorer-viewer-cancel-btn" @onclick="CancelEditAsync">cancel</button>
+                        <button class="explorer-viewer-modal-btn" title="Open as modal" @onclick="ToggleViewerMode">⛶</button>
+                        <button class="explorer-viewer-close" @onclick="CloseExplorerViewer">✕</button>
+                    }
+                    else
+                    {
+                        <span class="explorer-viewer-path">@_viewerRelPath</span>
+                        @if (_viewerSavedTick)
+                        {
+                            <span class="explorer-viewer-saved-label">saved ✓</span>
+                        }
+                        <button class="explorer-viewer-edit-btn" title="Edit this file" disabled="@_viewerTruncated" @onclick="BeginEdit">edit</button>
+                        @if (_viewerRelPath != null)
+                        {
+                            <button class="explorer-viewer-ref-btn" title="Reference in chat"
+                                    @onclick="() => AddExplorerFileReferenceAsync(new ExplorerNode { Name = Path.GetFileName(_viewerRelPath), RelPath = _viewerRelPath, IsDir = false })">
+                                # reference
+                            </button>
+                        }
+                        <button class="explorer-viewer-modal-btn" title="Open as modal" @onclick="ToggleViewerMode">⛶</button>
+                        <button class="explorer-viewer-close" @onclick="CloseExplorerViewer">✕</button>
+                    }
+                </div>
+                <div class="explorer-viewer-body">
+                    @if (_viewerLoading)
+                    {
+                        <div class="explorer-loading-overlay">
+                            <div class="explorer-spinner"></div>
+                            @if (_explorerAwaitingApproval)
+                            {
+                                <div class="explorer-approval-note">⛨ waiting for node approval — authorise on your bridge</div>
+                            }
+                        </div>
+                    }
+                    @if (_viewerConflictDialog && _viewerConflictContent != null)
+                    {
+                        <div class="explorer-viewer-conflict">
+                            <div class="explorer-viewer-conflict-header">File changed on disk</div>
+                            <div class="explorer-viewer-conflict-body">
+                                @if (!string.IsNullOrEmpty(_viewerConflictDiff))
+                                {
+                                    <DiffCard Path="@(_viewerRelPath ?? "")" Diff="@_viewerConflictDiff" Adds="@CountDiffAdds(_viewerConflictDiff)" Dels="@CountDiffDels(_viewerConflictDiff)" UndoToken="" />
+                                }
+                                else
+                                {
+                                    <div class="explorer-empty">The file has been modified by another process.</div>
+                                }
+                            </div>
+                            <div class="explorer-viewer-conflict-actions">
+                                <button class="explorer-viewer-revert-btn" @onclick="() => ResolveConflictAsync(false)">reload (discard mine)</button>
+                                <button class="explorer-viewer-revert-btn explorer-viewer-revert-btn--confirm" @onclick="() => ResolveConflictAsync(true)">overwrite anyway</button>
+                            </div>
+                        </div>
+                    }
+                    else if (_viewerEditing)
+                    {
+                        <textarea class="explorer-viewer-textarea" value="@_viewerEditBuffer" @oninput="OnEditInput" @onkeydown="OnEditKeyDownAsync"></textarea>
+                    }
+                    else if (_viewerContent == null && !_viewerLoading)
+                    {
+                        <div class="explorer-empty">Could not read file.</div>
+                    }
+                    else if (_viewerContent != null)
+                    {
+                        @if (_viewerIsDiff)
+                        {
+                            <DiffCard Path="@(_viewerRelPath ?? "")"
+                                      Diff="@_viewerContent"
+                                      Adds="@CountDiffAdds(_viewerContent)"
+                                      Dels="@CountDiffDels(_viewerContent)"
+                                      Created="@_viewerDiffCreated"
+                                      Deleted="@_viewerDiffDeleted"
+                                      UndoToken=""
+                                      OnOpen="OpenDiffFileFromViewerAsync"
+                                      OnRevert="BeginViewerRevert" />
+                            @if (_viewerTruncated)
+                            {
+                                <div class="explorer-truncated-tag">⚠ diff truncated</div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="msg-content markdown explorer-viewer-code">@((MarkupString)MarkdownHelper.ToHtmlForFile(_viewerRelPath ?? "", _viewerContent))</div>
+                            @if (_viewerTruncated)
+                            {
+                                <div class="explorer-truncated-tag">⚠ truncated — file exceeds read cap</div>
+                            }
+                        }
+                    }
+                </div>
+            </div>
+            <div id="explorer-viewer-resize-handle" class="explorer-resize-handle"></div>
+        }
+        <div class="messages-area" id="chatMessages">
+            @for (int i = 0; i < _messages.Count; i++)
+            {
+                var msg = _messages[i];
+                @if (msg.IsCompactSummary)
+                {
+                    <div class="compact-divider">⟲ COMPACTED — prior history summarized below</div>
+                }
+                <div class="msg @msg.Role @(msg.IsSoul ? "msg--soul" : "")" id="msg-@i">
+                    <span class="msg-prefix">
+                        @if (msg.Role == "user")
+                        {
+                            @* Soul (human) — right-aligned, black dummy avatar *@
+                            <span style="display:inline-flex;align-items:center;gap:5px;flex-direction:row-reverse">
+                                @((MarkupString)AgentSprites.RenderSoulAvatar(32))
+                                <span>@($"{SessionState.CurrentUser!.Name.ToUpperInvariant()} >")</span>
+                            </span>
+                        }
+                        else if (msg.Role == "assistant")
+                        {
+                            @* AI (Aria or hired agent) — always left-aligned *@
+                            <span style="display:inline-flex;align-items:center;gap:5px">
+                                @if (!string.IsNullOrEmpty(msg.SpriteKey))
+                                {
+                                    @if (msg.SpriteKey.EndsWith(".jpeg") || msg.SpriteKey.EndsWith(".jpg") || msg.SpriteKey.EndsWith(".png"))
+                                    {
+                                        @* Aria's random JPEG photo, or a Hive's Overmind PNG portrait *@
+                                        <img src="avatars/@msg.SpriteKey"
+                                             style="width:48px;height:48px;object-fit:cover;flex-shrink:0;border:1px solid var(--border-dim);border-radius:2px" />
+                                    }
+                                    else
+                                    {
+                                        @* Hired agent: WH40K portrait sprite *@
+                                        @((MarkupString)AgentSprites.RenderAuto(msg.SpriteKey, msg.AccentColor ?? "#8b0000", 48))
+                                    }
+                                }
+                                <span>@($"> {(msg.AgentName ?? "ARIA").ToUpperInvariant()}")</span>
+                            </span>
+                        }
+                        else if (msg.Role == "screenshot")
+                        {
+                            <span class="msg-screenshot-label">⛶ SCREENSHOT</span>
+                        }
+                    </span>
+                    @foreach (var section in msg.Sections)
+                    {
+                        if (section.Type == MessageSection.SectionType.Thinking)
+                        {
+                            var thinkSection     = section;
+                            var isLastThink      = section == msg.Sections.LastOrDefault(s => s.Type == MessageSection.SectionType.Thinking);
+                            var isStreamingThink = msg == _streamingMsg && isLastThink && _isStreaming;
+                            <div class="thinking-block @(thinkSection.Collapsed ? "thinking-collapsed" : "")">
+                                <div class="thinking-header" @onclick="() => thinkSection.Collapsed = !thinkSection.Collapsed">
+                                    <span class="thinking-toggle">@(thinkSection.Collapsed ? "▶" : "▼")</span>
+                                    ⊙ INTERNAL COGITATION
+                                </div>
+                                @if (!thinkSection.Collapsed)
+                                {
+                                    <div class="thinking-body" id="@(isStreamingThink ? "streamingThinkBody" : null)">@CollapseNewlines(thinkSection.Text)</div>
+                                }
+                            </div>
+                        }
+                        else if (section.Type == MessageSection.SectionType.ToolActivity && section.ToolCall != null)
+                        {
+                            var tc = section.ToolCall;
+                            var isDiff = tc.Name == "edit_file";
+                            <div class="tool-activity @(tc.Result == null ? "tool-activity--running" : "")">
+                                <div class="tool-activity-header" @onclick="() => ToggleToolBlock(tc)">
+                                    <span class="tool-activity-toggle">@(tc.Expanded ? "▼" : "▶")</span>
+                                    <span class="tool-activity-name">⚙ @tc.Name.ToUpperInvariant()</span>
+                                    @if (tc.Result == null)
+                                    {
+                                        <span class="tool-activity-spinner"></span>
+                                    }
+                                    else
+                                    {
+                                        <span class="tool-activity-summary">@FormatToolArgs(tc.Name, tc.ArgsJson)</span>
+                                    }
+                                </div>
+                                @if (tc.Expanded)
+                                {
+                                    var fm = ParseFileMutationMetadata(tc.MetadataJson);
+                                    <div class="tool-activity-body">
+                                        <div class="tool-activity-args">@FormatToolArgs(tc.Name, tc.ArgsJson)</div>
+                                        @if (tc.Result != null)
+                                        {
+                                            @if (fm != null)
+                                            {
+                                                <DiffCard Path="@fm.Path"
+                                                          Diff="@fm.Diff"
+                                                          Adds="@fm.Adds"
+                                                          Dels="@fm.Dels"
+                                                          UndoToken="@fm.UndoToken"
+                                                          Created="@fm.Created"
+                                                          Deleted="@fm.Deleted"
+                                                          Reverted="@fm.Reverted"
+                                                          OnOpen="@(() => OpenDiffFileAsync(fm.Path))"
+                                                          OnRevert="@(() => RevertDiffAsync(msg, tc))" />
+                                            }
+                                            else
+                                            {
+                                                <pre class="tool-activity-result @(isDiff ? "tool-activity-diff" : "")">@FormatResult(tc.Name, tc.ArgsJson, tc.Result)</pre>
+                                            }
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            @if (!string.IsNullOrEmpty(tc.ImageBase64))
+                            {
+                                @* Rendered at the exact point in the reply's own section timeline where the
+                                   tool call happened — not as a separate message tacked onto the end. *@
+                                <img class="msg-image"
+                                     src="data:@(tc.ImageMediaType ?? "image/png");base64,@tc.ImageBase64"
+                                     alt="captured screenshot" loading="lazy"
+                                     @onclick="() => OpenImageModal(tc.ImageMediaType, tc.ImageBase64)" />
+                            }
+                        }
+                        else if (section.Type == MessageSection.SectionType.Content && !string.IsNullOrEmpty(section.Text))
+                        {
+                            if (msg != _streamingMsg && msg.Role is "assistant" or "user")
+                            {
+                                <div class="msg-content markdown">@((MarkupString)(msg.Role == "user" ? RenderUserMarkdown(section.Text) : RenderMarkdown(section.Text)))</div>
+                            }
+                            else
+                            {
+                                <div class="msg-content">@(CollapseNewlines(section.Text).TrimStart())</div>
+                            }
+                        }
+                    }
+                    @if (!string.IsNullOrEmpty(msg.ImageBase64))
+                    {
+                        <img class="msg-image"
+                             src="data:@(msg.ImageMediaType ?? "image/png");base64,@msg.ImageBase64"
+                             alt="captured screenshot" loading="lazy"
+                             @onclick="() => OpenImageModal(msg.ImageMediaType, msg.ImageBase64)" />
+                    }
+                    @if (msg.Role == "assistant" && msg.OutputTokens.HasValue && msg != _streamingMsg)
+                    {
+                        <div class="msg-tokens">
+                            @if (msg.InputTokens.HasValue)
+                            {
+                                <span class="tk-group">
+                                    <span>@msg.InputTokens</span>
+                                    <span class="tk-label" data-tip="Tokens consumed from context window (prompt + history)">tk:i</span>
+                                </span>
+                            }
+                            <span class="tk-group">
+                                <span>@msg.OutputTokens</span>
+                                <span class="tk-label" data-tip="Tokens generated in the response">tk:o</span>
+                            </span>
+                            @if (msg.Tps.HasValue)
+                            {
+                                <span class="tk-group">
+                                    <span>@msg.Tps</span>
+                                    <span class="tk-label" data-tip="Output tokens per second — inference engine generation speed">tk/s</span>
+                                </span>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            @if (_isStreaming && _streamingMsg != null && !StreamingHasOutput(_streamingMsg))
+            {
+                <span class="streaming-cursor"></span>
+            }
+            <button id="chat-scroll-down" class="chat-scroll-down-btn"
+                    style="display:none"
+                    @onclick="ScrollToBottomAsync">↓</button>
+        </div>
+        @if (_messages.Any(m => m.Role == "user"))
+        {
+            <div class="chat-timeline">
+                @for (int i = 0; i < _messages.Count; i++)
+                {
+                    if (_messages[i].Role != "user") continue;
+                    var idx = i;
+                    <button class="chat-timeline-dot"
+                            data-tip="@TimelineTip(_messages[idx])"
+                            @onclick="() => ScrollToMessage(idx)"></button>
+                }
+            </div>
+        }
+
+        @* Bridge Telemetry panel — collapsed to a thin right rail by default. *@
+        <div class="telemetry-panel @(_telemetryCollapsed ? "telemetry-panel--collapsed" : "")">
+            <div class="telemetry-header" @onclick="() => _telemetryCollapsed = !_telemetryCollapsed">
+                <span class="telemetry-toggle">@(_telemetryCollapsed ? "◀" : "▶")</span>
+                <span class="telemetry-title">BRIDGE TELEMETRY</span>
+                <label class="telemetry-pin" data-tip="Keep telemetry panel expanded by default" @onclick:stopPropagation="true">
+                    <input type="checkbox" checked="@_telemetryKeepExpanded" @onchange="e => SetTelemetryKeepExpanded((bool)(e.Value ?? false))" />
+                    <span class="telemetry-pin-track"><span class="telemetry-pin-knob"></span></span>
+                </label>
+            </div>
+            @if (!_telemetryCollapsed)
+            {
+                @if (_nodeMetrics.Count > 0)
+                {
+                    <div class="telemetry-tick-bar" title="Next metrics refresh" style="--telemetry-tick-duration: @_tickDuration">
+                        <div class="telemetry-tick-fill" @key="_telemetryTickKey"></div>
+                    </div>
+                    @foreach (var node in _nodeMetrics)
+                    {
+                        var m = node.Metrics;
+                        var collapsed = _collapsedTelemetryNodes.Contains(node.NodeId);
+                        <div class="telemetry-body" @key="node.NodeId">
+                            @if (_nodeMetrics.Count > 1)
+                            {
+                                <button type="button" class="telemetry-node-badge" @onclick="() => ToggleTelemetryNode(node.NodeId)">
+                                    <span class="telemetry-node-caret">@(collapsed ? "▸" : "▾")</span>
+                                    <span class="telemetry-node-name">@node.Label</span>
+                                </button>
+                            }
+                            @if (!collapsed)
+                            {
+                                <div class="telemetry-row">
+                                    <span>PROC CPU</span>
+                                    <span>@(m.CpuPercent?.ToString("F1") ?? "--")%</span>
+                                </div>
+                                <div class="telemetry-row">
+                                    <span>SYS CPU</span>
+                                    <span>@(m.SystemCpuPercent?.ToString("F1") ?? "--")%</span>
+                                </div>
+                                <div class="telemetry-row">
+                                    <span>PROC RAM</span>
+                                    <span>@(m.ProcessMemoryMb.ToString("F1")) MB</span>
+                                </div>
+                                <div class="telemetry-row">
+                                    <span>SYS RAM</span>
+                                    <span>@FormatSysMem(m)</span>
+                                </div>
+                                <div class="telemetry-row">
+                                    <span>HEAP</span>
+                                    <span>@(m.ManagedHeapMb.ToString("F1")) MB</span>
+                                </div>
+                                <div class="telemetry-row">
+                                    <span>GPU</span>
+                                    <span>@(m.GpuName ?? "--")</span>
+                                </div>
+                                <div class="telemetry-row">
+                                    <span>GPU %</span>
+                                    <span>@(m.GpuUtilizationPercent?.ToString("F0") ?? "--")%</span>
+                                </div>
+                                <div class="telemetry-row">
+                                    <span>GPU PWR</span>
+                                    <span>@(m.GpuPowerMw?.ToString("F0") ?? "--") mW</span>
+                                </div>
+                                <div class="telemetry-row">
+                                    <span>MEM BW</span>
+                                    <span>@FormatBandwidth(m)</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="telemetry-body telemetry-loading">
+                        <span class="telemetry-spinner"></span>
+                        <span>LOADING TELEMETRY…</span>
+                    </div>
+                }
+            }
+        </div>
+        </div>
+
+        @if (_viewerOpen && _viewerModalMode && SessionState.IsToolEnabled("terminal"))
+        {
+            <div class="explorer-viewer-overlay" @onclick="CloseExplorerViewer">
+                <div class="explorer-viewer" @onclick:stopPropagation="true">
+                    <div class="explorer-viewer-header">
+                        @if (_viewerRevertConfirming)
+                        {
+                            <span class="explorer-viewer-revert-label">REVERT @Path.GetFileName(_viewerRelPath ?? "")?</span>
+                            <button class="explorer-viewer-revert-btn" @onclick="CancelViewerRevert">CANCEL</button>
+                            <button class="explorer-viewer-revert-btn explorer-viewer-revert-btn--confirm" @onclick="ConfirmViewerRevertAsync">REVERT</button>
+                        }
+                        else if (_viewerEditing)
+                        {
+                            <span class="explorer-viewer-path @(_viewerDirty ? "explorer-viewer-path--dirty" : "")">@(_viewerDirty ? "● " : "")@_viewerRelPath</span>
+                            @if (_viewerSavePending)
+                            {
+                                <span class="explorer-viewer-saved-label">saving…</span>
+                            }
+                            else if (_viewerSavedTick)
+                            {
+                                <span class="explorer-viewer-saved-label">saved ✓</span>
+                            }
+                            <button class="explorer-viewer-save-btn" @onclick="SaveEditAsync">save</button>
+                            <button class="explorer-viewer-cancel-btn" @onclick="CancelEditAsync">cancel</button>
+                            <button class="explorer-viewer-modal-btn" title="Dock to side panel" @onclick="ToggleViewerMode">⇤</button>
+                            <button class="explorer-viewer-close" @onclick="CloseExplorerViewer">✕</button>
+                        }
+                        else
+                        {
+                            <span class="explorer-viewer-path">@_viewerRelPath</span>
+                            @if (_viewerSavedTick)
+                            {
+                                <span class="explorer-viewer-saved-label">saved ✓</span>
+                            }
+                            <button class="explorer-viewer-edit-btn" title="Edit this file" disabled="@_viewerTruncated" @onclick="BeginEdit">edit</button>
+                            @if (_viewerRelPath != null)
+                            {
+                                <button class="explorer-viewer-ref-btn" title="Reference in chat"
+                                        @onclick="() => AddExplorerFileReferenceAsync(new ExplorerNode { Name = Path.GetFileName(_viewerRelPath), RelPath = _viewerRelPath, IsDir = false })">
+                                    # reference
+                                </button>
+                            }
+                            <button class="explorer-viewer-modal-btn" title="Dock to side panel" @onclick="ToggleViewerMode">⇤</button>
+                            <button class="explorer-viewer-close" @onclick="CloseExplorerViewer">✕</button>
+                        }
+                    </div>
+                    <div class="explorer-viewer-body">
+                        @if (_viewerLoading)
+                        {
+                            <div class="explorer-loading-overlay">
+                                <div class="explorer-spinner"></div>
+                                @if (_explorerAwaitingApproval)
+                                {
+                                    <div class="explorer-approval-note">⛨ waiting for node approval — authorise on your bridge</div>
+                                }
+                            </div>
+                        }
+                        @if (_viewerConflictDialog && _viewerConflictContent != null)
+                        {
+                            <div class="explorer-viewer-conflict">
+                                <div class="explorer-viewer-conflict-header">File changed on disk</div>
+                                <div class="explorer-viewer-conflict-body">
+                                    @if (!string.IsNullOrEmpty(_viewerConflictDiff))
+                                    {
+                                        <DiffCard Path="@(_viewerRelPath ?? "")" Diff="@_viewerConflictDiff" Adds="@CountDiffAdds(_viewerConflictDiff)" Dels="@CountDiffDels(_viewerConflictDiff)" UndoToken="" />
+                                    }
+                                    else
+                                    {
+                                        <div class="explorer-empty">The file has been modified by another process.</div>
+                                    }
+                                </div>
+                                <div class="explorer-viewer-conflict-actions">
+                                    <button class="explorer-viewer-revert-btn" @onclick="() => ResolveConflictAsync(false)">reload (discard mine)</button>
+                                    <button class="explorer-viewer-revert-btn explorer-viewer-revert-btn--confirm" @onclick="() => ResolveConflictAsync(true)">overwrite anyway</button>
+                                </div>
+                            </div>
+                        }
+                        else if (_viewerEditing)
+                        {
+                            <textarea class="explorer-viewer-textarea" value="@_viewerEditBuffer" @oninput="OnEditInput" @onkeydown="OnEditKeyDownAsync"></textarea>
+                        }
+                        else if (_viewerContent == null && !_viewerLoading)
+                        {
+                            <div class="explorer-empty">Could not read file.</div>
+                        }
+                        else if (_viewerContent != null)
+                        {
+                            @if (_viewerIsDiff)
+                            {
+                                <DiffCard Path="@(_viewerRelPath ?? "")"
+                                          Diff="@_viewerContent"
+                                          Adds="@CountDiffAdds(_viewerContent)"
+                                          Dels="@CountDiffDels(_viewerContent)"
+                                          Created="@_viewerDiffCreated"
+                                          Deleted="@_viewerDiffDeleted"
+                                          UndoToken=""
+                                          OnOpen="OpenDiffFileFromViewerAsync"
+                                          OnRevert="BeginViewerRevert" />
+                                @if (_viewerTruncated)
+                                {
+                                    <div class="explorer-truncated-tag">⚠ diff truncated</div>
+                                }
+                            }
+                            else
+                            {
+                                <div class="msg-content markdown explorer-viewer-code">@((MarkupString)MarkdownHelper.ToHtmlForFile(_viewerRelPath ?? "", _viewerContent))</div>
+                                @if (_viewerTruncated)
+                                {
+                                    <div class="explorer-truncated-tag">⚠ truncated — file exceeds read cap</div>
+                                }
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (_imageModalSrc != null)
+        {
+            <div class="image-modal-overlay" @onclick="CloseImageModal">
+                <button class="image-modal-close" title="Close" @onclick="CloseImageModal" @onclick:stopPropagation="true">✕</button>
+                <img class="image-modal-img" src="@_imageModalSrc" alt="captured screenshot" @onclick:stopPropagation="true" />
+            </div>
+        }
+
+        @if (!_terminalCollapsed && _agent != null)
+        {
+            <div id="terminal-resize-handle" class="terminal-resize-handle"></div>
+            <div id="terminal-panel" class="terminal-panel" style="@TerminalAccentStyle">
+                <div class="terminal-header">
+                    <span class="terminal-title">▤ TERMINAL</span>
+                    <div class="terminal-mode-switch" title="Terminal mode">
+                        <button class="terminal-mode-btn @(_terminalMode == TerminalMode.QuickExec ? "terminal-mode-active" : "")"
+                                @onclick="() => SetTerminalModeAsync(TerminalMode.QuickExec)"
+                                disabled="@(_terminalMode == TerminalMode.QuickExec)">
+                            QUICK EXEC
+                        </button>
+                        <button class="terminal-mode-btn @(_terminalMode == TerminalMode.Pty ? "terminal-mode-active" : "")"
+                                @onclick="() => SetTerminalModeAsync(TerminalMode.Pty)"
+                                disabled="@(_terminalMode == TerminalMode.Pty || _ptyRequesting)">
+                            PTY
+                        </button>
+                    </div>
+                    <div class="terminal-toolbar">
+                        <span class="terminal-cwd" title="Current working directory">@(TerminalCwdDisplay)</span>
+                        <div class="terminal-project-select @(TerminalProjectSelected ? "" : "terminal-project-select-blink")">
+                            <ThemedSelect Value="@(SessionState.ActiveProject?.Path ?? "")"
+                                          ValueChanged="OnTerminalProjectSelectedAsync"
+                                          Options="TerminalProjectOptions()" />
+                        </div>
+                        @if (TerminalProjectSelected)
+                        {
+                            <span class="terminal-bridge-badge" title="Cogitator node for this terminal">
+                                @GetTerminalBridgeBadge()
+                            </span>
+                        }
+                        <button class="terminal-agent-sees-btn @(_terminalAgentSees ? "agent-sees-on" : "agent-sees-off")"
+                                @onclick="() => SetTerminalAgentSeesAsync(!_terminalAgentSees)"
+                                title="Let the agent read recent scrollback on the next turn">
+                            AGENT SEES: @(_terminalAgentSees ? "ON" : "OFF")
+                        </button>
+                        <button class="terminal-close-btn" @onclick="ToggleTerminalAsync" title="Close panel">✕</button>
+                    </div>
+                </div>
+                @if (_terminalMode == TerminalMode.Pty)
+                {
+                    <div class="terminal-pty-warning">⚠ PTY MODE: full shell, node policy not enforced</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(_ptyWarning))
+                {
+                    <div class="terminal-pty-warning">⚠ @_ptyWarning</div>
+                }
+                @if (_terminalMode == TerminalMode.QuickExec)
+                {
+                    <div class="terminal-body" id="terminalBody">
+                        @if (_terminalLines.Count == 0)
+                        {
+                            <div class="terminal-empty">Run shell commands on the cogitator node. Select a project above; cwd persists per session.</div>
+                        }
+                        else
+                        {
+                            <div class="terminal-scrollback">
+                                @for (var i = 0; i < _terminalLines.Count; i++)
+                                {
+                                    var idx = i;
+                                    var line = _terminalLines[i];
+                                    @if (line.IsCommand)
+                                    {
+                                        <div class="terminal-command-row">
+                                            <span class="terminal-prompt">></span>
+                                            <span class="terminal-command-text">@line.Text</span>
+                                            <button class="terminal-quote-btn" title="Quote this block in chat"
+                                                    @onclick="() => QuoteTerminalBlockToChatAsync(idx)">[→ CHAT]</button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="terminal-output-line @(line.TimedOut ? "terminal-timed-out" : "")">@line.Text</div>
+                                    }
+                                }
+                                @if (_terminalExecuting)
+                                {
+                                    <div class="terminal-output-line terminal-running">…</div>
+                                }
+                            </div>
+                        }
+                    </div>
+                    @if (_terminalCompletion != null)
+                    {
+                        <div class="terminal-completion-strip">
+                            <div class="terminal-completion-grid">
+                                @for (var i = 0; i < _terminalCompletion.Candidates.Count; i++)
+                                {
+                                    var idx = i;
+                                    var c = _terminalCompletion.Candidates[i];
+                                    <span class="terminal-completion-item @(c.IsDir ? "terminal-completion-dir" : "") @(_terminalCompletion.SelectedIndex == i ? "terminal-completion-selected" : "")"
+                                          @onclick="() => SelectTerminalCompletion(idx)">
+                                        @c.Text
+                                    </span>
+                                }
+                                @if (_terminalCompletion.Truncated)
+                                {
+                                    <span class="terminal-completion-more">… +more</span>
+                                }
+                            </div>
+                        </div>
+                    }
+                    @if (TerminalProjectSelected)
+                    {
+                        <div class="terminal-prompt-line">
+                            <span class="terminal-prompt">></span>
+                            <span class="terminal-input-wrap">
+                                <DebouncedInput id="terminalInput"
+                                                class="terminal-input"
+                                                placeholder=""
+                                                Value="@_terminalInput"
+                                                ValueChanged="OnTerminalInputChanged"
+                                                OnKeyDown="OnTerminalKeyDown" />
+                                <span class="terminal-cursor"></span>
+                            </span>
+                            <button class="terminal-run-btn" @onclick="ExecuteTerminalCommandAsync" disabled="@_terminalExecuting">RUN</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="terminal-prompt-line terminal-prompt-disabled">
+                            <span class="terminal-prompt">></span>
+                            <span class="terminal-input-disabled">Select a project above to use the terminal</span>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="terminal-body terminal-body-pty" id="terminalBody">
+                        @if (!TerminalProjectSelected)
+                        {
+                            <div class="terminal-empty">Select a project above to open a PTY shell.</div>
+                        }
+                        else
+                        {
+                            <div id="terminalXterm" class="terminal-xterm"></div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_attachedFileName != null)
+        {
+            <div class="file-attach-bar">
+                <span class="file-chip">⊡ @_attachedFileName</span>
+                <button class="file-chip-remove" @onclick="ClearAttachment" title="Remove attachment">✕</button>
+            </div>
+        }
+        @if (_attachError != null)
+        {
+            <div class="file-attach-bar file-attach-error">@_attachError</div>
+        }
+
+        @if (_pendingGateCogId != null)
+        {
+            <div class="hive-gate-bar">
+                <div class="hive-gate-header">
+                    <span class="hive-gate-icon">⬡</span>
+                    <span class="hive-gate-title">HIVE GATE — SOUL DIRECTIVE REQUIRED</span>
+                    <span class="hive-gate-hint">Approve synthesis or redirect the Overmind</span>
+                </div>
+                <div class="hive-gate-body">
+                    <DebouncedTextArea class="hive-gate-input" rows="2"
+                                       Value="@_gateNotes"
+                                       ValueChanged="v => _gateNotes = v"
+                                       Placeholder="Optional: provide a redirect directive for the Overmind (leave blank to approve as-is)…" />
+                    <button class="hive-gate-btn hive-gate-approve" @onclick="ApproveGate">
+                        ⬡ APPROVE &amp; SYNTHESISE
+                    </button>
+                </div>
+            </div>
+        }
+
+        @if (_pendingApproval is { } appr)
+        {
+            var isSeal = appr.Severity == Aria.Harness.Governance.ToolSeverity.NeedsSeal;
+            <div class="approval-bar @(isSeal ? "approval-bar--seal" : "")">
+                <div class="approval-header">
+                    <span class="approval-icon">@(isSeal ? "⛨" : "⚠")</span>
+                    <span class="approval-title">@(isSeal ? "PURITY SEAL REQUIRED" : "AUTHORISATION REQUIRED")</span>
+                </div>
+                <div class="approval-body">
+                    <div class="approval-detail">
+                        <span class="approval-tool">@appr.ToolName.ToUpperInvariant()</span>
+                        <span class="approval-reason">@appr.Reason</span>
+                    </div>
+                    <div class="approval-args">@appr.ArgsPreview</div>
+                    @if (isSeal)
+                    {
+                        <div class="approval-seal-note">Confirm at your cogitator node — a window has opened on your machine. The terminal cannot grant this seal.</div>
+                        <div class="approval-actions">
+                            <button class="approval-btn approval-deny" @onclick="DenyToolCall">✕ CANCEL</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="approval-actions">
+                            <button class="approval-btn approval-approve" @onclick="ApproveToolCall">⛨ AUTHORISE</button>
+                            <button class="approval-btn approval-deny" @onclick="DenyToolCall">✕ REFUSE</button>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        @if (_awaitingContextApprovalSessionId is { } ctxSid)
+        {
+            <div class="approval-bar approval-bar--context">
+                <div class="approval-header">
+                    <span class="approval-icon">⛨</span>
+                    <span class="approval-title">SENSITIVE OPERATIONS BLOCKED</span>
+                </div>
+                <div class="approval-body">
+                    <div class="approval-detail">
+                        <span class="approval-reason">This turn needs approval on your node for this browser session (8h).</span>
+                    </div>
+                    <div class="approval-args">Session: <span class="mono">@ctxSid</span></div>
+                    <div class="approval-actions">
+                        <button class="approval-btn approval-approve" @onclick="() => ApproveContextAsync(ctxSid)">⛨ APPROVE FOR THIS SESSION (8h)</button>
+                        <button class="approval-btn approval-deny" @onclick="() => _awaitingContextApprovalSessionId = null">✕ DISMISS</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (_currentManifest.Count > 0)
+        {
+            var doneCount = _currentManifest.Count(t => t.Status == "completed");
+            <div class="todo-manifest todo-manifest--pinned @(_manifestCollapsed ? "todo-manifest--collapsed" : "")">
+                <div class="todo-manifest-header" @onclick="() => _manifestCollapsed = !_manifestCollapsed">
+                    <span class="todo-manifest-toggle">@(_manifestCollapsed ? "▶" : "▼")</span>
+                    <span class="todo-manifest-title">▣ DIRECTIVE MANIFEST</span>
+                    <span class="todo-manifest-count">@doneCount / @_currentManifest.Count</span>
+                </div>
+                @if (!_manifestCollapsed)
+                {
+                    <ul class="todo-manifest-list">
+                        @foreach (var todo in _currentManifest)
+                        {
+                            <li class="todo-item todo-@todo.Status">
+                                <span class="todo-mark">@TodoGlyph(todo.Status)</span>
+                                <span class="todo-text">@todo.Text</span>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        }
+
+        <div class="input-zone">
+            @if (_commandPaletteOpen)
+            {
+                <div class="ref-picker">
+                    <div class="ref-picker-header">// COMMANDS — ↑↓ to move, ⏎ to run</div>
+                    <div class="ref-picker-body">
+                        @for (var i = 0; i < _commandResults.Count; i++)
+                        {
+                            var idx = i;
+                            var cmd = _commandResults[i];
+                            <div class="ref-row @(idx == _pickerSel ? "sel" : "")"
+                                 @onmouseenter="() => _pickerSel = idx"
+                                 @onclick="() => AcceptPickerAsync(idx)">
+                                <span class="ref-row-name">@cmd.Name</span>
+                                <span class="ref-row-path">@cmd.Description</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            else if (_projectPickerOpen)
+            {
+                <div class="ref-picker">
+                    <div class="ref-picker-header">// SELECT PROJECT — the # picker searches here</div>
+                    <div class="ref-picker-body">
+                        @{ var projects = SessionState.Projects; }
+                        @for (var i = 0; i < projects.Count; i++)
+                        {
+                            var idx  = i;
+                            var proj = projects[i];
+                            <div class="ref-row @(idx == _pickerSel ? "sel" : "")"
+                                 @onmouseenter="() => _pickerSel = idx"
+                                 @onclick="() => AcceptPickerAsync(idx)">
+                                <span class="ref-row-name">▣ @proj.Name</span>
+                                <span class="ref-row-path">@proj.Path</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            else if (_filePickerOpen)
+            {
+                <div class="ref-picker">
+                    <div class="ref-picker-header">
+                        // @(SessionState.ActiveProject?.Name ?? "NO PROJECT") — type to filter, ↑↓ to move, ⏎ to attach
+                        @if (_filePickerLoading)
+                        {
+                            <span class="ref-loading-tag">· loading…</span>
+                        }
+                    </div>
+                    <div class="ref-picker-body">
+                        @if (SessionState.Projects.Count == 0)
+                        {
+                            <div class="ref-empty">No projects declared. Add one under <strong>Tools › Terminal › Allowed Projects</strong>.</div>
+                        }
+                        else if (_fileResults.Count == 0)
+                        {
+                            <div class="ref-empty">@(_filePickerLoading ? "Loading…" : "No matching files.")</div>
+                        }
+                        else
+                        {
+                            @for (var i = 0; i < _fileResults.Count; i++)
+                            {
+                                var idx  = i;
+                                var file = _fileResults[i];
+                                <div class="ref-row @(idx == _pickerSel ? "sel" : "")"
+                                     @onmouseenter="() => _pickerSel = idx"
+                                     @onclick="() => AcceptPickerAsync(idx)">
+                                    <span class="ref-row-name">@file.RelPath</span>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+            else if (_gitPickerOpen)
+            {
+                <div class="ref-picker">
+                    <div class="ref-picker-header">// GIT REFERENCE — ↑↓ to move, ⏎ to insert</div>
+                    <div class="ref-picker-body">
+                        @for (var i = 0; i < _gitModeResults.Count; i++)
+                        {
+                            var idx  = i;
+                            var mode = _gitModeResults[i];
+                            <div class="ref-row @(idx == _pickerSel ? "sel" : "")"
+                                 @onmouseenter="() => _pickerSel = idx"
+                                 @onclick="() => AcceptPickerAsync(idx)">
+                                <span class="ref-row-name">#git:@mode</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (_referencedFiles.Count > 0)
+            {
+                <div class="ref-chips">
+                    @foreach (var f in _referencedFiles.ToList())
+                    {
+                        <span class="ref-chip" title="@f.AbsPath">
+                            # @f.RelPath
+                            <button class="ref-chip-x" @onclick="() => RemoveReference(f)" title="Remove reference">×</button>
+                        </span>
+                    }
+                </div>
+            }
+
+        <div class="input-area">
+            <DebouncedTextArea id="chatInput"
+                               class="@("chat-input " + (!string.IsNullOrEmpty(_queuedInput) ? "input-queued" : ""))"
+                               placeholder="@(!string.IsNullOrEmpty(_queuedInput) ? $"// Queued (↑ to edit): {(_queuedInput.Length > 34 ? _queuedInput[..34] + "…" : _queuedInput)}" : (_isStreaming ? "// Press Ctrl+Enter to queue next message…" : "// Transmit directive to Aria..."))"
+                               rows="1"
+                               disabled="@(_agent == null || _cogitationOffline)"
+                               Value="@_input"
+                               ValueChanged="OnInputAsync"
+                               OnKeyDown="HandleKeyDown" />
+            <div class="input-controls">
+                <div class="input-status">
+                    <div class="status-dot @(_isStreaming ? "busy" : (_agent != null ? "online" : "offline"))"></div>
+                    <span class="input-status-text">@(_statusOverride ?? (_isStreaming ? "COGITATING..." : (_agent != null ? "READY" : "NO CHANNEL")))</span>
+                    <span class="status-mode">
+                        @{
+                            var dispSrc = !string.IsNullOrEmpty(EffectiveAgent?.ModelSourceName)
+                                ? EffectiveAgent!.ModelSourceName
+                                : (SessionState.SelectedModelSource ?? "NO CHANNEL");
+                            var dispMdl = !string.IsNullOrEmpty(EffectiveAgent?.ModelId)
+                                ? EffectiveAgent!.ModelId
+                                : SessionState.SelectedModel;
+                        }
+                        <span class="status-channel">@dispSrc.ToUpper()</span>
+                        @if (!string.IsNullOrEmpty(dispMdl))
+                        {
+                            <span class="status-model">@dispMdl.ToUpper()</span>
+                        }
+                    </span>
+                </div>
+                <div class="input-buttons">
+                    <span class="terminal-btn-wrap" data-tip="@GetTerminalButtonTitle()">
+                        <button class="terminal-btn @(_agent == null || _cogitationOffline || !SessionState.IsToolEnabled("terminal") || _terminalEnabledOnBridge == false ? "terminal-btn-disabled" : "")"
+                                @onclick="ToggleTerminalAsync"
+                                disabled="@(_agent == null || _cogitationOffline || !SessionState.IsToolEnabled("terminal") || _terminalEnabledOnBridge == false)">
+                            ▤<span class="terminal-btn-label">TERMINAL</span>
+                        </button>
+                    </span>
+                    <label class="attach-btn @(_isStreaming || _agent == null || _cogitationOffline ? "attach-btn-disabled" : "")">
+                        📎<span class="attach-label">ATTACH</span>
+                        <InputFile OnChange="OnFileSelected"
+                                   accept=".txt,.md,.cs,.fs,.json,.xml,.yaml,.yml,.csv,.py,.js,.ts,.html,.css,.log,.sh,.sql,.toml,.ini,.cfg"
+                                   style="display:none"
+                                   disabled="@(_isStreaming || _agent == null || _cogitationOffline)" />
+                    </label>
+                    <button class="vox-btn @(_isVoxActive ? "vox-active" : _isVoxFixing ? "vox-fixing" : "")"
+                            @onclick="ToggleVoxAsync"
+                            disabled="@(_agent == null || _cogitationOffline)">
+                        🎙<span class="vox-label">@(_isVoxFixing ? "COGITATING…" : _isVoxActive ? "LISTENING" : "VOX")</span>
+                    </button>
+                    @if (_isStreaming)
+                    {
+                        <button class="transmit-btn transmit-stop" @onclick="StopStreaming" title="Stop generation">■ STOP</button>
+                    }
+                    else
+                    {
+                        <button class="transmit-btn @(!string.IsNullOrEmpty(_queuedInput) ? "transmit-queued" : "")"
+                                @onclick="SendAsync"
+                                title="Send (Ctrl+Enter)"
+                                disabled="@((string.IsNullOrWhiteSpace(_input) && _attachedFileName == null) || _agent == null || _cogitationOffline)">
+                            @(!string.IsNullOrEmpty(_queuedInput) ? "QUEUED ▶▶" : "TRANSMIT ▶▶")
+                            <span class="transmit-hint">CTRL+Enter</span>
+                        </button>
+                    }
+                    @if (_cogitationId.HasValue && _historyLoaded && !_isStreaming && !_cogitationOffline)
+                    {
+                        <button class="status-vigil-btn" @onclick="OpenVigilFromChat" data-tip="Schedule vigil" title="Schedule vigil">⏱</button>
+                    }
+                </div>
+            </div>
+        </div>
+        </div>
+    }
+
+    @* Onboarding is owned solely by BridgeGatewayModal (in MainLayout) — the old in-page
+       soul-unbound overlay was removed to avoid two competing modals. *@
+
+    @* Format-detection decision gate — self-contained component (ChatFormatModal). Session init
+       awaits _formatModal.RequestConfirmationAsync(…) via this @ref. *@
+    <ChatFormatModal @ref="_formatModal" />
+
+    @* "/compact" confirmation — replacing history is irreversible, so confirm before running it. *@
+    @if (_compactConfirmOpen)
+    {
+        <div class="modal-backdrop" @onclick="CancelCompactAsync">
+            <div class="modal-panel" style="max-width:420px" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <span class="modal-icon">⟲</span>
+                    <span class="modal-title">// COMPACT CONVERSATION</span>
+                    <button class="modal-close" @onclick="CancelCompactAsync">✕</button>
+                </div>
+                <div class="modal-body">
+                    <p class="modal-desc" style="margin-bottom:0">
+                        This asks the agent to summarize the conversation, then <strong>replaces the
+                        full history</strong> in this cogitation with just that summary to reclaim
+                        context window. The original messages cannot be recovered afterward.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button class="modal-apply" @onclick="CompactAsync">✓ COMPACT</button>
+                    <button class="modal-cancel" @onclick="CancelCompactAsync">CANCEL</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+

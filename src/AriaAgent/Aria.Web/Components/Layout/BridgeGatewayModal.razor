@@ -1,0 +1,405 @@
+@implements IDisposable
+@inject IJSRuntime JS
+
+@if (_show && !_dismissed)
+{
+    <div class="bgm-backdrop" @onclick="HandleBackdropClick">
+        <div class="bgm-modal" @onclick:stopPropagation>
+
+            @if (_state == BridgeState.Probing)
+            {
+                <!-- Initial local-bridge check in flight — keep quiet until it resolves -->
+                <div class="bgm-sigil">⚙</div>
+                <div class="bgm-title">// ESTABLISHING VOX-LINK</div>
+                <div class="bgm-sub">INTERROGATING LOCAL BRIDGE</div>
+
+                <div class="bgm-waiting">
+                    <div class="bgm-pulse"></div>
+                    <span>Searching for a bridge on this machine…</span>
+                </div>
+            }
+            else if (_state == BridgeState.NeverRegistered)
+            {
+                <!-- Full onboarding — user has never linked a bridge -->
+                <div class="bgm-sigil">⚙</div>
+                <div class="bgm-title">// BRIDGE CLIENT REQUIRED</div>
+                <div class="bgm-sub">LOCAL-FIRST IDENTITY VAULT NOT CONFIGURED</div>
+
+                <div class="bgm-body">
+                    <p>
+                        The <strong>Aria Bridge Client</strong> is a lightweight local process that runs on your machine.
+                        It stores your cogitations and soul identity locally — the server never holds your private data.
+                    </p>
+
+                    <div class="bgm-steps">
+                        <div class="bgm-step">
+                            <span class="bgm-step-n">01</span>
+                            <div class="bgm-step-wide">
+                                <div class="bgm-step-title">Install the bridge</div>
+                                <div class="bgm-step-desc">
+                                    Run the one-liner for your platform. It downloads the latest release,
+                                    installs to a local directory, and adds <code>aria-bridge</code> to your PATH.
+                                </div>
+
+                                <div class="bgm-install-tabs">
+                                    @foreach (var tab in _installTabs)
+                                    {
+                                        <button class="bgm-install-tab @(_activeTab == tab.Key ? "active" : "")"
+                                                @onclick="() => _activeTab = tab.Key">@tab.Value.Label</button>
+                                    }
+                                </div>
+                                <div class="bgm-install-box">
+                                    <code class="bgm-install-cmd">@_installTabs[_activeTab].Command</code>
+                                    <button class="bgm-install-copy" @onclick="CopyInstallCommand">
+                                        @(_copyStatus ?? "COPY")
+                                    </button>
+                                </div>
+                                <div class="bgm-install-fallback">
+                                    Prefer a manual download? See <a href="https://github.com/jlrouzies-fr/Aria.Agent/releases/latest" target="_blank">GitHub Releases</a>.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bgm-step">
+                            <span class="bgm-step-n">02</span>
+                            <div>
+                                <div class="bgm-step-title">Open the bridge status page</div>
+                                <div class="bgm-step-desc">
+                                    Start <code>aria-bridge</code>, then navigate to <code>http://localhost:5741</code> in your browser.
+                                    Create your soul and link it to this server.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bgm-step">
+                            <span class="bgm-step-n">03</span>
+                            <div>
+                                <div class="bgm-step-title">Return here — this modal will close automatically</div>
+                                <div class="bgm-step-desc">
+                                    Once your bridge connects and your soul is linked, the cogitator terminal will unlock.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bgm-waiting">
+                    <div class="bgm-pulse"></div>
+                    <span>Awaiting bridge signal…</span>
+                </div>
+
+                <button class="bgm-skip" @onclick="Dismiss">SKIP FOR NOW</button>
+            }
+            else if (_state == BridgeState.Offline)
+            {
+                <!-- Bridge was registered before but is not currently connected -->
+                <div class="bgm-sigil" style="color:var(--text-dead)">⚙</div>
+                <div class="bgm-title" style="color:var(--text-muted)">// BRIDGE OFFLINE</div>
+                <div class="bgm-sub">LOCAL COGITATION SYNC UNAVAILABLE</div>
+
+                <div class="bgm-body">
+                    <p>
+                        Your bridge client is not running. Cogitations will not be saved locally until it reconnects.
+                        Start <code>aria-bridge</code> to restore the link.
+                    </p>
+                </div>
+
+                <div class="bgm-waiting">
+                    <div class="bgm-pulse" style="background:var(--text-dead);box-shadow:none"></div>
+                    <span style="color:var(--text-dead)">Waiting for bridge to reconnect…</span>
+                </div>
+
+                <button class="bgm-skip" @onclick="Dismiss">DISMISS</button>
+            }
+            else if (_state == BridgeState.Update)
+            {
+                <!-- Bridge update available — user clicked the version badge -->
+                <div class="bgm-sigil bgm-sigil-update">⬇</div>
+                <div class="bgm-title" style="color:var(--border-glow)">// BRIDGE UPDATE AVAILABLE</div>
+                <div class="bgm-sub">NEW VERSION RELEASED</div>
+
+                <div class="bgm-body">
+                    <p>
+                        Your bridge is running <strong>@_currentVersion</strong>. The latest release is <strong>@_latestVersion</strong>.
+                    </p>
+                    <p>
+                        Run the installer again to replace your local binary. Your soul data and sessions are stored
+                        separately and will not be affected.
+                    </p>
+
+                    <div class="bgm-install-tabs">
+                        @foreach (var tab in _installTabs)
+                        {
+                            <button class="bgm-install-tab @(_activeTab == tab.Key ? "active" : "")"
+                                    @onclick="() => _activeTab = tab.Key">@tab.Value.Label</button>
+                        }
+                    </div>
+                    <div class="bgm-install-box">
+                        <code class="bgm-install-cmd">@_installTabs[_activeTab].Command</code>
+                        <button class="bgm-install-copy" @onclick="CopyInstallCommand">
+                            @(_copyStatus ?? "COPY")
+                        </button>
+                    </div>
+                </div>
+
+                <button class="bgm-skip" @onclick="Dismiss">DISMISS</button>
+            }
+
+            @* §12 — unlock this browser by pasting the session code from the local bridge's status page.
+               The code self-identifies its soul; on success the circuit verifies and this modal closes.
+               Collapsed by default so install/update stays the primary call-to-action. Hidden while
+               the initial probe is still deciding whether onboarding is needed at all. *@
+            @if (_state != BridgeState.Probing)
+            {
+            <div class="bgm-unlock">
+                <button class="bgm-unlock-toggle" @onclick="() => _unlockExpanded = !_unlockExpanded">
+                    @(_unlockExpanded ? "▼" : "▶") ALREADY HAVE A BRIDGE RUNNING?
+                </button>
+
+                @if (_unlockExpanded)
+                {
+                    <div class="bgm-unlock-sub">
+                        Open <span class="bgm-mono">http://localhost:5741</span> on <strong>this machine</strong>,
+                        copy the <strong>SESSION CODE</strong>, and paste it here. The soul your bridge holds is
+                        selected automatically.
+                    </div>
+                    <div class="bgm-unlock-row">
+                        <input class="bgm-unlock-input" placeholder="XXXX-XXXX" autocomplete="off"
+                               @bind="_code" @bind:event="oninput" @onkeydown="OnKey" />
+                        <button class="bgm-unlock-btn" @onclick="SubmitCode" disabled="@_busy">
+                            @(_busy ? "…" : "UNLOCK")
+                        </button>
+                    </div>
+                    @if (_error != null)
+                    {
+                        <div class="bgm-unlock-err">@_error</div>
+                    }
+                }
+            </div>
+            }
+
+        </div>
+    </div>
+}
+
+@code {
+    [Inject] private UserSessionState       SessionState { get; set; } = null!;
+    [Inject] private ModelBridgeRegistry    BridgeRegistry { get; set; } = null!;
+    [Inject] private CircuitAuthService     CircuitAuth { get; set; } = null!;
+    [Inject] private NavigationManager      Navigation { get; set; } = null!;
+
+    private enum BridgeState { Probing, NeverRegistered, Offline, Update }
+    private enum InstallPlatform { Windows, Mac, Linux }
+
+    // Triggered by BridgeVersionIndicator when the user clicks the update-available badge.
+    public static event Action<string, string>? UpdateRequested;
+
+    public static void RequestUpdate(string currentVersion, string latestVersion)
+        => UpdateRequested?.Invoke(currentVersion, latestVersion);
+
+    // Triggered by the top bar when the user clicks the offline-bridge button.
+    public static event Action? ShowRequested;
+
+    public static void RequestShow()
+    {
+        ShowRequested?.Invoke();
+    }
+
+    // Debug override: append ?forceBridgeModal=true to the URL to render the onboarding modal
+    // regardless of auth/bridge state. Useful for styling/reactivity testing.
+    private bool ForceDebugShow => bool.TryParse(
+        System.Web.HttpUtility.ParseQueryString(new Uri(Navigation.Uri).Query).Get("forceBridgeModal"),
+        out var v) && v;
+
+    private bool        _show      = false;
+    private bool        _dismissed = false;
+    private BridgeState _state;
+
+    private string? _currentVersion;
+    private string? _latestVersion;
+
+    private string  _code  = "";
+    private string? _error;
+    private bool    _busy;
+    private bool    _unlockExpanded;
+
+    private InstallPlatform _activeTab = InstallPlatform.Mac;
+    private string?         _copyStatus;
+
+    private readonly Dictionary<InstallPlatform, (string Label, string Command)> _installTabs = new()
+    {
+        [InstallPlatform.Windows] = ("Windows", "irm https://raw.githubusercontent.com/jlrouzies-fr/Aria.Agent/main/scripts/install.ps1 | iex"),
+        [InstallPlatform.Mac]     = ("macOS",   "curl -fsSL https://raw.githubusercontent.com/jlrouzies-fr/Aria.Agent/main/scripts/install.sh | bash"),
+        [InstallPlatform.Linux]   = ("Linux",   "curl -fsSL https://raw.githubusercontent.com/jlrouzies-fr/Aria.Agent/main/scripts/install.sh | bash"),
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var platform = await JS.InvokeAsync<string>("ariaInterop.getPlatformType");
+            _activeTab = platform switch
+            {
+                "windows" => InstallPlatform.Windows,
+                "linux"   => InstallPlatform.Linux,
+                _         => InstallPlatform.Mac,
+            };
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task CopyInstallCommand()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("ariaInterop.copyText", _installTabs[_activeTab].Command);
+            _copyStatus = "Copied";
+        }
+        catch
+        {
+            _copyStatus = "Failed";
+        }
+        StateHasChanged();
+        await Task.Delay(1200);
+        _copyStatus = null;
+        StateHasChanged();
+    }
+
+    private void OnKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") _ = SubmitCode();
+    }
+
+    private async Task SubmitCode()
+    {
+        if (_busy) return;
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_code)) { _error = "Enter the session code from your bridge."; return; }
+        _busy = true;
+        StateHasChanged();
+        var (ok, error) = await SessionState.TryCodeUnlockAsync(_code);   // routed to NavMenu's handler
+        if (ok) { _code = ""; Evaluate(); }   // verification fired → Evaluate hides the modal
+        else    _error = error;
+        _busy = false;
+        StateHasChanged();
+    }
+
+    private bool _probeTimedOut;
+
+    protected override void OnInitialized()
+    {
+        SessionState.OnChange                    += OnSessionChanged;
+        SessionState.BridgeProbeCompletedChanged += OnProbeCompleted;
+        BridgeRegistry.SoulStatusChanged         += OnSoulStatusChanged;
+        UpdateRequested                          += OnUpdateRequested;
+        ShowRequested                            += OnShowRequested;
+        Evaluate();
+
+        // Safety net: if the probe never reports back (JS interop wedged), fall through to
+        // onboarding rather than spinning forever.
+        if (!SessionState.BridgeProbeCompleted)
+            _ = Task.Delay(TimeSpan.FromSeconds(8)).ContinueWith(_ =>
+            {
+                if (SessionState.BridgeProbeCompleted) return;
+                _probeTimedOut = true;
+                Evaluate();
+                InvokeAsync(StateHasChanged);
+            });
+    }
+
+    private void OnProbeCompleted()
+    {
+        Evaluate();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnShowRequested()
+    {
+        _dismissed = false;
+        Evaluate();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnUpdateRequested(string currentVersion, string latestVersion)
+    {
+        _currentVersion = currentVersion;
+        _latestVersion  = latestVersion;
+        _dismissed      = false;
+        _state          = BridgeState.Update;
+        _show           = true;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnSessionChanged()
+    {
+        _dismissed = false; // reset per-session dismiss when user changes
+        Evaluate();
+        InvokeAsync(StateHasChanged);
+    }
+
+    // Drives the modal off VERIFICATION, not mere transport connection. A connected bridge
+    // that has not yet proven the soul's key must still show onboarding — this is what
+    // killed the old "nice modal flashes then the connection hides it" behaviour.
+    private void OnSoulStatusChanged(string sessionKey)
+    {
+        // Per-circuit verification key (§12): "circuit-{token}-{userId}".
+        var userId = SessionState.CurrentUser?.Id;
+        if (sessionKey != $"circuit-{SessionState.SessionToken}-{userId}") return;
+        if (userId is { Length: > 0 } && CircuitAuth.IsVerified(userId)) _dismissed = false; // arm for next time it drops
+        Evaluate();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void Evaluate()
+    {
+        // Update modal is user-triggered; keep it open until explicitly dismissed.
+        if (_state == BridgeState.Update)
+            return;
+
+        if (ForceDebugShow)
+        {
+            _state = BridgeState.NeverRegistered;
+            _show  = true;
+            return;
+        }
+
+        var user = SessionState.CurrentUser;
+
+        // Verified for THIS circuit (its own bridge proved the soul's key) → nothing to show.
+        if (user != null && CircuitAuth.IsVerified(user.Id))
+        {
+            _show = false;
+            return;
+        }
+
+        // Initial probe (discovery + cached-code retry) still in flight — show the loading state
+        // instead of flashing onboarding for the 1-2s the attestation round-trip takes.
+        if (!SessionState.BridgeProbeCompleted && !_probeTimedOut)
+        {
+            _state = BridgeState.Probing;
+            _show  = true;
+            return;
+        }
+
+        // Not verified or no soul selected yet: full onboarding if no key was ever registered,
+        // otherwise "offline/unverified".
+        _state = user?.PublicKey == null ? BridgeState.NeverRegistered : BridgeState.Offline;
+        _show  = true;
+    }
+
+    private void Dismiss() => _dismissed = true;
+
+    private void HandleBackdropClick()
+    {
+        // Only allow backdrop-dismiss for the offline/update variants, not during onboarding
+        if (_state is BridgeState.Offline or BridgeState.Update)
+            _dismissed = true;
+    }
+
+    public void Dispose()
+    {
+        SessionState.OnChange                    -= OnSessionChanged;
+        SessionState.BridgeProbeCompletedChanged -= OnProbeCompleted;
+        BridgeRegistry.SoulStatusChanged         -= OnSoulStatusChanged;
+        UpdateRequested                          -= OnUpdateRequested;
+        ShowRequested                            -= OnShowRequested;
+    }
+}

@@ -1,0 +1,248 @@
+
+/* ── Input Area ─────────────────────────────────────────── */
+/* Prompt textarea always sits on its own full-width row; the controls strip (status left,
+   action buttons right) lives underneath — no layout flip when the text wraps. */
+.input-area {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border-active);
+}
+
+.chat-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg-input);
+    border: 1px solid var(--border-normal);
+    color: var(--text-body);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 5px 8px;
+    resize: none;
+    outline: none;
+    min-height: 28px;
+    max-height: 120px;
+    line-height: 1.5;
+    transition: border-color 0.15s;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-normal) transparent;
+}
+
+.input-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.input-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 9px;
+    letter-spacing: 1px;
+    color: var(--text-dead);
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.input-status-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.input-status .status-dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.input-status .status-dot.online  { background: var(--success-bright); box-shadow: 0 0 4px #55aa55; }
+.input-status .status-dot.offline { background: var(--text-dead); }
+.input-status .status-dot.busy    { background: var(--gold-bright); box-shadow: 0 0 4px var(--gold-bright); animation: blink 1.5s ease-in-out infinite; }
+
+.input-status .status-mode {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    line-height: 1.2;
+    color: var(--gold-normal);
+    letter-spacing: 1px;
+    font-size: 8px;
+    padding: 2px 6px;
+    border: 1px solid var(--gold-dim);
+    flex-shrink: 1;
+    min-width: 0;
+    max-width: fit-content;
+    overflow: hidden;
+}
+.input-status .status-channel {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+.input-status .status-model {
+    font-size: 7px;
+    letter-spacing: 0.5px;
+    color: var(--text-dead);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.input-buttons {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.chat-input::placeholder { color: var(--text-dead); }
+.chat-input:focus { border-color: var(--border-glow); box-shadow: var(--glow-sm); }
+.chat-input:disabled { opacity: 0.4; cursor: not-allowed; }
+.chat-input.input-queued { border-color: var(--gold-dim); color: var(--gold-bright); }
+
+.transmit-btn {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-active);
+    color: var(--text-normal);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 1.5px;
+    padding: 4px 10px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: background 0.1s, border-color 0.1s, color 0.1s, box-shadow 0.1s;
+    height: 28px;
+    white-space: nowrap;
+}
+.transmit-btn:hover:not(:disabled) {
+    background: var(--bg-hover);
+    border-color: var(--border-glow);
+    color: var(--text-bright);
+    box-shadow: var(--glow-sm);
+}
+.transmit-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+/* Shortcut hint inside the transmit button. */
+.transmit-hint {
+    margin-left: 6px;
+    font-size: 9px;
+    font-weight: normal;
+    letter-spacing: 0.5px;
+    text-transform: none;
+    opacity: 0.8;
+}
+/* ── Token stats ────────────────────────────────────────── */
+/* Tooltip itself is rendered by the shared [data-tip] system (cursor-following + viewport-clamped);
+   .tk-label just supplies the dotted-underline affordance. */
+.tk-label {
+    border-bottom: 1px dotted var(--border-normal);
+}
+
+/* ── File Attachment ────────────────────────────────────── */
+.attach-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: auto;
+    height: 28px;
+    padding: 0 10px;
+    flex-shrink: 0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-normal);
+    color: var(--text-dim);
+    font-size: 16px;
+    cursor: pointer;
+    transition: border-color 0.1s, color 0.1s, box-shadow 0.1s;
+}
+.attach-label {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    font-family: var(--font-mono);
+}
+.attach-btn:hover:not(.attach-btn-disabled) {
+    border-color: var(--border-glow);
+    color: var(--text-bright);
+    box-shadow: var(--glow-sm);
+}
+.attach-btn-disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+
+.vox-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 10px;
+    flex-shrink: 0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-normal);
+    color: var(--text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    transition: border-color 0.1s, color 0.1s, box-shadow 0.1s;
+}
+.vox-btn:hover:not(:disabled) {
+    border-color: var(--border-glow);
+    color: var(--text-bright);
+    box-shadow: var(--glow-sm);
+}
+.vox-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.vox-label {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    font-family: var(--font-mono);
+}
+.vox-btn.vox-active {
+    border-color: #cc4444;
+    color: #ff6666;
+    box-shadow: 0 0 8px rgba(200, 50, 50, 0.5);
+    animation: vox-pulse 1s ease-in-out infinite;
+}
+.vox-btn.vox-fixing {
+    border-color: var(--gold-normal);
+    color: var(--gold-bright);
+    opacity: 0.85;
+}
+@keyframes vox-pulse {
+    0%, 100% { box-shadow: 0 0 6px rgba(200, 50, 50, 0.4); }
+    50%       { box-shadow: 0 0 14px rgba(200, 50, 50, 0.8); }
+}
+
+.file-attach-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 16px;
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border-normal);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--text-dim);
+}
+.file-attach-error { color: var(--text-warn, #c08000); }
+
+.file-chip {
+    color: var(--text-normal);
+    letter-spacing: 0.5px;
+}
+.file-chip-remove {
+    background: none;
+    border: none;
+    color: var(--text-dead);
+    cursor: pointer;
+    font-size: 10px;
+    padding: 0 2px;
+    line-height: 1;
+}
+.file-chip-remove:hover { color: var(--text-bright); }

@@ -1,0 +1,292 @@
+@using Aria.Agent
+@using Aria.Web.Data
+@using Aria.Tools
+@using Aria.Web.Helpers
+@using Aria.Web.Components.Pages
+@using Aria.Web.Components.Shared
+@using Markdig
+@using System.Text.Json
+@using System.Security.Cryptography
+@inject SkillService SkillService
+@implements IDisposable
+@inject CogitationService CogitationService
+@inject VoxService VoxService
+@inject SubAgentService SubAgentService
+@inject CronSlotService CronSlotService
+@inject UserLocalSourceService LocalSourceService
+
+<div class="sidebar-section sidebar-pinned-top">
+    @if (!_sidebarCollapsed)
+    {
+        <span class="new-chat-btn-wrap @(SessionState.IsSessionInitializing ? "new-chat-btn-probing" : "")"
+              data-tip="@(SessionState.IsSessionInitializing ? "⟳ Probing model format — wait for it to finish before starting another cogitation…" : null)"
+              data-tip-variant="@(SessionState.IsSessionInitializing ? "loading" : null)">
+            <button class="new-chat-btn" @onclick="NewChat" disabled="@(!SoulVerified || SessionState.IsSessionInitializing)">▶▶ NEW COGITATION</button>
+        </span>
+        @if (SessionState.FocusedFolderId is { } focusId)
+        {
+            var focusFolder = _folders.FirstOrDefault(f => f.Id == focusId);
+            if (focusFolder != null)
+            {
+                <div class="cog-focus-chip" title="New cogitations will be filed here">
+                    <span class="cog-focus-dot" style="--folder-color:@(focusFolder.Color ?? "#8B0000")">●</span>
+                    <span class="cog-focus-name">@focusFolder.Name.ToUpperInvariant()</span>
+                    <button class="cog-focus-clear" @onclick="ClearFocusedFolder" title="Clear focus">✕</button>
+                </div>
+            }
+        }
+    }
+    else
+    {
+        <span class="new-chat-btn-wrap @(SessionState.IsSessionInitializing ? "new-chat-btn-probing" : "")"
+              data-tip="@(SessionState.IsSessionInitializing ? "⟳ Probing model format — wait for it to finish…" : "New Cogitation")"
+              data-tip-variant="@(SessionState.IsSessionInitializing ? "loading" : null)">
+            <button class="new-chat-btn new-chat-btn-collapsed" @onclick="NewChat" disabled="@(!SoulVerified || SessionState.IsSessionInitializing)">▶</button>
+        </span>
+    }
+</div>
+
+<button class="sidebar-collapse-btn" @onclick="ToggleSidebar" data-tip="@(_sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar")">
+    @(_sidebarCollapsed ? "»" : "«")
+</button>
+
+@* ── Slim nav items ───────────────────────────────────────────────────── *@
+<div class="sidebar-nav-item @(_activePanel == "souls" ? "active" : "")" @onclick="ToggleSoulsPanelAsync">
+    <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="7" r="4"/>
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+        </svg>
+    </span>
+    <span class="nav-item-dot">@(_activePanel == "souls" ? "▶" : "·")</span>
+    <span class="nav-item-label">// SOULS</span>
+</div>
+
+<div class="sidebar-nav-item @(_activePanel == "cogitations" ? "active" : "")" @onclick='() => TogglePanel("cogitations")'>
+    <span class="nav-icon @(HasAnyActiveCogitationRun ? "mem-icon-processing" : "")" title="@(HasAnyActiveCogitationRun ? "A cogitation is still streaming in the background…" : null)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+    </span>
+    <span class="nav-item-dot">@(_activePanel == "cogitations" ? "▶" : "·")</span>
+    <span class="nav-item-label">// COGITATIONS</span>
+    @if (HasUnseenCogitationCompletion)
+    {
+        <span class="vigil-unseen-dot" title="A cogitation finished while you were away"></span>
+    }
+</div>
+
+<div class="sidebar-nav-item @(_activePanel == "channel" ? "active" : "")"
+     @onclick='() => TogglePanel("channel")' id="aria-channel-title">
+    <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="2"/>
+            <path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/>
+        </svg>
+    </span>
+    <span class="nav-item-dot">@(_activePanel == "channel" ? "▶" : "·")</span>
+    <span class="nav-item-label">// CHANNEL</span>
+</div>
+
+<div class="sidebar-nav-item @(_activePanel == "devices" ? "active" : "")"
+     @onclick='() => TogglePanel("devices")'>
+    <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2"/>
+            <path d="M8 21h8M12 17v4"/>
+        </svg>
+    </span>
+    <span class="nav-item-dot">@(_activePanel == "devices" ? "▶" : "·")</span>
+    <span class="nav-item-label">// DEVICES</span>
+</div>
+
+<div class="sidebar-nav-item @(_activePanel == "tools" ? "active" : "")" @onclick='() => TogglePanel("tools")'>
+    <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+    </span>
+    <span class="nav-item-dot">@(_activePanel == "tools" ? "▶" : "·")</span>
+    <span class="nav-item-label">// TOOLS</span>
+</div>
+
+<div class="sidebar-nav-item @(IsMemoryPageActive ? "active" : "")" @onclick="OpenMemoryPage">
+    <span class="nav-icon @(_memoryProcessing ? "mem-icon-processing" : "")" title="@(_memoryProcessing ? "Noosphere is extracting a new memory…" : null)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/>
+            <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>
+        </svg>
+    </span>
+    <span class="nav-item-dot">@(IsMemoryPageActive ? "▶" : "·")</span>
+    <span class="nav-item-label">// NOOSPHERE <span class="nav-sub-label">(memory)</span></span>
+</div>
+
+<div class="sidebar-nav-item @(_activePanel == "agents" ? "active" : "")" @onclick='() => TogglePanel("agents")'>
+    <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 8V4H8"/>
+            <rect width="16" height="12" x="4" y="8" rx="2"/>
+            <path d="M2 14h2M20 14h2M15 13v2M9 13v2"/>
+        </svg>
+    </span>
+    <span class="nav-item-dot">@(_activePanel == "agents" ? "▶" : "·")</span>
+    <span class="nav-item-label">// AGENTS</span>
+    @if (SessionState.ActiveSubAgent != null)
+    {
+        <span class="nav-agent-active" style="margin-left:auto;font-size:13px;color:@SessionState.ActiveSubAgent.AccentColor;text-shadow:0 0 8px @SessionState.ActiveSubAgent.AccentColor">⚡</span>
+    }
+</div>
+
+<div class="sidebar-nav-item @(_activePanel == "skills" ? "active" : "")" @onclick='() => TogglePanel("skills")'>
+    <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>
+        </svg>
+    </span>
+    <span class="nav-item-dot">@(_activePanel == "skills" ? "▶" : "·")</span>
+    <span class="nav-item-label">// SKILLS</span>
+</div>
+
+<div class="sidebar-nav-item" @onclick="OpenVigilModalAsync">
+    <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+        </svg>
+    </span>
+    <span class="nav-item-dot">·</span>
+    <span class="nav-item-label">// VIGIL <span class="nav-sub-label">(CRON)</span></span>
+    @if (_unseenVigilCount > 0)
+    {
+        <span class="vigil-unseen-dot" title="@_unseenVigilCount vigil(s) completed"></span>
+    }
+</div>
+
+<div class="sidebar-nav-item @(_activePanel == "hive" ? "active" : "")" @onclick='() => TogglePanel("hive")'>
+    <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+        </svg>
+    </span>
+    <span class="nav-item-dot">@(_activePanel == "hive" ? "▶" : "·")</span>
+    <span class="nav-item-label">// HIVE</span>
+    @if (_hiveCollectives.Count > 0)
+    {
+        <span class="nav-sub-label nav-sub-label-count">(@_hiveCollectives.Count)</span>
+    }
+</div>
+
+<div class="sidebar-nav-item @(Nav.Uri.Contains("/wargame") ? "active" : "")" @onclick="OpenWarPlanner">
+    <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <line x1="12" y1="2" x2="12" y2="7"/>
+            <line x1="12" y1="17" x2="12" y2="22"/>
+            <line x1="2" y1="12" x2="7" y2="12"/>
+            <line x1="17" y1="12" x2="22" y2="12"/>
+        </svg>
+    </span>
+    <span class="nav-item-dot">@(Nav.Uri.Contains("/wargame") ? "▶" : "·")</span>
+    <span class="nav-item-label">// WAR.PLANNER</span>
+</div>
+
+<div class="sidebar-nav-item @(_indexModal ? "active" : "")" @onclick='() => TogglePanel("index")'>
+    <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+            <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+        </svg>
+    </span>
+    <span class="nav-item-dot">@(_indexModal ? "▶" : "·")</span>
+    <span class="nav-item-label">// INDEX</span>
+</div>
+
+@* ── INDEX modal — wide, centred catalogue (replaces the cramped flyout) ──── *@
+@if (_indexModal)
+{
+    <div class="modal-backdrop" @onclick="CloseIndexModal">
+        <div class="modal-panel modal-panel--index" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <span class="modal-icon">☰</span>
+                <span class="modal-title">// INDEX</span>
+                <button class="modal-close" @onclick="CloseIndexModal">✕</button>
+            </div>
+            <div class="modal-body">
+                <NavMenuReferencePanel />
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Section panel ────────────────────────────────────────────────────── *@
+@if (_activePanel != null)
+{
+    <div class="section-panel-backdrop" @onclick="ClosePanel"></div>
+    <div class="section-panel" @onclick:stopPropagation="true">
+
+        <div class="section-panel-header">
+            <span>// @_activePanel.ToUpperInvariant()</span>
+            <button class="section-panel-close" @onclick="ClosePanel">✕</button>
+        </div>
+
+        <div class="section-panel-body">
+
+            <CascadingValue Value="this" Name="NavMenu">
+            @if (_activePanel == "souls")
+            {
+                <NavMenuSoulsPanel />
+            }
+            else if (!SoulVerified)
+            {
+                @* Single gate for every soul-scoped panel: no verified bridge → no data, no actions.
+                   Defaults locked; unlocks only after challenge-response succeeds. *@
+                <div class="panel-locked">
+                    <span class="bridge-unavail-dot" style="width:10px;height:10px;margin-bottom:12px"></span>
+                    <div class="panel-locked-title">// @(_attesting ? "VERIFYING…" : "BRIDGE UNAVAILABLE")</div>
+                    <div class="panel-locked-sub">
+                        This vault is sealed until <strong>this machine's</strong> Aria.Bridge is running
+                        and enrolled for this soul. Start it at
+                        <span style="color:var(--text-normal)">http://localhost:5741</span> and join the soul,
+                        then approve the device on an already-trusted machine.
+                    </div>
+                </div>
+            }
+            else if (_activePanel == "cogitations")
+            {
+                <NavMenuCogitationsPanel />
+            }
+            else if (_activePanel == "channel")
+            {
+                <NavMenuChannelPanel />
+            }
+            else if (_activePanel == "devices")
+            {
+                <NavMenuDevicesPanel />
+            }
+            else if (_activePanel == "agents")
+            {
+                <NavMenuAgentsPanel />
+            }
+            else if (_activePanel == "skills")
+            {
+                <NavMenuSkillsPanel />
+            }
+            else if (_activePanel == "hive")
+            {
+                <NavMenuHivePanel />
+            }
+            else if (_activePanel == "tools")
+            {
+                <NavMenuToolsPanel />
+            }
+            </CascadingValue>
+        </div>
+    </div>
+}
+
+
+<CascadingValue Value="this" Name="NavMenu">
+    <NavMenuVigilScheduler />
+</CascadingValue>
+

@@ -1,0 +1,532 @@
+@using Aria.Web.Data
+@using Aria.Web.Services
+@using Aria.Web.Helpers
+@inject CollectiveOrchestrator Orchestrator
+@inject CollectiveService CollectiveService
+
+@if (Parent._collective != null)
+{
+    <div class="hv-canvas-wrap" @ref="Parent._canvasRef" @onclick="Parent.CloseInsertMenu">
+    <div class="hv-canvas-inner">
+        @* SVG edges + live animation + retry loops + edge inserts *@
+        <svg class="hv-edges-svg" xmlns="http://www.w3.org/2000/svg" width="4000" height="3000">
+            @foreach (var m in Parent._members)
+            {
+                // Endpoints are where the centre-to-centre line crosses each block's border, so the link
+                // (and the edge nodes strung along it) always meet the blocks at their edges — for a drone
+                // below, beside, or above the Overmind. Integer coords avoid locale decimal-separator bugs.
+                var ovCx = Hive.OvermindCX;
+                var ovCy = Hive.OvermindTop + Hive.OvermindHalfH;
+                var drCx = m.CanvasX + Hive.NodeHalfW;
+                var drCy = m.CanvasY + Hive.DroneHalfH;
+                var (iFromX, iFromY) = Hive.BorderPoint(ovCx, ovCy, Hive.NodeHalfW, Hive.OvermindHalfH, drCx, drCy);
+                var (iToX,   iToY)   = Hive.BorderPoint(drCx, drCy, Hive.NodeHalfW, Hive.DroneHalfH, ovCx, ovCy);
+                var iMidY  = (iFromY + iToY) / 2;
+                var iMidX  = (iFromX + iToX) / 2;
+                var pathD    = $"M{iFromX},{iFromY} C{iFromX},{iMidY} {iToX},{iMidY} {iToX},{iToY}";
+                var pathDRev = $"M{iToX},{iToY} C{iToX},{iMidY} {iFromX},{iMidY} {iFromX},{iFromY}";
+
+                var fromX = (double)iFromX; var fromY = (double)iFromY;
+                var toX   = (double)iToX;   var toY   = (double)iToY;
+                var midX  = (double)iMidX;  var midY  = (double)iMidY;
+                var taskActive  = Parent._tasks.Any(t => t.AssignedMemberId == m.Id
+                    && (t.Status == CollectiveTaskStatus.Running || t.Status == CollectiveTaskStatus.Dispatched));
+                var cogActive   = Parent.IsDroneActiveInCogitation(m.Id);
+                var hasRunning  = taskActive || cogActive;
+
+                var hasRecentResult = Parent._events.Any(e =>
+                    e.ActorMemberId == m.Id &&
+                    e.Type == CollectiveEventType.DroneResult &&
+                    e.Timestamp > DateTime.UtcNow.AddSeconds(-8));
+
+                var dispatchCount = Parent._events.Count(e =>
+                    e.ActorMemberId == m.Id && e.Type == CollectiveEventType.Dispatched);
+                var retryCount = Math.Max(0, dispatchCount - 1);
+
+                <!-- Edge line — full bezier always; gate erases the midpoint visually -->
+                <path d="@pathD"
+                      class="hv-edge @(hasRunning ? "hv-edge-active" : "")"
+                      fill="none"
+                      stroke="@(hasRunning ? m.SubAgent.AccentColor : "var(--border-dim, #2a2a2a)")"
+                      stroke-width="1.5" />
+
+                <!-- Forward flow dot -->
+                @if (hasRunning)
+                {
+                    <circle r="4" fill="@m.SubAgent.AccentColor" opacity="0.9"
+                            filter="url(#hv-glow)">
+                        <animateMotion dur="1.8s" repeatCount="indefinite"
+                                       calcMode="spline"
+                                       keyTimes="0;1" keySplines="0.4 0 0.6 1"
+                                       path="@pathD" />
+                    </circle>
+                }
+
+                <!-- Return flow dot -->
+                @if (hasRecentResult)
+                {
+                    <circle r="3" fill="var(--text-bright, #f0d060)" opacity="0.85"
+                            filter="url(#hv-glow)">
+                        <animateMotion dur="1.4s" repeatCount="3"
+                                       calcMode="spline"
+                                       keyTimes="0;1" keySplines="0.4 0 0.6 1"
+                                       path="@pathDRev" />
+                    </circle>
+                }
+
+                // Chain nodes: Transforms (ordered by position) + Gate at pos 500
+                var gatePending = Parent._pendingGateMembers.ContainsKey(m.Id);
+                var chain = m.EdgeNodes
+                    .Where(n => n.NodeType == EdgeNodeType.Transform || n.NodeType == EdgeNodeType.Condition)
+                    .Select(n => (pos: n.Position, isGate: false, nodeId: n.Id, edgeNode: (MemberEdgeNode?)n))
+                    .ToList();
+                if (m.RequiresHumanApproval)
+                    chain.Add((pos: 500, isGate: true, nodeId: 0, edgeNode: (MemberEdgeNode?)null));
+                chain = chain.OrderBy(x => x.pos).ToList();
+                var chainN = chain.Count;
+
+                @foreach (var ci in Enumerable.Range(0, chainN))
+                {
+                    var item   = chain[ci];
+                    var t      = (ci + 1.0) / (chainN + 1.0);
+                    var bPoint = Hive.BezierPoint(iFromX, iFromY, iToX, iToY, t);
+                    var nx = bPoint.x;
+                    var ny = bPoint.y;
+
+                    var nodeTypeGate = "gate";
+                    @if (item.isGate)
+                    {
+                        <g class="hv-gate-node @(gatePending ? "hv-gate-pending" : "")"
+                           style="cursor:pointer; pointer-events:all"
+                           @onclick:stopPropagation="true"
+                           @onclick="(e) => Parent.ShowInsertMenu(m.Id, nodeTypeGate, null, e)"
+                           @onmouseenter="(e) => Parent.ShowTooltip(m, e)"
+                           @onmouseleave="Parent.HideTooltip">
+                            <circle cx="@nx" cy="@ny" r="20" stroke="none"
+                                    style="fill: var(--bg-base, #1a1a1a); pointer-events: none" />
+                            <rect x="@(nx - 14)" y="@(ny - 14)" width="28" height="28"
+                                  transform="rotate(45 @nx @ny)"
+                                  fill="@(gatePending ? "#2a1800" : "#1a0c00")"
+                                  stroke="@(gatePending ? "#ffaa00" : "#d4a020")"
+                                  stroke-width="2" filter="url(#hv-glow)" />
+                            <text x="@nx" y="@(ny + 4)" text-anchor="middle"
+                                  font-size="10" font-family="monospace"
+                                  fill="@(gatePending ? "#ffaa00" : "#d4a020")"
+                                  style="pointer-events:none">⬡</text>
+                        </g>
+                    }
+                    else if (item.edgeNode!.NodeType == EdgeNodeType.Condition)
+                    {
+                        var cn = item.edgeNode!;
+                        var cnColor = Hive.ConditionColor(cn);
+                        <g class="hv-condition-node"
+                           style="cursor:pointer; pointer-events:all"
+                           @onclick:stopPropagation="true"
+                           @onclick="(e) => Parent.OpenConditionEditor(cn, e)"
+                           @onmouseenter="(e) => Parent.ShowConditionTooltip(cn, m, e)"
+                           @onmouseleave="Parent.HideTooltip">
+                            <circle cx="@nx" cy="@ny" r="20" stroke="none"
+                                    style="fill: var(--bg-base, #1a1a1a); pointer-events: none" />
+                            <rect x="@(nx - 11)" y="@(ny - 11)" width="22" height="22"
+                                  transform="rotate(45 @nx @ny)"
+                                  fill="#1a1208" stroke="@cnColor" stroke-width="2"
+                                  filter="url(#hv-glow)" />
+                            <text x="@nx" y="@(ny + 4)" text-anchor="middle"
+                                  font-size="11" font-family="monospace" fill="@cnColor"
+                                  style="pointer-events:none">@Hive.ConditionGlyph(cn)</text>
+                        </g>
+                    }
+                    else
+                    {
+                        var tn = item.edgeNode!;
+                        <g class="hv-transform-node"
+                           style="cursor:pointer; pointer-events:all"
+                           @onclick:stopPropagation="true"
+                           @onclick="(e) => Parent.OpenTransformEditor(tn, e)"
+                           @onmouseenter="(e) => Parent.ShowTransformTooltip(tn, m, e)"
+                           @onmouseleave="Parent.HideTooltip">
+                            <circle cx="@nx" cy="@ny" r="20" stroke="none"
+                                    style="fill: var(--bg-base, #1a1a1a); pointer-events: none" />
+                            <circle cx="@nx" cy="@ny" r="13"
+                                    fill="#0a1a1a" stroke="#2ab8b8" stroke-width="2"
+                                    filter="url(#hv-glow)" />
+                            <text x="@nx" y="@(ny + 4)" text-anchor="middle"
+                                  font-size="11" font-family="monospace" fill="#2ab8b8"
+                                  style="pointer-events:none">⟳</text>
+                        </g>
+                    }
+                }
+
+                <!-- Retry arc — halfway between last chain node and drone -->
+                @if (retryCount > 0)
+                {
+                    var capturedRetryM     = m;
+                    var capturedRetryCount = retryCount;
+                    var retryT  = (chainN + 0.5) / (chainN + 1.0);
+                    var retryPt = Hive.BezierPoint(iFromX, iFromY, iToX, iToY, retryT);
+                    var lx = retryPt.x;
+                    var ly = retryPt.y;
+                    <g @onmouseenter="(e) => Parent.ShowRetryTooltip(capturedRetryM, capturedRetryCount, e)"
+                       @onmouseleave="Parent.HideTooltip"
+                       style="cursor:default; pointer-events:all">
+                        <path d="@($"M{lx},{ly} A 14,14 0 1 1 {lx+1},{ly}")"
+                              fill="none" stroke="#e07070" stroke-width="1.5"
+                              stroke-dasharray="3 2" />
+                        <circle cx="@lx" cy="@(ly - 14)" r="9"
+                                fill="rgba(30,0,0,0.85)" stroke="#e07070" stroke-width="1" />
+                        <text x="@lx" y="@(ly - 11)" text-anchor="middle"
+                              font-size="8" font-family="monospace" fill="#e07070"
+                              style="pointer-events:none">
+                            ×@capturedRetryCount
+                        </text>
+                    </g>
+                }
+            }
+
+            <!-- Glow filter -->
+            <defs>
+                <filter id="hv-glow" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur stdDeviation="2" result="blur" />
+                    <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+            </defs>
+        </svg>
+
+        @* Overmind node *@
+        @{
+            var phase = Parent._selectedCollectiveId.HasValue ? Orchestrator.GetPhase(Parent._selectedCollectiveId.Value) : "";
+        }
+        <div class="hv-overmind-node @(Parent.IsRunning ? "hv-overmind-running" : "") @(!string.IsNullOrEmpty(phase) ? "hv-overmind-active" : "") @(!string.IsNullOrEmpty(Parent._collective?.ResultSummary) ? "hv-overmind-clickable" : "")"
+             style="left:350px; top:40px"
+             @onclick="() => { if (!string.IsNullOrEmpty(Parent._collective?.ResultSummary)) Parent.OpenOvermindDrawer(); }">
+            @if (!string.IsNullOrEmpty(Parent._collective?.OvermindAvatarPath))
+            {
+                <img src="@Parent._collective.OvermindAvatarPath" class="hv-overmind-avatar" alt="Overmind" width="115" height="173" />
+            }
+            else
+            {
+                <div class="hv-overmind-crown">⬡</div>
+            }
+            <div class="hv-overmind-label">OVERMIND</div>
+            @if (!string.IsNullOrEmpty(phase))
+            {
+                <div class="hv-overmind-phase">@phase.ToUpperInvariant()…</div>
+            }
+            @if (Parent._collective?.OvermindSubAgentId.HasValue == true)
+            {
+                var ov = Parent._allAgents.FirstOrDefault(a => a.Id == Parent._collective.OvermindSubAgentId);
+                @if (ov != null)
+                {
+                    <div class="hv-overmind-name">@ov.DisplayName</div>
+                }
+            }
+            else
+            {
+                <div class="hv-overmind-name">BASE ARIA</div>
+            }
+            @if (Parent._collective?.CurrentRound > 0)
+            {
+                <div class="hv-overmind-round">R@(Parent._collective.CurrentRound)</div>
+            }
+            <div class="hv-meta">
+                <span class="hv-meta-badge hv-meta-channel" data-tip="Channel · @Parent.OvermindChannelLabel">
+                    <span class="hv-meta-ic">⌁</span>@Hive.Trunc(Parent.OvermindChannelLabel, 16)
+                </span>
+                <span class="hv-meta-badge hv-meta-model" data-tip="Model · @Parent.OvermindModelLabel">
+                    <span class="hv-meta-ic">◈</span>@Hive.Trunc(Parent.OvermindModelLabel, 16)
+                </span>
+                @{ var ovBridge = Parent.BridgeLabelForSource(Parent.OvermindEffectiveSource); }
+                <span class="hv-meta-badge hv-meta-bridge" data-tip="Bridge · @ovBridge">
+                    <span class="hv-meta-ic">⇄</span>@Hive.Trunc(ovBridge, 16)
+                </span>
+            </div>
+        </div>
+
+        @* Drone nodes *@
+        @foreach (var m in Parent._members)
+        {
+            var memberTasks  = Parent._tasks.Where(t => t.AssignedMemberId == m.Id).ToList();
+            var activeTask   = memberTasks.FirstOrDefault(t =>
+                t.Status == CollectiveTaskStatus.Running || t.Status == CollectiveTaskStatus.Dispatched);
+            var latestTask   = memberTasks.OrderByDescending(t => t.Id).FirstOrDefault();
+            var droneStatus  = Parent.GetDroneStatus(m.Id);
+            var droneChainN  = m.EdgeNodes.Count(n => n.NodeType == EdgeNodeType.Transform)
+                             + (m.RequiresHumanApproval ? 1 : 0);
+
+            <div class="hv-drone-node @("hv-drone-" + droneStatus)"
+                 style="left:@((int)Math.Round(m.CanvasX))px; top:@((int)Math.Round(m.CanvasY))px; border-color: @m.SubAgent.AccentColor"
+                 data-member-id="@m.Id"
+                 @onclick="() => Parent.SelectDrone(m)">
+                <div class="hv-drone-avatar">
+                    @((MarkupString)AgentSprites.RenderAuto(m.SubAgent.AvatarSpriteKey, m.SubAgent.AccentColor, 61))
+                </div>
+                <div class="hv-drone-info">
+                    <div class="hv-drone-node-name">@m.SubAgent.DisplayName.ToUpperInvariant()</div>
+                    <div class="hv-drone-badge hv-badge-@droneStatus">@droneStatus.ToUpperInvariant()</div>
+                </div>
+                @{
+                    var dChannel = Parent.ChannelLabel(m);
+                    var dModel   = Parent.ModelLabel(m);
+                    var dBridge  = Parent.BridgeLabelForSource(Parent.EffectiveSource(m));
+                }
+                <div class="hv-meta">
+                    <span class="hv-meta-badge hv-meta-channel" data-tip="Channel · @dChannel">
+                        <span class="hv-meta-ic">⌁</span>@Hive.Trunc(dChannel, 16)
+                    </span>
+                    <span class="hv-meta-badge hv-meta-model" data-tip="Model · @dModel">
+                        <span class="hv-meta-ic">◈</span>@Hive.Trunc(dModel, 16)
+                    </span>
+                    <span class="hv-meta-badge hv-meta-bridge" data-tip="Bridge · @dBridge">
+                        <span class="hv-meta-ic">⇄</span>@Hive.Trunc(dBridge, 16)
+                    </span>
+                </div>
+                @if (activeTask != null)
+                {
+                    <div class="hv-drone-task" data-tip="@(activeTask.Title)">
+                        @(activeTask.Title.Length > 20 ? activeTask.Title[..20] + "…" : activeTask.Title)
+                    </div>
+                }
+                <button class="hv-drone-add-btn"
+                        @onclick:stopPropagation="true"
+                        @onclick="(e) => Parent.ShowInsertMenu(m.Id, null, null, e)"
+                        title="Add node">
+                    @if (droneChainN > 0) { <text>+@droneChainN</text> } else { <text>+</text> }
+                </button>
+            </div>
+        }
+
+    </div>  @* hv-canvas-inner *@
+
+        <div class="hv-zoom-bar">
+            <button class="hv-zoom-btn hv-zoom-btn-in" data-tip="Zoom in">+</button>
+            <div class="hv-zoom-track">
+                <div class="hv-zoom-fill"></div>
+                <div class="hv-zoom-thumb"></div>
+            </div>
+            <button class="hv-zoom-btn hv-zoom-btn-out" data-tip="Zoom out">−</button>
+            <span class="hv-zoom-pct">100%</span>
+        </div>
+
+        @if (Parent._members.Count == 0)
+        {
+            <div class="hv-canvas-empty">Recruit drones using the sidebar to begin.</div>
+        }
+    </div>  @* hv-canvas-wrap *@
+
+    @* ── Gate approval banners ── *@
+    <div class="hv-gate-banners">
+    @if (Parent._collectiveLevelGatePending)
+    {
+        <div class="hv-gate-banner hv-gate-banner-collective">
+            <div class="hv-gate-banner-header">
+                <span class="hv-gate-banner-icon">⬡</span>
+                <span class="hv-gate-banner-label">COLLECTIVE GATE</span>
+            </div>
+            <div class="hv-gate-banner-hint">All drones finished — approve to synthesize</div>
+            <button class="hv-gate-approve-btn" @onclick="Parent.ApproveCollectiveGate">✓ APPROVE</button>
+        </div>
+    }
+    @foreach (var kvp in Parent._pendingGateMembers.ToList())
+    {
+        var gm = Parent._members.FirstOrDefault(m => m.Id == kvp.Key);
+        var gmName = gm?.SubAgent.DisplayName ?? "DRONE";
+        var capturedId = kvp.Key;
+        var gateContent = kvp.Value;
+        var isPostResponse = gm?.GateAfterResponse ?? true;
+        <div class="hv-gate-banner hv-gate-banner-drone">
+            <div class="hv-gate-banner-header">
+                <span class="hv-gate-banner-icon">◈</span>
+                <span class="hv-gate-banner-label">@gmName.ToUpperInvariant()</span>
+            </div>
+            <div class="hv-gate-banner-hint">@(isPostResponse ? "reply ready — approve to include" : "awaiting dispatch approval")</div>
+            @if (!string.IsNullOrWhiteSpace(gateContent))
+            {
+                <div class="hv-gate-banner-content">
+                    @(gateContent.Length > 160 ? gateContent[..157] + "…" : gateContent)
+                </div>
+            }
+            @if (gm != null)
+            {
+                var capturedGm = gm;
+                <button class="hv-gate-view-btn" @onclick="() => Parent.SelectDrone(capturedGm)">⬡ VIEW</button>
+            }
+            <button class="hv-gate-approve-btn" @onclick="() => Parent.ApproveCanvasGate(capturedId)">✓ APPROVE</button>
+        </div>
+    }
+    @if (Parent._collective?.Status == CollectiveStatus.Completed && !string.IsNullOrEmpty(Parent._collective?.ResultSummary) && !Parent._showOvermindDrawer)
+    {
+        <div class="hv-gate-banner hv-gate-banner-overmind">
+            <div class="hv-gate-banner-header">
+                <span class="hv-gate-banner-icon">⬡</span>
+                <span class="hv-gate-banner-label">OVERMIND RESULT</span>
+            </div>
+            <div class="hv-gate-banner-hint">synthesis complete — result ready</div>
+            <button class="hv-gate-approve-btn" @onclick="Parent.OpenOvermindDrawer">⬡ OPEN</button>
+        </div>
+    }
+    </div>
+
+    @* Insert menu (fixed position, outside transformed canvas) *@
+    @if (Parent._insertMenuMemberId.HasValue)
+    {
+        var menuMember      = Parent._members.FirstOrDefault(m => m.Id == Parent._insertMenuMemberId);
+        var menuHasGate     = menuMember?.RequiresHumanApproval ?? false;
+        var menuGatePost    = menuMember?.GateAfterResponse ?? true;
+        var menuGatePend    = menuHasGate && Parent._pendingGateMembers.ContainsKey(Parent._insertMenuMemberId.Value);
+        var isGateClick     = Parent._insertMenuNodeType == "gate";
+        <div class="hv-insert-menu"
+             style="left:@((int)(Parent._insertMenuX + 14))px; top:@((int)(Parent._insertMenuY - 28))px"
+             @onclick:stopPropagation="true">
+            <div class="hv-insert-menu-title">@(isGateClick ? "// GATE NODE" : "// INSERT NODE")</div>
+
+            @if (isGateClick)
+            {
+                @if (menuGatePend)
+                {
+                    <button class="hv-insert-option hv-insert-approve"
+                            @onclick="() => Parent.ApproveCanvasGate(Parent._insertMenuMemberId!.Value)">
+                        ⬡ @(menuGatePost ? "APPROVE REPLY" : "APPROVE DISPATCH")
+                    </button>
+                }
+                var gateToggleCaptured = !menuGatePost;
+                <button class="hv-insert-option"
+                        @onclick="() => Parent.ToggleGateMode(Parent._insertMenuMemberId!.Value, gateToggleCaptured)">
+                    ◈ MODE: @(menuGatePost ? "REVIEW REPLY ✓" : "PRE-DISPATCH ✓")
+                </button>
+                <button class="hv-insert-option hv-insert-remove"
+                        @onclick="() => Parent.RemoveGateFromMember(Parent._insertMenuMemberId!.Value)">
+                    ✕ REMOVE GATE
+                </button>
+            }
+            else
+            {
+                @if (!menuHasGate)
+                {
+                    <button class="hv-insert-option"
+                            @onclick="() => Parent.AddGateToMember(Parent._insertMenuMemberId!.Value)">
+                        ⬡ HUMAN GATE
+                    </button>
+                }
+                <button class="hv-insert-option hv-insert-transform"
+                        @onclick="() => Parent.AddTransformToMember(Parent._insertMenuMemberId!.Value)">
+                    ⟳ TRANSFORM
+                </button>
+                <button class="hv-insert-option hv-insert-condition"
+                        @onclick="() => Parent.AddConditionToMember(Parent._insertMenuMemberId!.Value)">
+                    ? CONDITION
+                </button>
+            }
+        </div>
+    }
+
+    @* Transform node config editor *@
+    @if (Parent._editingTransform != null)
+    {
+        <div class="hv-transform-editor"
+             style="left:@((int)(Parent._insertMenuX + 14))px; top:@((int)(Parent._insertMenuY - 28))px"
+             @onclick:stopPropagation="true">
+            <div class="hv-insert-menu-title">// TRANSFORM NODE</div>
+            <div class="hv-transform-hint">Rewrite the instruction before dispatch.<br/>Use <code>{{original}}</code> for the original text.</div>
+            <textarea class="hv-transform-textarea"
+                      rows="5"
+                      placeholder="{{original}}"
+                      @bind="Parent._editTransformTemplate"
+                      @bind:event="oninput"></textarea>
+            <div class="hv-transform-actions">
+                <button class="hv-insert-option" @onclick="Parent.SaveTransformEditor">✓ SAVE</button>
+                <button class="hv-insert-option hv-insert-remove" @onclick="() => Parent.DeleteTransform(Parent._editingTransform!.Id)">✕ DELETE</button>
+                <button class="hv-insert-option" style="opacity:0.5" @onclick="Parent.CloseTransformEditor">CANCEL</button>
+            </div>
+        </div>
+    }
+
+    @* Condition node config editor *@
+    @if (Parent._editingCondition != null)
+    {
+        <div class="hv-transform-editor"
+             style="left:@((int)(Parent._insertMenuX + 14))px; top:@((int)(Parent._insertMenuY - 28))px"
+             @onclick:stopPropagation="true">
+            <div class="hv-insert-menu-title" style="color:#c8a020">? CONDITION NODE</div>
+            <div class="hv-transform-hint">The drone runs only if this passes.</div>
+            <div class="hv-field" style="margin-bottom:6px">
+                <label class="hv-label">MODE</label>
+                <ThemedSelect Value="@Parent._editConditionMode"
+                              ValueChanged="Parent.OnConditionModeChanged"
+                              Options="Hive.ConditionModeOptions()" ControlClass="hv-input" />
+            </div>
+            <textarea class="hv-transform-textarea" rows="3"
+                      placeholder="@(Parent._editConditionMode switch {
+                          "llm"   => "e.g. the task involves writing code",
+                          "regex" => "e.g. \\b(bug|error|crash)\\b",
+                          "any"   => "e.g. code, script, function",
+                          "all"   => "e.g. urgent, security",
+                          _        => "e.g. code" })"
+                      @bind="Parent._editConditionValue" @bind:event="oninput"></textarea>
+            <label class="hv-label hv-checkbox-label">
+                <input type="checkbox" class="hv-checkbox" @bind="Parent._editConditionNegate" /> NEGATE (run only if NOT met)
+            </label>
+            <div class="hv-transform-actions">
+                <button class="hv-insert-option" @onclick="Parent.SaveConditionEditor">✓ SAVE</button>
+                <button class="hv-insert-option hv-insert-remove" @onclick="() => Parent.DeleteCondition(Parent._editingCondition!.Id)">✕ DELETE</button>
+                <button class="hv-insert-option" style="opacity:0.5" @onclick="Parent.CloseConditionEditor">CANCEL</button>
+            </div>
+        </div>
+    }
+
+    @* Node hover tooltip *@
+    @if (Parent._tooltipVisible && Parent._tooltipMember != null)
+    {
+        var isPending = Parent._pendingGateMembers.ContainsKey(Parent._tooltipMember.Id);
+        <div class="hv-node-tooltip @(Parent._tooltipNodeType == "transform" ? "hv-node-tooltip-transform" : "")"
+             style="left:@((int)Parent._tooltipX)px; top:@((int)Parent._tooltipY)px">
+            @if (Parent._tooltipNodeType == "transform")
+            {
+                <div class="hv-tooltip-title" style="color:#2ab8b8">⟳ TRANSFORM</div>
+                <div class="hv-tooltip-drone">@Parent._tooltipMember.SubAgent.DisplayName.ToUpperInvariant()</div>
+                <div class="hv-tooltip-status" style="color:#1a8888;max-width:200px;white-space:pre-wrap;word-break:break-word">
+                    @(Parent._tooltipExtra?.Length > 60 ? Parent._tooltipExtra[..57] + "…" : Parent._tooltipExtra)
+                </div>
+                <div class="hv-tooltip-hint">click to edit template</div>
+            }
+            else if (Parent._tooltipNodeType == "condition")
+            {
+                <div class="hv-tooltip-title" style="color:#c8a020">? CONDITION</div>
+                <div class="hv-tooltip-drone">@Parent._tooltipMember.SubAgent.DisplayName.ToUpperInvariant()</div>
+                <div class="hv-tooltip-status" style="color:#a88018;max-width:200px;white-space:pre-wrap;word-break:break-word">
+                    @(Parent._tooltipExtra?.Length > 60 ? Parent._tooltipExtra[..57] + "…" : Parent._tooltipExtra)
+                </div>
+                <div class="hv-tooltip-hint">runs the drone only if met · click to edit</div>
+            }
+            else if (Parent._tooltipNodeType == "retry")
+            {
+                <div class="hv-tooltip-title" style="color:#e07070">⟳ RETRY LOOP</div>
+                <div class="hv-tooltip-drone">@Parent._tooltipMember.SubAgent.DisplayName.ToUpperInvariant()</div>
+                <div class="hv-tooltip-status" style="color:#e07070">
+                    ×@Parent._tooltipExtra RETRIED
+                </div>
+                <div class="hv-tooltip-hint">reliability score below threshold</div>
+            }
+            else
+            {
+                <div class="hv-tooltip-title">⬡ HUMAN GATE</div>
+                <div class="hv-tooltip-drone">@Parent._tooltipMember.SubAgent.DisplayName.ToUpperInvariant()</div>
+                <div class="hv-tooltip-status @(isPending ? "hv-tooltip-pending" : "")">
+                    @(isPending ? "◈ AWAITING APPROVAL" : "◇ STANDBY")
+                </div>
+                <div class="hv-tooltip-hint">click to manage</div>
+            }
+        </div>
+    }
+}
+else
+{
+    <div class="hv-canvas-wrap hv-canvas-empty-root">
+        <div>// SELECT OR CREATE A COLLECTIVE</div>
+        <div style="font-size:10px;color:var(--text-dead);margin-top:6px">Use the sidebar to create a new collective.</div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public Hive Parent { get; set; } = default!;
+}

@@ -1,0 +1,185 @@
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   // HIVE — Collective UI  (hv- namespace)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Layer B pre-authorisation failure banner (refused / node unreachable at launch) ── */
+.hv-start-error {
+    margin: 10px 16px 0;
+    padding: 10px 14px;
+    border: 1px solid var(--border-glow, #8b0000);
+    border-left: 4px solid #d4a020;
+    background: rgba(60, 20, 10, 0.55);
+    color: #f0c060;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+}
+
+/* ── Shell layout ── */
+.hv-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg-base, #1a1a1a);
+    color: var(--text-normal, #aaa);
+    font-family: inherit;
+    overflow: hidden;
+}
+/* When rendered as a page inside .main-content */
+.main-content > .hv-shell {
+    flex: 1;
+    min-height: 0;
+}
+
+/* ── Header ── */
+.hv-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 18px;
+    border-bottom: 1px solid var(--border-glow, #8b0000);
+    background: rgba(0,0,0,0.3);
+    flex-shrink: 0;
+    gap: 12px;
+}
+.hv-header-left  { display: flex; align-items: center; gap: 12px; }
+.hv-header-center { flex: 1; text-align: center; }
+.hv-header-right { display: flex; align-items: center; gap: 8px; }
+
+.hv-offline-banner {
+    background: rgba(180, 140, 40, 0.12);
+    border-bottom: 1px solid rgba(180, 140, 40, 0.4);
+    color: #c8a820;
+    font-size: 11px;
+    letter-spacing: 1px;
+    padding: 8px 14px;
+    text-align: center;
+}
+
+.hv-title {
+    font-size: 13px;
+    letter-spacing: 4px;
+    color: var(--text-bright, #f0d060);
+    text-shadow: var(--glow-sm, 0 0 6px rgba(240,208,96,0.4));
+}
+.hv-collective-name {
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--text-muted, #888);
+}
+.hv-round-badge {
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    color: var(--text-muted, #888);
+}
+
+/* ── Buttons ── */
+.hv-btn {
+    background: none;
+    border: 1px solid var(--border-dim, #2a2a2a);
+    color: var(--text-muted, #888);
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 2px;
+    padding: 3px 12px;
+    cursor: pointer;
+    transition: border-color .12s, color .12s, box-shadow .12s;
+}
+.hv-btn:hover:not(:disabled) {
+    border-color: var(--border-glow, #8b0000);
+    color: var(--text-bright, #f0d060);
+    box-shadow: var(--glow-sm, 0 0 6px rgba(240,208,96,0.3));
+}
+.hv-btn:disabled { opacity: .35; cursor: default; }
+
+.hv-btn-confirm {
+    border-color: var(--border-glow, #8b0000);
+    color: var(--text-bright, #f0d060);
+    background: rgba(139,0,0,0.12);
+}
+.hv-btn-confirm:hover:not(:disabled) {
+    background: rgba(139,0,0,0.25);
+    box-shadow: 0 0 8px var(--border-glow, #8b0000);
+}
+.hv-btn-danger  { border-color: #c03030; color: #d07070; }
+.hv-btn-danger:hover:not(:disabled) { background: rgba(192,48,48,0.15); }
+
+/* ── Body split — absolute positioning mirrors how .section-panel achieves scroll ── */
+.hv-body {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+}
+
+/* ── Sidebar — pinned top/bottom gives definite height → overflow-y works ── */
+.hv-sidebar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 240px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-right: 1px solid var(--border-dim, #2a2a2a);
+    background: var(--bg-panel, #222);
+}
+.hv-sidebar-section {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-dim, #2a2a2a);
+}
+.hv-section-lbl {
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 2px;
+    color: #e8e8ea;
+    text-transform: uppercase;
+    padding-bottom: 6px;
+}
+.hv-new-btn {
+    width: 100%;
+    background: none;
+    border: 1px solid var(--border-dim, #2a2a2a);
+    color: var(--text-muted, #888);
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    padding: 5px 10px;
+    cursor: pointer;
+    margin-bottom: 8px;
+    transition: border-color .12s, color .12s;
+}
+.hv-new-btn:hover { border-color: var(--border-glow, #8b0000); color: var(--text-bright, #f0d060); }
+
+/* Collective list rows */
+.hv-collective-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    transition: background .1s;
+    font-size: 11px;
+}
+.hv-collective-row:hover  { background: var(--bg-hover, #2a2a2a); }
+.hv-collective-row.active { background: rgba(139,0,0,0.12); border-left-color: var(--border-glow, #8b0000); }
+.hv-c-dot   { color: var(--text-dead, #555); flex-shrink: 0; }
+.hv-c-name  { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-normal, #aaa); }
+.hv-c-status { font-size: 9px; letter-spacing: 1px; flex-shrink: 0; }
+.hv-del-btn {
+    background: none;
+    border: none;
+    color: var(--text-dead, #555);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0 2px;
+    line-height: 1;
+}
+.hv-del-btn:hover { color: #e07070; }
+
+.hv-status-running { color: var(--border-glow, #8b0000); }
+.hv-status-done    { color: #4caf50; }
+.hv-status-failed  { color: #e07070; }
+.hv-status-paused  { color: var(--text-muted, #888); }
+

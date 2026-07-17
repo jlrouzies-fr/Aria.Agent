@@ -1,0 +1,188 @@
+@page "/wargame"
+@using Aria.Web.Data
+@using Aria.Web.Services
+@implements IDisposable
+
+@inject IJSRuntime JS
+
+<PageTitle>ARIA // WAR.PLANNER</PageTitle>
+
+<div class="wg-shell">
+
+    @* ── Header bar ── *@
+    <div class="wg-header">
+        <span class="wg-title">⚔ WAR.PLANNER</span>
+        <div class="wg-controls">
+            <button class="wg-btn" @onclick="StartGame"
+                    disabled="@(!CanStart)">▶ START</button>
+            <button class="wg-btn" @onclick="StopGame"
+                    disabled="@(!IsRunning)">⏸ STOP</button>
+            <button class="wg-btn wg-btn-danger" @onclick="() => _confirmReset = true"
+                    disabled="@IsRunning">↺ RESET</button>
+        </div>
+        <div class="wg-status">
+            @if (Game.ActiveMap != null)
+            {
+                <span>TURN @Game.ActiveMap.CurrentTurn</span>
+                @if (IsRunning && Game.NextTurnAt.HasValue)
+                {
+                    var secs = (int)Math.Max(0, (Game.NextTurnAt.Value - DateTime.UtcNow).TotalSeconds);
+                    <span class="wg-next">// NEXT: @($"{secs / 60:D2}:{secs % 60:D2}")</span>
+                }
+            }
+            @if (!string.IsNullOrEmpty(Game.StatusText))
+            {
+                <span class="wg-statustext">@Game.StatusText</span>
+            }
+        </div>
+    </div>
+
+    @* ── Reset confirm ── *@
+    @if (_confirmReset)
+    {
+        <div class="wg-confirm-bar">
+            // RESET WILL DESTROY ALL MAP DATA AND FACTION HISTORY — CONFIRM?
+            <button class="wg-btn wg-btn-danger" @onclick="ResetGame">CONFIRM RESET</button>
+            <button class="wg-btn" @onclick="() => _confirmReset = false">CANCEL</button>
+        </div>
+    }
+
+    <div class="wg-body">
+        <CascadingValue Value="this">
+            <WargameMap />
+
+            <div class="wg-right">
+                @if (Game.WinnerName != null)
+                {
+                    <div class="wg-victory">⚔ @Game.WinnerName.ToUpper() VICTORIOUS</div>
+                }
+
+                <WargameFactionPanel />
+                <WargameLog />
+            </div>
+        </CascadingValue>
+    </div>
+
+</div>
+
+@code {
+    [Inject] internal WargameService Game     { get; set; } = null!;
+    [Inject] private AgentService   AgentSvc { get; set; } = null!;
+
+    internal IJSObjectReference? _jsModule;
+    internal bool _rendererReady = false;
+
+    internal Dictionary<(int, int), WargameTile> _tileMap = [];
+    internal Dictionary<(int, int), WargameUnit> _unitMap = [];
+
+    internal bool _confirmReset = false;
+
+    private System.Threading.Timer? _clockTimer;
+
+    internal bool IsRunning => Game.ActiveMap?.IsRunning == true;
+    internal bool CanStart  => !IsRunning && Game.ActiveMap != null && Game.Factions.Count(f => f.IsAlive) >= 2;
+
+    protected override void OnInitialized()
+    {
+        Game.OnStateChanged += OnGameStateChanged;
+        RebuildMaps();
+        _clockTimer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, 0, 1000);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _jsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/wargame-renderer.js");
+            await _jsModule.InvokeVoidAsync("init", "wg-canvas");
+            _rendererReady = true;
+        }
+        await PushCanvasStateAsync();
+    }
+
+    private void OnGameStateChanged() =>
+        _ = InvokeAsync(async () =>
+        {
+            RebuildMaps();
+            await PushCanvasStateAsync();
+            StateHasChanged();
+        });
+
+    internal async Task PushCanvasStateAsync()
+    {
+        if (!_rendererReady || _jsModule == null || Game.ActiveMap == null) return;
+
+        var w = Game.ActiveMap.Width;
+        var h = Game.ActiveMap.Height;
+        var grid = new object?[h][];
+        for (int r = 0; r < h; r++)
+        {
+            grid[r] = new object?[w];
+            for (int c = 0; c < w; c++)
+                grid[r][c] = null;
+        }
+        foreach (var t in _tileMap.Values)
+            if (t.Y < h && t.X < w)
+                grid[t.Y][t.X] = new { x = t.X, y = t.Y, type = t.Type.ToString(), ownerFactionId = t.OwnerFactionId };
+
+        var state = new
+        {
+            width    = w,
+            height   = h,
+            tileGrid = grid,
+            units    = _unitMap.Values.Select(u => new
+            {
+                id = u.Id, x = u.X, y = u.Y, factionId = u.FactionId, health = u.Health, maxHealth = u.MaxHealth
+            }).ToArray(),
+            factions = Game.Factions.Select(f => new
+            {
+                id    = f.Id,
+                name  = f.Name,
+                color = f.Color,
+                race  = f.Race.ToString()
+            }).ToArray(),
+            buildings = Game.Buildings.Select(b => new
+            {
+                x    = b.X,
+                y    = b.Y,
+                type = b.Type.ToString(),
+                factionId = b.FactionId
+            }).ToArray()
+        };
+
+        await _jsModule.InvokeVoidAsync("update", state);
+    }
+
+    internal void RebuildMaps()
+    {
+        _tileMap = Game.Tiles.ToDictionary(t => (t.X, t.Y));
+        _unitMap = Game.Units.ToDictionary(u => (u.X, u.Y));
+    }
+
+    private async Task StartGame()
+    {
+        _confirmReset = false;
+        await Game.StartGameAsync();
+    }
+
+    private async Task StopGame() => await Game.StopGameAsync();
+
+    private async Task ResetGame()
+    {
+        _confirmReset = false;
+        await Game.StopGameAsync();
+        await Game.GenerateMapAsync([]);
+        _tileMap.Clear();
+        _unitMap.Clear();
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        Game.OnStateChanged -= OnGameStateChanged;
+        _clockTimer?.Dispose();
+        if (_jsModule != null)
+            _ = _jsModule.InvokeVoidAsync("dispose").AsTask()
+                         .ContinueWith(_ => _jsModule.DisposeAsync().AsTask());
+    }
+}

@@ -1,0 +1,259 @@
+/* ── Governance selector (tools panel) ───────────────────────────────── */
+.gov-category { display: flex; align-items: center; justify-content: space-between; }
+.gov-help-btn {
+    width: 15px; height: 15px; line-height: 13px; text-align: center;
+    border: 1px solid var(--border-dim, #444); background: rgba(0,0,0,0.3);
+    color: var(--text-muted, #999); font-family: var(--font-mono, monospace);
+    font-size: 9px; cursor: pointer; padding: 0; border-radius: 50%;
+}
+.gov-help-btn:hover { border-color: var(--gold-normal, #d4a020); color: var(--gold-normal, #d4a020); }
+
+.gov-help-card {
+    border: 1px solid var(--border-dim, #444);
+    border-left: 2px solid var(--gold-dim, #8a7030);
+    background: rgba(0,0,0,0.2);
+    padding: 9px 11px; margin-bottom: 8px;
+}
+.gov-help-card--active {
+    border-left-color: #c07a2a;
+    background: rgba(192,122,42,0.06);
+}
+.gov-help-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.gov-help-card-name { font-size: 11px; letter-spacing: 1px; color: var(--text-bright, #f0d060); font-weight: bold; }
+.gov-help-card-badge {
+    font-size: 8px; letter-spacing: 1px; padding: 1px 6px;
+    background: #c07a2a; color: #1a1208; font-weight: bold;
+}
+.gov-help-card-blurb { font-size: 10px; color: var(--text-muted, #999); margin-bottom: 7px; line-height: 1.4; }
+.gov-help-grid {
+    display: grid; grid-template-columns: auto 1fr; gap: 2px 12px;
+    font-size: 10px;
+}
+.gov-help-k { color: var(--text-dead, #777); }
+.gov-help-v { color: var(--text-normal, #ccc); text-align: right; }
+
+.gov-block {
+    margin: 4px 12px 8px;
+    padding: 8px 9px;
+    border: 1px solid var(--border-dim, #444);
+    border-left: 2px solid var(--gold-dim, #8a7030);
+    background: linear-gradient(180deg, rgba(212,160,32,0.05), rgba(0,0,0,0.2));
+}
+.gov-selector { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 8px; }
+.gov-chip {
+    text-align: center; white-space: nowrap;
+    padding: 6px 6px; font-size: 9.5px; letter-spacing: 0.5px; cursor: pointer;
+    font-family: var(--font-mono, monospace);
+    background: rgba(0,0,0,0.35);
+    border: 1px solid var(--border-dim, #444);
+    color: var(--text-muted, #999);
+    transition: border-color .12s, color .12s, background .12s;
+}
+.gov-chip:hover { border-color: var(--border-normal, #8a7030); color: var(--text-bright, #f0d060); }
+.gov-chip--active {
+    background: #c07a2a;
+    border-color: #c07a2a;
+    color: #1a1208; font-weight: bold;
+}
+.gov-chip--active:hover { color: #1a1208; }
+.gov-blurb {
+    display: flex; align-items: flex-start; gap: 6px;
+    font-size: 11px; color: var(--text-muted, #999); line-height: 1.45;
+}
+.gov-blurb-icon { color: var(--gold-dim, #8a7030); flex-shrink: 0; font-size: 12px; line-height: 1.3; }
+
+/* ── Tool-call authorisation bar ─────────────────────────────────────── */
+.approval-bar {
+    margin: 0 0 6px 0;
+    border: 1px solid var(--border-active, #b09040);
+    border-left: 3px solid var(--gold-normal, #d4a020);
+    background: rgba(24, 18, 4, 0.94);
+    box-shadow: 0 -4px 14px rgba(0,0,0,0.4);
+    padding: 8px 12px;
+    font-family: var(--font-mono, monospace);
+}
+.approval-bar--seal {
+    border-color: #8b0000;
+    border-left-color: #ff3030;
+    background: rgba(24, 4, 4, 0.94);
+    box-shadow: 0 -4px 16px rgba(139,0,0,0.45);
+}
+.approval-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.approval-icon {
+    font-size: 14px;
+    color: var(--gold-normal, #d4a020);
+    text-shadow: 0 0 8px currentColor;
+    animation: vigilBlink 1.4s ease-in-out infinite;
+}
+.approval-bar--seal .approval-icon { color: #ff3030; }
+.approval-title {
+    font-size: 10px; letter-spacing: 2px; font-weight: bold;
+    color: var(--text-bright, #f0d060);
+}
+.approval-detail { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; }
+.approval-tool { font-size: 11px; letter-spacing: 1px; color: var(--gold-normal, #d4a020); }
+.approval-reason { font-size: 10px; color: var(--text-muted, #999); }
+.approval-args {
+    font-size: 10px; color: var(--text-dead, #777);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    margin-bottom: 7px;
+}
+.approval-seal-note { font-size: 10px; color: #ff8080; margin-bottom: 7px; line-height: 1.4; }
+.approval-actions { display: flex; gap: 8px; }
+.approval-btn {
+    padding: 5px 14px; font-size: 9px; letter-spacing: 1.5px; cursor: pointer;
+    border: none; font-family: var(--font-mono, monospace);
+}
+.approval-approve { background: var(--border-active, #b09040); color: #1a1208; font-weight: bold; }
+.approval-approve:hover { background: var(--gold-normal, #d4a020); }
+.approval-deny { background: rgba(0,0,0,0.4); color: var(--text-muted, #999); border: 1px solid var(--border-dim, #444); }
+.approval-deny:hover { color: #ff6060; border-color: #8b0000; }
+
+/* ── Hive Toggle Row ─────────────────────────────────────────────────── */
+.hv-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+    margin: 5px 0 2px 0;
+    font-size: 9px;
+    letter-spacing: 1px;
+}
+.hv-toggle-row input[type="checkbox"] {
+    accent-color: var(--border-glow, #8b0000);
+    width: 12px;
+    height: 12px;
+    cursor: pointer;
+}
+.hv-toggle-label {
+    color: var(--text-muted, #888);
+}
+.hv-toggle-row:has(input:checked) .hv-toggle-label {
+    color: var(--text-bright, #f0d060);
+}
+
+/* ── Edge insert button ── */
+.hv-edge-insert { opacity: 0.55; transition: opacity .15s; }
+.hv-edge-insert:hover { opacity: 1; }
+.hv-gate-node { transition: filter .15s; }
+.hv-gate-node:hover { filter: brightness(1.3); }
+.hv-gate-pending { animation: hv-gate-pulse 1.4s ease-in-out infinite; }
+@keyframes hv-gate-pulse {
+    0%, 100% { filter: brightness(1); }
+    50%       { filter: brightness(1.8) drop-shadow(0 0 6px #ffaa00); }
+}
+
+/* ── Edge insert popup ── */
+.hv-insert-menu {
+    position: fixed;
+    z-index: 500;
+    background: var(--bg-panel, #1a1a1a);
+    border: 1px solid var(--border-glow, #8b0000);
+    padding: 8px;
+    min-width: 140px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+}
+.hv-insert-menu-title {
+    font-size: 8px;
+    letter-spacing: 2px;
+    color: var(--text-dead, #555);
+    margin-bottom: 6px;
+}
+.hv-insert-option {
+    display: block;
+    width: 100%;
+    background: none;
+    border: 1px solid var(--border-dim, #2a2a2a);
+    color: var(--text-muted, #888);
+    font-family: inherit;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    padding: 5px 8px;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .12s, color .12s;
+}
+.hv-insert-option:hover {
+    border-color: var(--text-bright, #f0d060);
+    color: var(--text-bright, #f0d060);
+}
+.hv-insert-remove {
+    border-color: #c03030;
+    color: #d07070;
+}
+.hv-insert-remove:hover {
+    border-color: #e05050;
+    color: #f09090;
+    background: rgba(192,48,48,0.1);
+}
+.hv-insert-approve {
+    border-color: #4a8a2a;
+    color: #8acc60;
+}
+.hv-insert-approve:hover {
+    border-color: #6aba40;
+    color: #aae080;
+    background: rgba(74,138,42,0.1);
+}
+.hv-insert-transform {
+    color: #2ab8b8;
+    border-color: #1a6666;
+}
+.hv-insert-transform:hover {
+    border-color: #2ab8b8;
+    color: #5ad8d8;
+    background: rgba(42,184,184,0.08);
+}
+/* Fully custom themed checkbox (native control can't be themed reliably across browsers) */
+.hv-checkbox {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 15px; height: 15px;
+    flex-shrink: 0;
+    margin: 0;
+    border: 1px solid var(--border-normal, #8a5252);
+    background: var(--bg-input, #181818);
+    border-radius: 2px;
+    cursor: pointer;
+    position: relative;
+}
+.hv-checkbox:hover { border-color: #c8a020; }
+.hv-checkbox:checked {
+    background: #c8a020;
+    border-color: #c8a020;
+}
+.hv-checkbox:checked::after {
+    content: "✓";
+    position: absolute;
+    inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: bold;
+    color: #1a1208;
+}
+.hv-checkbox-label {
+    display: flex; align-items: center; gap: 6px;
+    margin-top: 6px; cursor: pointer;
+}
+/* Small "?" help marker next to a label — shows a styled [data-tip] tooltip on hover */
+.hv-help {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 13px; height: 13px; margin-left: 5px;
+    border: 1px solid var(--border-dim, #3a2a2a);
+    border-radius: 50%;
+    font-size: 9px; line-height: 1;
+    color: var(--text-muted, #888);
+    cursor: help;
+    vertical-align: middle;
+}
+.hv-help:hover { border-color: #c8a020; color: #c8a020; }
+
+.hv-insert-condition {
+    color: #c8a020;
+    border-color: #7a6010;
+}
+.hv-insert-condition:hover {
+    border-color: #c8a020;
+    color: #e0c040;
+    background: rgba(200,160,32,0.08);
+}
+

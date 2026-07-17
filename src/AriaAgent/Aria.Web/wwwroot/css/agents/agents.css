@@ -1,0 +1,57 @@
+
+/* ── Color picker in agent modal ────────────────────────── */
+.agent-color-picker-input {
+    width: 28px;
+    height: 28px;
+    border: 2px solid var(--border-dim);
+    cursor: pointer;
+    padding: 0;
+    background: none;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+.agent-color-picker-input:hover { border-color: var(--border-glow); }
+.agent-color-picker-input::-webkit-color-swatch-wrapper { padding: 1px; }
+.agent-color-picker-input::-webkit-color-swatch { border: none; }
+
+/* ── Agent hiring overlay ───────────────────────────────── */
+.modal-panel--hiring {
+    max-width: 380px;
+}
+.agent-hiring-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: rgba(0,0,0,0.92);
+    z-index: 20;
+    border-radius: inherit;
+    overflow-y: auto;
+    padding: 20px 16px;
+    box-sizing: border-box;
+}
+.agent-hiring-icon {
+    font-size: 28px;
+    color: var(--border-glow, #8b8b00);
+    animation: agent-hire-spin 2s linear infinite;
+}
+.agent-hiring-msg {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-normal, #8b8b6b);
+    letter-spacing: 2px;
+    text-align: center;
+    padding: 0 24px;
+    animation: agent-hire-pulse 0.8s ease-in-out infinite;
+}
+@keyframes agent-hire-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+@keyframes agent-hire-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+}

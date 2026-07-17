@@ -1,0 +1,133 @@
+/* Overmind clickable state */
+.hv-overmind-node.hv-overmind-clickable {
+    cursor: pointer;
+}
+.hv-overmind-node.hv-overmind-clickable:hover {
+    border-color: var(--text-bright, #f0d060);
+    box-shadow: 0 0 18px rgba(0,0,0,0.5), 0 0 12px var(--text-bright, #f0d060);
+}
+.hv-overmind-node.hv-overmind-clickable:hover .hv-overmind-crown {
+    color: var(--text-bright, #f0d060);
+    text-shadow: 0 0 12px var(--text-bright, #f0d060);
+}
+
+/* Drawer markdown content */
+.hv-drawer-markdown {
+    color: var(--text-main, #ccc);
+    font-size: 12px;
+    line-height: 1.6;
+}
+.hv-drawer-markdown p  { margin: 0 0 10px 0; }
+.hv-drawer-markdown h1,
+.hv-drawer-markdown h2,
+.hv-drawer-markdown h3 { color: var(--text-bright, #f0d060); font-size: 13px; letter-spacing: 1px; margin: 14px 0 6px 0; }
+.hv-drawer-markdown table { border-collapse: collapse; width: 100%; margin-bottom: 10px; }
+.hv-drawer-markdown th,
+.hv-drawer-markdown td  { border: 1px solid var(--border-dim, #333); padding: 4px 8px; font-size: 11px; }
+.hv-drawer-markdown th  { color: var(--text-bright, #f0d060); background: rgba(255,255,255,0.04); }
+.hv-drawer-markdown code { background: rgba(255,255,255,0.08); padding: 1px 5px; font-size: 11px; border-radius: 2px; }
+.hv-drawer-markdown pre  { background: transparent; padding: 8px 10px; border-radius: 3px; white-space: pre-wrap; font-size: 11px; line-height: 1.5; }
+.hv-drawer-markdown pre code { background: transparent; padding: 0; font-size: 11px; line-height: 1.5; }
+.hv-drawer-markdown hr  { border: none; border-top: 1px solid var(--border-dim, #333); margin: 12px 0; }
+.hv-drawer-markdown ul,
+.hv-drawer-markdown ol { padding-left: 20px; margin: 0 0 10px 0; }
+.hv-drawer-markdown li { margin-bottom: 3px; }
+
+/* Synapse Memory */
+.hv-synapse-hint {
+    font-size: 9px;
+    color: var(--text-dead, #555);
+    letter-spacing: 0.5px;
+    margin: 3px 0 5px 0;
+    line-height: 1.4;
+}
+.hv-synapse-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border-dim, #333);
+    color: var(--text-main, #ccc);
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    line-height: 1.5;
+    padding: 6px 8px;
+    resize: vertical;
+    outline: none;
+}
+.hv-synapse-textarea:focus {
+    border-color: var(--border-glow, #8b0000);
+    box-shadow: 0 0 6px rgba(139,0,0,0.3);
+}
+.hv-synapse-textarea::placeholder {
+    color: var(--text-dead, #444);
+    font-style: italic;
+}
+
+/* ── Hive Gate Bar (in Chat) ─────────────────────────────────────────── */
+.hive-gate-bar {
+    margin: 0 12px 8px 12px;
+    border: 1px solid var(--border-glow, #8b0000);
+    background: rgba(20, 4, 4, 0.92);
+    box-shadow: 0 0 14px rgba(139,0,0,0.4);
+    padding: 10px 14px;
+}
+.hive-gate-bar-drone {
+    border-color: #4a6a2a;
+    background: rgba(4, 20, 4, 0.92);
+    box-shadow: 0 0 14px rgba(74,106,42,0.4);
+}
+.hive-gate-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.hive-gate-icon {
+    font-size: 16px;
+    color: var(--border-glow, #8b0000);
+    text-shadow: 0 0 8px var(--border-glow);
+    animation: vigilBlink 1.4s ease-in-out infinite;
+}
+.hive-gate-title {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--text-bright, #f0d060);
+    font-weight: bold;
+}
+.hive-gate-hint {
+    font-size: 9px;
+    color: var(--text-dead, #555);
+    margin-left: auto;
+}
+.hive-gate-body {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+}
+.hive-gate-input {
+    flex: 1;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid var(--border-dim, #333);
+    color: var(--text-main, #ccc);
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    padding: 5px 8px;
+    resize: none;
+    outline: none;
+}
+.hive-gate-input:focus { border-color: var(--border-glow, #8b0000); }
+.hive-gate-btn {
+    padding: 6px 14px;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    cursor: pointer;
+    border: none;
+    font-family: var(--font-mono, monospace);
+    white-space: nowrap;
+}
+.hive-gate-approve {
+    background: var(--border-glow, #8b0000);
+    color: #fff;
+}
+.hive-gate-approve:hover { background: #a01010; }
+

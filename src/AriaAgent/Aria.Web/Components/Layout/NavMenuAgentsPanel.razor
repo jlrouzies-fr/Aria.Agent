@@ -1,0 +1,263 @@
+@using Aria.Agent
+@using Aria.Web.Data
+@using Aria.Tools
+@using Aria.Web.Helpers
+@using Aria.Web.Components.Pages
+@using Aria.Web.Components.Shared
+@using Markdig
+@using System.Text.Json
+@using System.Security.Cryptography
+@namespace Aria.Web.Components.Layout
+
+@code {
+    [CascadingParameter(Name = "NavMenu")]
+    public NavMenu Menu { get; set; } = null!;
+}
+
+@if (true)
+{
+    @if (Menu.SessionState.ActiveSubAgent != null)
+    {
+        var aColor = Menu.SessionState.ActiveSubAgent.AccentColor;
+        <div class="agent-active-status" style="padding:5px 12px 6px;border-bottom:1px solid var(--border-dim);background:rgba(0,0,0,0.2)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                <span style="color:var(--text-bright);font-size:9px;letter-spacing:1.5px;text-shadow:var(--glow-sm)">⚡ ACTIVE</span>
+                <button class="tool-cfg-btn" style="font-size:9px;letter-spacing:1px;white-space:nowrap;color:var(--text-normal)"
+                        title="Deactivate agent" @onclick="Menu.StandDownAgent">STAND DOWN</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px">
+                @((MarkupString)AgentSprites.RenderAuto(Menu.SessionState.ActiveSubAgent.AvatarSpriteKey, Menu.SessionState.ActiveSubAgent.AccentColor, 54))
+                <span style="color:var(--text-title);font-size:11px;font-weight:bold;letter-spacing:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-shadow:var(--glow-sm)"
+                      title="@Menu.SessionState.ActiveSubAgent.GeneratedName">
+                    @Menu.SessionState.ActiveSubAgent.DisplayName.ToUpperInvariant()
+                </span>
+            </div>
+        </div>
+    }
+    <div style="padding:6px 10px">
+        <button class="modal-add-btn" style="width:100%"
+                disabled="@(Menu.SessionState.CurrentUser == null)"
+                @onclick="Menu.InquireNewAgent">⊕ INQUIRE A NEW AGENT</button>
+    </div>
+    @if (Menu._subAgents.Count == 0 && Menu.SessionState.CurrentUser != null)
+    {
+        <div class="cog-empty">No agents inquired yet.</div>
+    }
+    @foreach (var ag in Menu._subAgents)
+    {
+        var isActive = Menu.SessionState.ActiveSubAgent?.Id == ag.Id;
+        <div class="cog-row agent-row @(isActive ? "active" : "")">
+            <span style="flex-shrink:0;line-height:0;opacity:@(isActive ? "1" : "0.55")">
+                @((MarkupString)AgentSprites.RenderAuto(ag.AvatarSpriteKey, ag.AccentColor, 36))
+            </span>
+            <span class="cog-title" title="@ag.GeneratedName">@ag.DisplayName</span>
+            <span class="tool-cfg-btn agent-play-btn @(isActive ? "active" : "")"
+                  title="@(isActive ? "Active agent" : "Activate agent")"
+                  @onclick="() => Menu.ActivateAgent(ag)">▶</span>
+            <span class="tool-cfg-btn" title="Edit agent" @onclick="() => Menu.OpenAgentModal(ag)">⊙</span>
+            <button class="mcp-delete-btn" title="Delete agent" @onclick="() => Menu.RequestDeleteAgentAsync(ag)">✕</button>
+        </div>
+    }
+}
+
+
+@* ── Agent Edit / Create Modal ─────────────────────────────────────────── *@
+@if (Menu._agentModal)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel @(Menu._isHiring || Menu._hiringDone ? "modal-panel--hiring" : "")" @onclick:stopPropagation="true" style="position:relative">
+
+            @if (Menu._isHiring || Menu._hiringDone)
+            {
+                <div class="agent-hiring-overlay">
+                    @if (Menu._hiringDone)
+                    {
+                        <div style="flex-shrink:1;min-height:0;overflow:hidden;margin-bottom:10px">
+                            @((MarkupString)AgentSprites.RenderAuto(Menu._pendingSpriteKey, Menu._editColor, 108))
+                        </div>
+                        <div style="font-size:13px;letter-spacing:2px;color:var(--text-bright);text-shadow:var(--glow-sm)">@Menu._editName.ToUpperInvariant()</div>
+                        <div style="font-size:9px;color:var(--text-muted);letter-spacing:1px;margin-bottom:14px">[@Menu._editArchetypeName]</div>
+                        <DebouncedInput class="modal-input" style="max-width:200px;text-align:center;font-size:11px"
+                                        Placeholder="Nickname (optional)"
+                                        Value="@Menu._editNickname"
+                                        ValueChanged="v => Menu._editNickname = v" />
+                        <div style="display:flex;gap:8px;margin-top:14px">
+                            <button class="modal-apply" @onclick="Menu.AcceptContractAsync">ACCEPT CONTRACT</button>
+                            <button class="modal-cancel" @onclick="Menu.DeclineContract">DECLINE</button>
+                        </div>
+                        @if (Menu._agentModalError != null)
+                        {
+                            <div class="modal-error" style="margin-top:8px">@Menu._agentModalError</div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="agent-hiring-icon">⊙</div>
+                        <div class="agent-hiring-msg">@Menu._hiringMessage</div>
+                    }
+                </div>
+            }
+
+            <div class="modal-header">
+                <span class="modal-icon" style="color:@Menu._editColor">⊙</span>
+                <span class="modal-title">@(Menu._editingAgentId == null ? "NEW AGENT" : "EDIT AGENT")</span>
+                <button class="modal-close" @onclick="Menu.CloseAgentModal">✕</button>
+            </div>
+
+            <div class="modal-body">
+
+                <div class="modal-section-title">// DESIGNATION</div>
+                <div class="modal-field">
+                    <label class="modal-field-label">Designation</label>
+                    <div style="font-size:11px;color:var(--text-normal);padding:6px 8px;border:1px solid var(--border-dim);background:var(--bg-input);border-radius:2px;letter-spacing:1px">
+                        @Menu._editName
+                    </div>
+                </div>
+                <div style="font-size:10px;color:var(--text-dead);padding:0 0 8px;font-style:italic">
+                    Archetype: @Menu._editArchetypeName
+                </div>
+                <div class="modal-field">
+                    <label class="modal-field-label">Nickname <span style="font-weight:normal;color:var(--text-dead)">(optional — displayed instead of designation)</span></label>
+                    <DebouncedInput class="modal-input" Placeholder="e.g. Sparky, The Iron Fist..."
+                                    Value="@Menu._editNickname"
+                                    ValueChanged="v => Menu._editNickname = v" />
+                </div>
+
+                <div class="modal-section-title">// USER DIRECTIVES</div>
+                <p class="modal-desc">
+                    Specialisation instructions placed before the charter — use this to define focus (e.g. "vacation planning", "C# code assistant"). The agent's name and personality cannot be overridden.
+                </p>
+                <div class="modal-field">
+                    <DebouncedTextArea class="modal-textarea" rows="4"
+                                       Placeholder="e.g. You specialise in planning family vacations. Always suggest budget options first."
+                                       Value="@Menu._editDirectives"
+                                       ValueChanged="v => Menu._editDirectives = v" />
+                </div>
+
+                <div class="modal-section-title">// ACCENT COLOUR</div>
+                <div class="wg-color-row" style="padding:4px 0 10px; align-items:center">
+                    @foreach (var (hex, label) in NavMenu.AgentColorPresets)
+                    {
+                        <div class="wg-color-swatch @(Menu._editColor == hex ? "selected" : "")"
+                             style="background:@hex;width:24px;height:24px"
+                             title="@label"
+                             @onclick="() => Menu._editColor = hex"></div>
+                    }
+                    <input type="color"
+                           class="agent-color-picker-input"
+                           value="@Menu._editColor"
+                           title="Custom colour"
+                           @oninput="Menu.OnColorPickerInput" />
+                </div>
+
+                <div class="modal-section-title">// CHANNEL OVERRIDE (optional)</div>
+                <div class="modal-field">
+                    <label class="modal-field-label">Source</label>
+                    <ThemedSelect Value="@(Menu._editSourceName ?? "")" ValueChanged="Menu.OnEditSourceChanged"
+                                  Options="Menu.AgentSourceOptions()" Placeholder="— same as soul —"
+                                  ControlClass="modal-input" />
+                </div>
+                @if (!string.IsNullOrEmpty(Menu._editSourceName))
+                {
+                    var editSrc = Menu._userSources.FirstOrDefault(s => s.Name == Menu._editSourceName);
+                    @if (editSrc != null && editSrc.Models.Count > 0)
+                    {
+                        <div class="modal-field">
+                            <label class="modal-field-label">Model</label>
+                            <ThemedSelect Value="@(Menu._editModelId ?? "")"
+                                          ValueChanged="@(v => Menu._editModelId = string.IsNullOrEmpty(v) ? null : v)"
+                                          Options="Menu.SourceModelOptions(editSrc)" Placeholder="— default —"
+                                          ControlClass="modal-input" />
+                        </div>
+                    }
+                }
+
+                @if (Menu._skills.Count > 0)
+                {
+                    <div class="modal-section-title">// SKILLS</div>
+                    @foreach (var sk in Menu._skills)
+                    {
+                        var assigned = Menu._editAgentSkillIds.Contains(sk.Id);
+                        <div class="tool-row @(assigned ? "enabled" : "")" style="cursor:pointer"
+                             @onclick="() => Menu.ToggleAgentSkill(sk.Id)">
+                            <span class="tool-check">@(assigned ? "■" : "□")</span>
+                            <span class="tool-icon">📋</span>
+                            <span class="tool-label">@sk.Name</span>
+                        </div>
+                    }
+                }
+
+                <div class="modal-section-title">// TOOLS</div>
+                @foreach (var def in ToolRegistry.All)
+                {
+                    var toolEnabled = Menu._editToolStates.GetValueOrDefault(def.Id);
+                    <div class="tool-row @(toolEnabled ? "enabled" : "")" style="cursor:pointer"
+                         @onclick="() => Menu.ToggleEditTool(def.Id)">
+                        <span class="tool-check">@(toolEnabled ? "■" : "□")</span>
+                        <span class="tool-icon">@def.Icon</span>
+                        <span class="tool-label">@def.Label</span>
+                    </div>
+                }
+
+                @if (Menu.SessionState.McpServers.Count > 0)
+                {
+                    <div class="modal-section-title">// MCP SERVERS</div>
+                    @foreach (var srv in Menu.SessionState.McpServers)
+                    {
+                        var mcpEnabled = Menu._editMcpNames.Contains(srv.Name);
+                        <div class="tool-row @(mcpEnabled ? "enabled" : "")" style="cursor:pointer"
+                             @onclick="() => Menu.ToggleEditMcp(srv.Name)">
+                            <span class="tool-check">@(mcpEnabled ? "■" : "□")</span>
+                            <span class="tool-icon">⚙</span>
+                            <span class="tool-label">@srv.Name</span>
+                        </div>
+                    }
+                }
+
+                @if (Menu._agentModalError != null)
+                {
+                    <div class="modal-error">@Menu._agentModalError</div>
+                }
+
+            </div>
+
+            <div class="modal-footer">
+                <button class="modal-apply" @onclick="Menu.CommitAgentAsync">COMMIT</button>
+                <button class="modal-cancel" @onclick="Menu.CloseAgentModal">CANCEL</button>
+                @if (Menu._agentModalSaved) { <span class="modal-saved-msg">// COMMITTED //</span> }
+            </div>
+
+        </div>
+    </div>
+}
+
+
+@* ── Agent Delete Confirmation ─────────────────────────────────────────── *@
+@if (Menu._agentPendingDelete != null)
+{
+    <div class="modal-backdrop" @onclick="Menu.CancelDeleteAgent">
+        <div class="modal-panel" style="max-width:360px" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <span class="modal-title">// DELETE AGENT</span>
+                <button class="modal-close" @onclick="Menu.CancelDeleteAgent">✕</button>
+            </div>
+            <div class="modal-body" style="padding:16px;display:flex;flex-direction:column;gap:12px">
+                <p style="margin:0">
+                    Permanently delete <strong>@Menu._agentPendingDelete.DisplayName.ToUpperInvariant()</strong>?
+                </p>
+                @if (Menu._agentPendingDeleteCogCount > 0)
+                {
+                    <p style="margin:0;color:var(--gold-normal)">
+                        &#x26A0; This agent has @Menu._agentPendingDeleteCogCount cogitation@(Menu._agentPendingDeleteCogCount == 1 ? "" : "s").
+                        Their history will lose the agent association and display as a deleted agent.
+                    </p>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="modal-apply" style="background:var(--danger,#8b2020)" @onclick="Menu.ConfirmDeleteAgentAsync">DELETE</button>
+                <button class="modal-cancel" @onclick="Menu.CancelDeleteAgent">CANCEL</button>
+            </div>
+        </div>
+    </div>
+}
+

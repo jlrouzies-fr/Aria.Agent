@@ -1,0 +1,149 @@
+
+/* ── Drone drawer ── */
+.hv-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 699;
+}
+.hv-drawer {
+    position: fixed;
+    top: 0; right: 0;
+    width: 380px;
+    height: 100%;
+    background: var(--bg-panel, #222);
+    border-left: 1px solid var(--border-glow, #8b0000);
+    z-index: 700;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.hv-drawer.hv-drawer-wide {
+    width: 640px;
+    max-width: 90vw;
+}
+.hv-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-dim, #2a2a2a);
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--text-bright, #f0d060);
+    background: rgba(0,0,0,0.2);
+    flex-shrink: 0;
+}
+.hv-drawer-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+}
+
+/* Task cards in drawer */
+.hv-task-card {
+    border: 1px solid var(--border-dim, #2a2a2a);
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    background: rgba(0,0,0,0.15);
+}
+.hv-task-title {
+    font-size: 11px;
+    color: var(--text-bright, #f0d060);
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.hv-task-status { }
+.hv-task-label {
+    font-size: 8px;
+    letter-spacing: 2px;
+    color: var(--text-dead, #555);
+    margin: 6px 0 3px;
+}
+.hv-task-text {
+    font-size: 11px;
+    color: var(--text-normal, #aaa);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.hv-task-text-muted {
+    color: var(--text-dead, #555);
+    text-decoration: line-through;
+    max-height: 60px;
+}
+/* Shared markdown rendering for drone task results (.hv-task-markdown) AND the Overmind
+   conclusion drawer (.hv-drawer-markdown). Without the .hv-drawer-markdown selector the
+   conclusion rendered as unstyled HTML — code blocks lost their frame, lists their indent —
+   which read as "markdown not respected". */
+.hv-task-markdown p,
+.hv-drawer-markdown p  { margin: 0 0 8px 0; }
+.hv-task-markdown pre,
+.hv-drawer-markdown pre {
+    background: rgba(0,0,0,0.35);
+    padding: 8px 10px;
+    border-radius: 3px;
+    border: 1px solid var(--border-dim, #333);
+    margin: 0 0 8px 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 10px;
+    line-height: 1.5;
+    overflow-x: auto;
+}
+.hv-task-markdown code,
+.hv-drawer-markdown code {
+    background: rgba(255,255,255,0.08);
+    padding: 1px 4px;
+    font-size: 10px;
+    border-radius: 2px;
+    font-family: var(--font-mono, monospace);
+}
+.hv-task-markdown pre code,
+.hv-drawer-markdown pre code { background: transparent; padding: 0; font-size: 10px; line-height: 1.5; }
+.hv-task-markdown ul, .hv-task-markdown ol,
+.hv-drawer-markdown ul, .hv-drawer-markdown ol { padding-left: 18px; margin: 0 0 8px 0; }
+.hv-task-markdown li,
+.hv-drawer-markdown li { margin-bottom: 2px; }
+.hv-drawer-markdown { font-size: 12px; line-height: 1.6; color: var(--text-normal, #c8c0a8); }
+.hv-task-markdown h1, .hv-task-markdown h2, .hv-task-markdown h3,
+.hv-drawer-markdown h1, .hv-drawer-markdown h2, .hv-drawer-markdown h3 {
+    color: var(--text-bright, #f0d060); font-size: 12px; margin: 10px 0 4px 0;
+}
+.hv-drawer-markdown blockquote {
+    margin: 0 0 8px 0; padding-left: 10px;
+    border-left: 2px solid var(--border-dim, #444); color: var(--text-muted, #999);
+}
+.hv-drawer-markdown table { border-collapse: collapse; margin: 0 0 8px 0; font-size: 11px; }
+.hv-drawer-markdown th, .hv-drawer-markdown td {
+    border: 1px solid var(--border-dim, #333); padding: 3px 7px;
+}
+
+/* Copy button for markdown code blocks */
+pre { position: relative; }
+.code-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid var(--border-dim, #444);
+    color: var(--text-mid, #888);
+    font-family: var(--font-mono, monospace);
+    font-size: 9px;
+    letter-spacing: 1px;
+    padding: 3px 8px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    z-index: 5;
+}
+pre:hover .code-copy-btn { opacity: 1; }
+.code-copy-btn:hover {
+    color: var(--text-bright, #f0d060);
+    border-color: var(--text-bright, #f0d060);
+    background: rgba(0,0,0,0.7);
+}

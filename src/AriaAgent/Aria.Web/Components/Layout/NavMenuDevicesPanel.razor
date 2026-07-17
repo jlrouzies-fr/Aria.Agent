@@ -1,0 +1,94 @@
+@using Aria.Agent
+@using Aria.Web.Data
+@using Aria.Tools
+@using Aria.Web.Helpers
+@using Aria.Web.Components.Pages
+@using Aria.Web.Components.Shared
+@using Markdig
+@using System.Text.Json
+@using System.Security.Cryptography
+@namespace Aria.Web.Components.Layout
+
+@code {
+    [CascadingParameter(Name = "NavMenu")]
+    public NavMenu Menu { get; set; } = null!;
+}
+
+@if (true)
+{
+    <div class="channel-section-lbl">BRIDGE NODES</div>
+    @if (Menu._nodes.Count == 0)
+    {
+        <div class="source-warn">No nodes yet — your bridge registers automatically on connect.</div>
+    }
+    @foreach (var n in Menu._nodes)
+    {
+        var nid = n.NodeId;
+        <div class="source-row @(n.Online ? "" : "unavailable")">
+            <span class="source-dot">@(n.Online ? "●" : "○")</span>
+            <span class="source-icon">@(n.IsPrimary ? "★" : "⬡")</span>
+            <span class="source-name">
+                @(string.IsNullOrWhiteSpace(n.Label) ? n.NodeId : n.Label)@(string.IsNullOrEmpty(n.Platform) ? "" : $" · {n.Platform}")
+            </span>
+            @if (!n.IsPrimary)
+            {
+                <span class="tool-cfg-btn" title="Delete device (must re-pair to return)"
+                      @onclick:stopPropagation="true"
+                      @onclick="() => Menu.RevokeNodeAsync(nid)">✕</span>
+            }
+        </div>
+    }
+    
+    @* ── Pending devices awaiting pairing approval ─────────────── *@
+    @if (Menu._pending.Count > 0)
+    {
+        <div class="channel-section-lbl">PENDING DEVICES</div>
+        @foreach (var p in Menu._pending)
+        {
+            var pid = p.NodeId;
+            <div class="pending-device">
+                <div class="pending-device-head">
+                    <span class="source-icon">⬡</span>
+                    <span class="source-name">@(string.IsNullOrWhiteSpace(p.Label) ? p.NodeId : p.Label)@(string.IsNullOrEmpty(p.Platform) ? "" : $" · {p.Platform}")</span>
+                </div>
+                <div class="pending-device-id">ID @p.NodeId</div>
+                <div class="pending-device-row">
+                    <DebouncedInput class="modal-input pending-code-input" placeholder="join code"
+                                    inputmode="numeric" maxlength="7"
+                                    Value="@(Menu._pendingCodes.GetValueOrDefault(pid) ?? "")"
+                                    ValueChanged="v => Menu._pendingCodes[pid] = v" />
+                    <button class="pending-approve-btn" disabled="@Menu._nodeBusy"
+                            @onclick="() => Menu.ApproveDeviceAsync(pid)">@(Menu._nodeBusy ? "…" : "APPROVE")</button>
+                </div>
+            </div>
+        }
+    }
+    
+    <div class="device-pairing-hint">
+        To add a machine: run Aria.Bridge there and join this soul. It appears above as a
+        pending device with a code to confirm.
+    </div>
+    @if (!string.IsNullOrEmpty(Menu._nodeError))
+    {
+        <div class="source-warn">@Menu._nodeError</div>
+    }
+
+    @* ── Layer A: trust this browser so it reaches the terminal from any network ── *@
+    @if (Menu.SoulVerified)
+    {
+        <div class="channel-section-lbl">THIS BROWSER</div>
+        <button class="pending-approve-btn trust-browser-btn" disabled="@Menu._trustDeviceBusy"
+                @onclick="() => Menu.TrustThisBrowserAsync()">
+            @(Menu._trustDeviceBusy ? "AWAITING NODE…" : "TRUST THIS BROWSER")
+        </button>
+        <div class="device-pairing-hint">
+            Approve once at your node; afterwards this browser is admitted from any network without an
+            invite code. Approval is signed by your soul key — the server cannot grant it.
+        </div>
+        @if (!string.IsNullOrEmpty(Menu._trustDeviceMsg))
+        {
+            <div class="source-warn">@Menu._trustDeviceMsg</div>
+        }
+    }
+}
+

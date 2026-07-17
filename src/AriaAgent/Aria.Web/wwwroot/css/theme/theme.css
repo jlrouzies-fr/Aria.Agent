@@ -1,0 +1,162 @@
+/* ============================================================
+   ARIA // COGITATOR TERMINAL — Warhammer 40K Dark Theme
+   ============================================================ */
+
+/* ── Sub-agent accent themes — override red-derived variables ── */
+.theme-gold {
+    --bg-hover:     #3a3020;
+    --bg-surface:   #322a1a;
+    --bg-input:     #2a2418;
+    --border-dim:   #5a4c20;
+    --border-normal:#8a7030;
+    --border-active:#b09040;
+    --border-glow:  #d4a020;
+    --text-dead:    #9a8860;
+    --text-muted:   #c0a870;
+    --text-normal:  #d4b850;
+    --text-bright:  #f0d060;
+    --text-title:   #e8c030;
+    --text-body:    #eedcaa;
+    --text-system:  #b89870;
+    --glow-sm:      0 0 6px rgba(180,140,30,0.4);
+    --glow-md:      0 0 12px rgba(180,140,30,0.45);
+    --glow-lg:      0 0 24px rgba(180,140,30,0.35);
+}
+
+.theme-blue {
+    --bg-hover:     #1e2c42;
+    --bg-surface:   #1a2030;
+    --bg-input:     #181e2e;
+    --border-dim:   #2a3e60;
+    --border-normal:#3a5890;
+    --border-active:#5070b0;
+    --border-glow:  #7090d0;
+    --text-dead:    #7080a0;
+    --text-muted:   #9ab0cc;
+    --text-normal:  #aac0d8;
+    --text-bright:  #c8daf0;
+    --text-title:   #80a0d0;
+    --text-body:    #c0cce0;
+    --text-system:  #8090b0;
+    --glow-sm:      0 0 6px rgba(60,100,180,0.4);
+    --glow-md:      0 0 12px rgba(60,100,180,0.45);
+    --glow-lg:      0 0 24px rgba(60,100,180,0.35);
+}
+
+.theme-purple {
+    --bg-hover:     #302040;
+    --bg-surface:   #281830;
+    --bg-input:     #221530;
+    --border-dim:   #482060;
+    --border-normal:#6a3090;
+    --border-active:#8840b0;
+    --border-glow:  #b060d0;
+    --text-dead:    #907090;
+    --text-muted:   #b080c0;
+    --text-normal:  #c090d0;
+    --text-bright:  #d8a8e8;
+    --text-title:   #c060d8;
+    --text-body:    #d8c0e0;
+    --text-system:  #9878a8;
+    --glow-sm:      0 0 6px rgba(140,60,180,0.4);
+    --glow-md:      0 0 12px rgba(140,60,180,0.45);
+    --glow-lg:      0 0 24px rgba(140,60,180,0.35);
+}
+
+.theme-green {
+    --bg-hover:     #1e3018;
+    --bg-surface:   #1c2816;
+    --bg-input:     #161e10;
+    --border-dim:   #2a4820;
+    --border-normal:#406830;
+    --border-active:#508840;
+    --border-glow:  #60aa50;
+    --text-dead:    #709060;
+    --text-muted:   #88aa70;
+    --text-normal:  #90b870;
+    --text-bright:  #a8d080;
+    --text-title:   #70b050;
+    --text-body:    #c8dca0;
+    --text-system:  #789060;
+    --glow-sm:      0 0 6px rgba(60,140,40,0.4);
+    --glow-md:      0 0 12px rgba(60,140,40,0.45);
+    --glow-lg:      0 0 24px rgba(60,140,40,0.35);
+}
+
+.theme-bone {
+    --bg-hover:     #362a20;
+    --bg-surface:   #2e2418;
+    --bg-input:     #261e16;
+    --border-dim:   #5a4030;
+    --border-normal:#806050;
+    --border-active:#a07860;
+    --border-glow:  #c09070;
+    --text-dead:    #9a8070;
+    --text-muted:   #b89880;
+    --text-normal:  #c8a888;
+    --text-bright:  #dcc0a0;
+    --text-title:   #c89060;
+    --text-body:    #ddc8b0;
+    --text-system:  #b09080;
+    --glow-sm:      0 0 6px rgba(160,120,80,0.4);
+    --glow-md:      0 0 12px rgba(160,120,80,0.45);
+    --glow-lg:      0 0 24px rgba(160,120,80,0.35);
+}
+
+:root {
+    --bg-base:        #252525;
+    --bg-panel:       #2d2d2d;
+    --bg-surface:     #353535;
+    --bg-hover:       #3a2424;
+    --bg-input:       #2a1e1e;
+    --border-dim:     #5a4040;
+    --border-normal:  #8a5252;
+    --border-active:  #b06060;
+    --border-glow:    #e07070;
+    --text-dead:      #9a8282;
+    --text-muted:     #cc9898;
+    --text-normal:    #e08888;
+    --text-bright:    #f5a0a0;
+    --text-title:     #f06060;
+    --text-body:      #eed0d0;
+    --text-system:    #b89090;
+    --gold-dim:       #6a5010;
+    --gold-normal:    #9b7920;
+    --gold-bright:    #d4a020;
+    --success:        #2d5a2d;
+    --success-bright: #55aa55;
+    --font-mono:      'Consolas', 'Courier New', monospace;
+    --glow-sm:        0 0 6px rgba(180, 80, 80, 0.4);
+    --glow-md:        0 0 12px rgba(180, 80, 80, 0.45);
+    --glow-lg:        0 0 24px rgba(180, 80, 80, 0.35);
+}
+
+/* ── Reset & Base ───────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg-base);
+    color: var(--text-body);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+/* ── Scanline Overlay ───────────────────────────────────── */
+body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 1px,
+        rgba(0, 0, 0, 0.06) 1px,
+        rgba(0, 0, 0, 0.06) 2px
+    );
+    pointer-events: none;
+    z-index: 9999;
+}
+
