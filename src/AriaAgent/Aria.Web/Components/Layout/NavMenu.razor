@@ -98,6 +98,10 @@
     </span>
     <span class="nav-item-dot">@(_activePanel == "devices" ? "▶" : "·")</span>
     <span class="nav-item-label">// DEVICES</span>
+    @if (HasPendingDevices)
+    {
+        <span class="device-pending-dot" title="A device is awaiting approval — open DEVICES and enter its pairing code"></span>
+    }
 </div>
 
 <div class="sidebar-nav-item @(_activePanel == "tools" ? "active" : "")" @onclick='() => TogglePanel("tools")'>

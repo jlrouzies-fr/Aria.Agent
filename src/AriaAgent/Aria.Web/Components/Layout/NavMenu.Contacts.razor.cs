@@ -206,11 +206,18 @@ public partial class NavMenu
         await InvokeAsync(StateHasChanged);
     }
 
+    /// <summary>Drives the amber pulsing dot on the "// DEVICES" nav item — true while a device is
+    /// awaiting pairing approval. Read live from the enrollment service so it works even when the
+    /// devices panel has never been opened (the whole point: the user must NOTICE the request).</summary>
+    internal bool HasPendingDevices =>
+        SessionState.CurrentUser is { } u && PendingEnrollments.List(u.Id).Count > 0;
+
     // Live refresh when a device registers itself for pairing (or one is approved/expires).
     internal void OnPendingEnrollmentsChanged(string userId)
     {
-        if (SessionState.CurrentUser?.Id != userId || _activePanel != "devices") return;
-        _ = LoadNodesAsync();
+        if (SessionState.CurrentUser?.Id != userId) return;
+        if (_activePanel == "devices") { _ = LoadNodesAsync(); return; }
+        _ = InvokeAsync(StateHasChanged);   // panel closed — still update the nav pending dot
     }
 
     internal async Task ApproveDeviceAsync(string nodeId)

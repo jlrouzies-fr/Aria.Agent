@@ -359,8 +359,15 @@ public static partial class BridgeStatusPage
             const r = await fetch('/node/join-code');
             const d = r.ok ? await r.json() : null;
             if (d && d.display) {
+              const server = soul && soul.serverUrl ? esc(soul.serverUrl) : 'your Aria.Web server';
               banner.style.display = 'block';
-              banner.innerHTML = `⟁ AWAITING ENROLLMENT — approve this device in Aria.Web → Devices with code <strong style="color:var(--text-title);letter-spacing:.2em">${d.display}</strong>`;
+              banner.innerHTML = `
+                <div style="margin-bottom:6px">⟁ <strong style="color:var(--text-title)">AWAITING ENROLLMENT</strong> — this device must be approved from an already-enrolled device:</div>
+                <ol style="margin:0 0 0 20px;padding:0;line-height:1.9">
+                  <li>Go to the computer running your main bridge.</li>
+                  <li>Open the Aria.Web page there: <strong style="color:var(--text-title)">${server}</strong></li>
+                  <li>Open <strong style="color:var(--text-title)">DEVICES</strong> in the sidebar and enter this code: <strong style="color:var(--text-title);letter-spacing:.2em;font-size:14px">${d.display}</strong></li>
+                </ol>`;
             } else {
               banner.style.display = 'none';
             }
