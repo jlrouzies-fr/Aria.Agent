@@ -191,56 +191,49 @@ function Test-PortConflict {
 }
 
 # Resolve a download URL for the given tag ("latest" or "bridge-vX.Y.Z").
-# Queries the public GitHub API (no auth needed) so prerelease tags are
-# still found — the /releases/latest endpoint excludes prereleases, and
-# bridge releases are prerelease until declared stable.
+# Uses github.com endpoints ONLY — the releases Atom feed to find the newest
+# tag, then the direct asset download URL. Neither is served by api.github.com,
+# so this avoids the 60/hour unauthenticated API rate limit that installs from
+# shared/NAT'd IPs used to hit. The Atom feed still includes prereleases (bridge
+# releases stay prerelease until declared stable), unlike /releases/latest.
 function Resolve-DownloadUrl {
     param([string]$Tag)
 
     if ($Tag -eq "latest") {
-        $ReleaseUrl = "https://api.github.com/repos/${Repo}/releases"
-    } else {
-        $ReleaseUrl = "https://api.github.com/repos/${Repo}/releases/tags/${Tag}"
-    }
-
-    Write-Info "GitHub API URL: $ReleaseUrl"
-
-    try {
-        $Response = Invoke-WebRequest -Uri $ReleaseUrl -UseBasicParsing -MaximumRedirection 10
-    } catch {
-        Write-ErrorLine "GitHub API request failed"
-        Write-Info "Status: $($_.Exception.Response.StatusCode.value__)"
-        Write-Info "Exception: $_"
-        throw
-    }
-
-    Write-Info "GitHub API response status: $($Response.StatusCode)"
-
-    if ($Tag -eq "latest") {
-        $Releases = $Response.Content | ConvertFrom-Json
-        if (-not $Releases) {
-            throw "No releases found"
+        $FeedUrl = "https://github.com/${Repo}/releases.atom"
+        Write-Info "Releases feed: $FeedUrl"
+        try {
+            $Feed = Invoke-WebRequest -Uri $FeedUrl -UseBasicParsing -MaximumRedirection 10 -TimeoutSec 60
+        } catch {
+            Write-ErrorLine "Could not fetch the releases feed"
+            Write-Info "Status: $($_.Exception.Response.StatusCode.value__)"
+            Write-Info "Exception: $_"
+            throw
         }
-        $Release = $Releases | Sort-Object published_at -Descending | Select-Object -First 1
-        Write-Info "Selected latest release (newest by published_at)"
+        try {
+            $Xml = [xml]$Feed.Content
+        } catch {
+            throw "Releases feed was not valid XML"
+        }
+        # The first <entry> is the newest release; its alternate link points at
+        # https://github.com/<repo>/releases/tag/<tag>.
+        $Entry = @($Xml.feed.entry) | Select-Object -First 1
+        if (-not $Entry) { throw "No releases found in the feed" }
+        $Href = @($Entry.link) | ForEach-Object { $_.href } |
+            Where-Object { $_ -match '/releases/tag/' } | Select-Object -First 1
+        if (-not $Href) { $Href = "$($Entry.id)" }   # fallback: tag:...:Repository/<id>/<tag>
+        $ResolvedTag = ($Href -split '/')[-1]
+        if (-not $ResolvedTag) { throw "Could not parse the release tag from the feed" }
+        Write-Info "Resolved latest tag: $ResolvedTag"
     } else {
-        $Release = $Response.Content | ConvertFrom-Json
+        $ResolvedTag = $Tag
     }
 
-    Write-Info "Release tag: $($Release.tag_name)"
-    Write-Info "Release prerelease: $($Release.prerelease)"
-    Write-Info "Release published_at: $($Release.published_at)"
-
-    Write-Info "Assets in release:"
-    $Release.assets | ForEach-Object { Write-Info "  - $($_.name)" }
-
-    $Asset = $Release.assets | Where-Object { $_.name -eq $AssetName } | Select-Object -First 1
-    if (-not $Asset) {
-        throw "Could not find asset ${AssetName} in release ${Tag}"
-    }
-
-    Write-Info "Asset download URL: $($Asset.browser_download_url)"
-    return $Asset.browser_download_url
+    # Direct asset URL — a github.com web redirect (to the release CDN), not the
+    # API, so it carries no rate limit. Asset names are fixed by the release job.
+    $DownloadUrl = "https://github.com/${Repo}/releases/download/${ResolvedTag}/${AssetName}"
+    Write-Info "Asset download URL: $DownloadUrl"
+    return $DownloadUrl
 }
 
 $Tag = if ($Version -eq "latest") { "latest" } else { "bridge-v${Version}" }
