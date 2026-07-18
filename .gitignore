@@ -682,3 +682,4 @@ AGENTS.md
 CLAUDE.md
 .claude
 .claude/worktrees/*
+fly.toml

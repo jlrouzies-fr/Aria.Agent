@@ -226,72 +226,59 @@ detect_and_handle_port_conflict() {
 }
 
 # Resolve a download URL for the given tag ("latest" or "bridge-vX.Y.Z").
-# Queries the public GitHub API (no auth needed) so prerelease tags are
-# still found — the /releases/latest endpoint excludes prereleases, and
-# bridge releases are prerelease until declared stable.
+# Uses github.com endpoints ONLY — the releases Atom feed to find the newest
+# tag, then the direct asset download URL. Neither is served by api.github.com,
+# so this avoids the 60/hour unauthenticated API rate limit that installs from
+# shared/NAT'd IPs used to hit. The Atom feed still includes prereleases (bridge
+# releases stay prerelease until declared stable), unlike /releases/latest.
 resolve_download_url() {
     local tag="$1"
-    local release_url
-    local release_json
+    local resolved_tag
     local http_status
 
     if [ "$tag" = "latest" ]; then
-        release_url="https://api.github.com/repos/${REPO}/releases"
-    else
-        release_url="https://api.github.com/repos/${REPO}/releases/tags/${tag}"
-    fi
+        local feed_url="https://github.com/${REPO}/releases.atom"
+        info "Releases feed: ${feed_url}"
 
-    info "GitHub API URL: ${release_url}"
+        http_status=$(curl -s -L -o "${TMP_DIR:-/tmp}/releases.atom" -w "%{http_code}" --max-time 60 "$feed_url" || true)
+        info "Releases feed status: ${http_status}"
 
-    http_status=$(curl -s -o "${TMP_DIR:-/tmp}/release.json" -w "%{http_code}" "$release_url" || true)
-    info "GitHub API response status: ${http_status}"
-
-    if [ "$http_status" != "200" ]; then
-        error "GitHub API request failed"
-        if [ -f "${TMP_DIR:-/tmp}/release.json" ]; then
-            cat "${TMP_DIR:-/tmp}/release.json" >&2 || true
+        if [ "$http_status" != "200" ]; then
+            error "Could not fetch the releases feed (HTTP ${http_status})"
+            exit 1
         fi
-        exit 1
-    fi
 
-    if [ "$tag" = "latest" ]; then
-        release_json=$(python3 -c "
-import sys, json
-with open('${TMP_DIR:-/tmp}/release.json') as f:
-    releases = json.load(f)
-if not releases:
-    print('No releases found', file=sys.stderr)
-    sys.exit(1)
-print(json.dumps(releases[0]))
-")
-        info "Selected latest release (newest by GitHub order)"
+        # First <entry> is the newest release; its alternate link points at
+        # https://github.com/<repo>/releases/tag/<tag>.
+        resolved_tag=$(python3 -c "
+import sys, re, xml.etree.ElementTree as ET
+ns = {'a': 'http://www.w3.org/2005/Atom'}
+root = ET.parse('${TMP_DIR:-/tmp}/releases.atom').getroot()
+entry = root.find('a:entry', ns)
+if entry is None:
+    print('No releases found in the feed', file=sys.stderr); sys.exit(1)
+tag = ''
+link = entry.find('a:link', ns)
+if link is not None and link.get('href'):
+    m = re.search(r'/releases/tag/(.+)\$', link.get('href'))
+    if m:
+        tag = m.group(1)
+if not tag:
+    idel = entry.find('a:id', ns)
+    if idel is not None and idel.text:
+        tag = idel.text.rsplit('/', 1)[-1]
+if not tag:
+    print('Could not parse the release tag from the feed', file=sys.stderr); sys.exit(1)
+print(tag)
+") || { error "Could not parse the latest release tag"; exit 1; }
+        info "Resolved latest tag: ${resolved_tag}"
     else
-        release_json=$(cat "${TMP_DIR:-/tmp}/release.json")
+        resolved_tag="$tag"
     fi
 
-    info "Release tag: $(echo "$release_json" | python3 -c "import sys, json; print(json.load(sys.stdin).get('tag_name','?'))")"
-    info "Release prerelease: $(echo "$release_json" | python3 -c "import sys, json; print(json.load(sys.stdin).get('prerelease','?'))")"
-    info "Release published_at: $(echo "$release_json" | python3 -c "import sys, json; print(json.load(sys.stdin).get('published_at','?'))")"
-
-    info "Assets in release:"
-    echo "$release_json" | python3 -c "import sys, json; [print('  -', a.get('name','?')) for a in json.load(sys.stdin).get('assets', [])]" >&2
-
-    local download_url
-    download_url=$(echo "$release_json" | python3 -c "
-import sys, json
-assets = json.load(sys.stdin).get('assets', [])
-for a in assets:
-    if a.get('name') == '${ASSET_NAME}':
-        print(a.get('browser_download_url', ''))
-        break
-" 2>/dev/null || echo "")
-
-    if [ -z "$download_url" ]; then
-        error "Could not find asset ${ASSET_NAME} in release ${tag}"
-        exit 1
-    fi
-
-    echo "$download_url"
+    # Direct asset URL — a github.com web redirect (to the release CDN), not the
+    # API, so it carries no rate limit. Asset names are fixed by the release job.
+    echo "https://github.com/${REPO}/releases/download/${resolved_tag}/${ASSET_NAME}"
 }
 
 if [ "$VERSION" = "latest" ]; then
