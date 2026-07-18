@@ -367,7 +367,8 @@ public static partial class BridgeStatusPage
                   <li>Go to the computer running your main bridge.</li>
                   <li>Open the Aria.Web page there: <strong style="color:var(--text-title)">${server}</strong></li>
                   <li>Open <strong style="color:var(--text-title)">DEVICES</strong> in the sidebar and enter this code: <strong style="color:var(--text-title);letter-spacing:.2em;font-size:14px">${d.display}</strong></li>
-                </ol>`;
+                </ol>
+                <div style="margin-top:8px;padding-top:6px;border-top:1px dashed var(--border-dim);color:var(--text-muted)">⚠ Once approved, it can take <strong style="color:var(--text-title)">up to 5 minutes</strong> for this bridge to reconnect and be detected — leave it running. This banner disappears when the link is active.</div>`;
             } else {
               banner.style.display = 'none';
             }
