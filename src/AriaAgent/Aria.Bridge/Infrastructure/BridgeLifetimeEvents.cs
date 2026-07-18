@@ -23,6 +23,19 @@ public static class BridgeLifetimeEvents
                 }
                 catch { /* no browser available — URL already printed above */ }
             }
+
+            // The installer runs the daemon with -WindowStyle Hidden on Windows — give it a
+            // notification-area icon so the user can find, open, and quit it.
+            if (OperatingSystem.IsWindows() &&
+                app.Configuration.GetValue("Bridge:TrayIcon", defaultValue: true))
+            {
+                WindowsTrayIcon.Start(onQuit: app.Lifetime.StopApplication);
+            }
+        });
+
+        app.Lifetime.ApplicationStopping.Register(() =>
+        {
+            if (OperatingSystem.IsWindows()) WindowsTrayIcon.Stop();
         });
 
         return app;

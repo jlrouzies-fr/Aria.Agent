@@ -13,6 +13,8 @@
         <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
         <PublishSingleFile>true</PublishSingleFile>
         <SelfContained>true</SelfContained>
+        <!-- Win32 icon resource: shows in Explorer/taskbar and is what WindowsTrayIcon extracts. -->
+        <ApplicationIcon>aria-bridge.ico</ApplicationIcon>
     </PropertyGroup>
 
     <ItemGroup>
