@@ -117,7 +117,7 @@ public static class NodeEndpoints
 
         // POST /soul/join — make THIS bridge an additional node of an existing soul. Generates a node
         // keypair (NO soul master key). Body: { serverUrl, serverSoulId, name?, label? }.
-        app.MapPost("/soul/join", async (JoinSoulRequest req, BridgeDbContext db) =>
+        app.MapPost("/soul/join", async (JoinSoulRequest req, BridgeDbContext db, DirectTunnel tunnel) =>
         {
             if (string.IsNullOrWhiteSpace(req.ServerUrl) || string.IsNullOrWhiteSpace(req.ServerSoulId))
                 return Results.BadRequest("serverUrl and serverSoulId required");
@@ -138,6 +138,11 @@ public static class NodeEndpoints
             };
             db.Souls.Add(soul);
             await db.SaveChangesAsync();
+
+            // Drop any live tunnel (e.g. still connected under a previous, since-wiped identity) so the
+            // reconnect loop picks up the joined soul now instead of after a restart/network blip.
+            tunnel.RequestReconnect();
+
             return Results.Ok(new
             {
                 nodePublicKey = pub,
