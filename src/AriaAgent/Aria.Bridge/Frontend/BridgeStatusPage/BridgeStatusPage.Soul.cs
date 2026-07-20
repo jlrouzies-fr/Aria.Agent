@@ -153,6 +153,16 @@ public static partial class BridgeStatusPage
               </div>
               <div id="soul-msg" style="margin-top:8px;font-size:11px;color:var(--text-muted)"></div>
             </div>
+            <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border-dim)">
+              <div class="metric-label" style="margin-bottom:8px">Join an existing soul on another machine instead (wipes this bridge's local identity, then enrolls this machine as an additional device):</div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <input id="wj-url" placeholder="Server URL (e.g. https://your-app.fly.dev)" style="background:var(--bg-surface);border:1px solid var(--border-normal);color:var(--text-bright);padding:6px 10px;font-family:monospace;font-size:11px;flex:2;min-width:200px">
+                <input id="wj-id" placeholder="Server Soul ID (COPY GUID in Aria.Web)" style="background:var(--bg-surface);border:1px solid var(--border-normal);color:var(--text-bright);padding:6px 10px;font-family:monospace;font-size:11px;flex:1;min-width:260px">
+                <input id="wj-label" placeholder="Label (e.g. Work PC)" style="background:var(--bg-surface);border:1px solid var(--border-normal);color:var(--text-bright);padding:6px 10px;font-family:monospace;font-size:11px;flex:1;min-width:140px">
+                <button onclick="wipeAndJoin()" style="background:var(--bg-surface);border:1px solid #8b0000;color:#c05050;padding:6px 14px;cursor:pointer;font-family:monospace;font-size:11px;letter-spacing:.08em">▶ WIPE &amp; JOIN</button>
+              </div>
+              <div id="wj-msg" style="margin-top:8px;font-size:11px;color:var(--text-muted)"></div>
+            </div>
             ${linked ? `
             <div style="margin-top:12px">
               <button class="btn-danger" onclick="rotateKey()" title="Generate a new keypair and re-register it with the server. Use if your private key was compromised.">▶ ROTATE KEYPAIR</button>
@@ -313,6 +323,34 @@ public static partial class BridgeStatusPage
           } catch(e) { msg.textContent = 'Error: ' + e.message; }
         }
 
+        // "Wipe & join" from the has-soul view: this bridge already holds a soul (e.g. leftover from a
+        // previous install), but the user wants this machine to become an additional device of a soul
+        // living elsewhere. /soul/join requires a fresh bridge, so wipe the local identity first, then
+        // join in one flow — no restart needed (both endpoints reset the tunnel).
+        async function wipeAndJoin() {
+          const url   = document.getElementById('wj-url').value.trim();
+          const id    = document.getElementById('wj-id').value.trim();
+          const label = document.getElementById('wj-label').value.trim();
+          const msg   = document.getElementById('wj-msg');
+          if (!url || !id) { msg.textContent = 'Server URL and Soul ID are required.'; return; }
+          if (!await ariaConfirm('WIPE THIS BRIDGE AND JOIN?\n\nThis permanently deletes the local soul identity, keys, chats, contacts and memories on THIS machine, then joins the soul above as a new device (pending approval from an existing device).\n\nProceed?', false)) return;
+          msg.style.color = 'var(--text-muted)';
+          msg.textContent = 'Wiping local identity…';
+          try {
+            const w = await fetch('/db/soul', { method:'DELETE' });
+            if (!w.ok) { msg.textContent = 'Wipe failed: ' + await w.text(); return; }
+            msg.textContent = 'Joining…';
+            const r = await fetch('/soul/join', { method:'POST', headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({ serverUrl: url, serverSoulId: id, label: label || null }) });
+            const d = await r.json();
+            if (!r.ok) { msg.textContent = 'Error: ' + (d.detail || JSON.stringify(d)); return; }
+            msg.style.color = 'var(--success)';
+            msg.textContent = '✓ Joined. Awaiting approval — watch for the pairing code banner above.';
+            await refreshSoul();
+            await refreshJoinCode();
+          } catch(e) { msg.textContent = 'Error: ' + e.message; }
+        }
+
         // Poll for the pairing code shown while this device awaits enrollment approval.
         async function refreshJoinCode() {
           const banner = document.getElementById('join-code-banner');
@@ -321,8 +359,16 @@ public static partial class BridgeStatusPage
             const r = await fetch('/node/join-code');
             const d = r.ok ? await r.json() : null;
             if (d && d.display) {
+              const server = soul && soul.serverUrl ? esc(soul.serverUrl) : 'your Aria.Web server';
               banner.style.display = 'block';
-              banner.innerHTML = `⟁ AWAITING ENROLLMENT — approve this device in Aria.Web → Devices with code <strong style="color:var(--text-title);letter-spacing:.2em">${d.display}</strong>`;
+              banner.innerHTML = `
+                <div style="margin-bottom:6px">⟁ <strong style="color:var(--text-title)">AWAITING ENROLLMENT</strong> — this device must be approved from an already-enrolled device:</div>
+                <ol style="margin:0 0 0 20px;padding:0;line-height:1.9">
+                  <li>Go to the computer running your main bridge.</li>
+                  <li>Open the Aria.Web page there: <strong style="color:var(--text-title)">${server}</strong></li>
+                  <li>Open <strong style="color:var(--text-title)">DEVICES</strong> in the sidebar and enter this code: <strong style="color:var(--text-title);letter-spacing:.2em;font-size:14px">${d.display}</strong></li>
+                </ol>
+                <div style="margin-top:8px;padding-top:6px;border-top:1px dashed var(--border-dim);color:var(--text-muted)">⚠ Once approved, it can take <strong style="color:var(--text-title)">up to 5 minutes</strong> for this bridge to reconnect and be detected — leave it running. This banner disappears when the link is active.</div>`;
             } else {
               banner.style.display = 'none';
             }

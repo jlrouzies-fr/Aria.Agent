@@ -116,8 +116,14 @@ else
             var user = SessionState.CurrentUser;
             if (user == null || !CircuitAuth.IsVerified(user.Id)) { _sealExpiresUtc = null; _enforcement = false; _sealError = false; return; }
 
+            // Ask the APPROVAL node (pinned, else default), not the default node: grants are signed and
+            // canonically held where the human approves seals. The default node is merely the most
+            // recently connected one — right after a new device joins, that's the new device, which may
+            // not have (or have verified) the replicated grant yet, and the header would show UNSEALED
+            // against a perfectly live seal.
             var resp = await BridgeRegistry.SendLocalRestAsync(
-                user.Id, "GET", $"/context/status?session={Uri.EscapeDataString(SessionState.SessionToken)}");
+                user.Id, "GET", $"/context/status?session={Uri.EscapeDataString(SessionState.SessionToken)}",
+                nodeId: BridgeRegistry.ResolveApprovalNode(user.Id));
 
             if (resp is { StatusCode: 200, Body: { } body })
             {
@@ -180,10 +186,11 @@ else
 
     protected override void OnInitialized()
     {
-        SessionState.OnChange            += OnChange;
-        SessionState.SourceChanged       += OnSourceChanged;
-        BridgeRegistry.SoulStatusChanged += OnSoulStatusChanged;
-        BridgeRegistry.NodesChanged      += OnNodesChanged;
+        SessionState.OnChange              += OnChange;
+        SessionState.SourceChanged         += OnSourceChanged;
+        BridgeRegistry.SoulStatusChanged   += OnSoulStatusChanged;
+        BridgeRegistry.NodesChanged        += OnNodesChanged;
+        BridgeRegistry.ApprovalNodeChanged += OnApprovalNodeChanged;
         _pollTimer = new System.Threading.Timer(PollSeal, null, TimeSpan.FromSeconds(2), PollInterval);
         _tick      = new System.Threading.Timer(OnTick,   null, TickInterval,           TickInterval);
     }
@@ -191,14 +198,19 @@ else
     private async void OnChange()                    => await InvokeAsync(StateHasChanged);
     private async void OnSourceChanged()             => await InvokeAsync(StateHasChanged);
     private async void OnSoulStatusChanged(string _) => await InvokeAsync(StateHasChanged);
-    private async void OnNodesChanged(string _)      => await InvokeAsync(StateHasChanged);
+    // Seal status is read from the approval node — when the pin moves or the roster changes
+    // (a node joined/dropped, possibly changing which node answers), re-read it right away
+    // instead of waiting out the 20s poll interval.
+    private void OnNodesChanged(string _)            => PollSeal(null);
+    private void OnApprovalNodeChanged(string _)     => PollSeal(null);
 
     public void Dispose()
     {
-        SessionState.OnChange            -= OnChange;
-        SessionState.SourceChanged       -= OnSourceChanged;
-        BridgeRegistry.SoulStatusChanged -= OnSoulStatusChanged;
-        BridgeRegistry.NodesChanged      -= OnNodesChanged;
+        SessionState.OnChange              -= OnChange;
+        SessionState.SourceChanged         -= OnSourceChanged;
+        BridgeRegistry.SoulStatusChanged   -= OnSoulStatusChanged;
+        BridgeRegistry.NodesChanged        -= OnNodesChanged;
+        BridgeRegistry.ApprovalNodeChanged -= OnApprovalNodeChanged;
         _pollTimer?.Dispose();
         _tick?.Dispose();
     }

@@ -169,6 +169,7 @@
 .sidebar-collapsed .nav-item-label { display: none; }
 .sidebar-collapsed .nav-sub-label-count { display: none; }
 .sidebar-collapsed .vigil-unseen-dot { position: absolute; top: 6px; right: 6px; }
+.sidebar-collapsed .device-pending-dot { position: absolute; top: 6px; right: 6px; }
 .sidebar-collapsed .sidebar-nav-item { position: relative; }
 .sidebar-collapsed .nav-agent-active { display: none; }
 
@@ -186,6 +187,23 @@
 @keyframes vigilDotPulse {
     0%, 100% { opacity: 1;   box-shadow: 0 0 6px rgba(76,175,80,0.9); }
     50%       { opacity: 0.3; box-shadow: 0 0 2px rgba(76,175,80,0.3); }
+}
+
+/* Amber pulse on "// DEVICES" while a new device awaits pairing approval. */
+.device-pending-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #e07b39;
+    box-shadow: 0 0 6px rgba(224,123,57,0.9);
+    margin-left: auto;
+    flex-shrink: 0;
+    animation: devicePendingPulse 1.4s ease-in-out infinite;
+}
+@keyframes devicePendingPulse {
+    0%, 100% { opacity: 1;   box-shadow: 0 0 6px rgba(224,123,57,0.9); }
+    50%       { opacity: 0.3; box-shadow: 0 0 2px rgba(224,123,57,0.3); }
 }
 
 /* ── Section panel overlay ──────────────────────────────── */

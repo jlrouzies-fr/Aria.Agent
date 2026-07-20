@@ -61,7 +61,7 @@ public static class DbAdminEndpoints
         // Best-effort: notifies the linked server first so it can null the public key,
         // allowing re-registration under the same name with a fresh keypair.
         // Local wipe always succeeds even if the server is unreachable.
-        app.MapDelete("/db/soul", async (BridgeDbContext db, NoosphereService svc) =>
+        app.MapDelete("/db/soul", async (BridgeDbContext db, NoosphereService svc, DirectTunnel tunnel) =>
         {
             var soul = await db.Souls.FirstOrDefaultAsync(s => s.Name != "")
                        ?? await db.Souls.FirstOrDefaultAsync();
@@ -115,6 +115,11 @@ public static class DbAdminEndpoints
             await WipeNoosphereTablesAsync(db);
             svc.ClearAllCaches();
             await db.Database.ExecuteSqlRawAsync("DELETE FROM Souls;");
+
+            // Drop the live tunnel immediately — otherwise it stays connected under the wiped identity
+            // until the process restarts, and a subsequent /soul/join is never picked up.
+            tunnel.RequestReconnect();
+
             BridgeLogger.Log("WARN", "Soul identity wiped. Re-open bridge to create a new soul.");
             return Results.Ok(new { ok = true });
         });

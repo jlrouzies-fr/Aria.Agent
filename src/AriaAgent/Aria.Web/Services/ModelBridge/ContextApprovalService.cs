@@ -324,8 +324,12 @@ public sealed class ContextApprovalService(
     /// soul-wide). Read-only status endpoint — never prompts.</summary>
     private async Task<bool> HasLiveGrantAsync(string userId, string? sessionId)
     {
+        // Same node the ceremony runs on (pinned approval node, else default): the grant provably lives
+        // where it was signed. Asking the default node instead means a freshly-joined device (it becomes
+        // the default, being the most recent connection) answers "no grant" for a live seal and the
+        // human gets re-prompted.
         var path = "/context/status" + (string.IsNullOrEmpty(sessionId) ? "" : $"?session={Uri.EscapeDataString(sessionId)}");
-        var resp = await registry.SendLocalRestAsync(userId, "GET", path);
+        var resp = await registry.SendLocalRestAsync(userId, "GET", path, nodeId: registry.ResolveApprovalNode(userId));
         if (resp is not { StatusCode: 200, Body: { } body }) return false;
         try
         {

@@ -7,12 +7,14 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <AssemblyName>aria-bridge</AssemblyName>
         <RootNamespace>Aria.Bridge</RootNamespace>
-        <Version>1.25.4-beta</Version>
+        <Version>1.25.8-beta</Version>
         <AssemblyVersion>1.24.1.0</AssemblyVersion>
         <FileVersion>1.24.1.0</FileVersion>
         <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
         <PublishSingleFile>true</PublishSingleFile>
         <SelfContained>true</SelfContained>
+        <!-- Win32 icon resource: shows in Explorer/taskbar and is what WindowsTrayIcon extracts. -->
+        <ApplicationIcon>aria-bridge.ico</ApplicationIcon>
     </PropertyGroup>
 
     <ItemGroup>

@@ -198,19 +198,34 @@ public partial class NavMenu
     }
 
     // ── Devices panel actions ──────────────────────────────────────────────────
+
+    // Just-approved device (nodeId + label): drives the "detection can take a few minutes" notice
+    // so the wait after APPROVE doesn't read as a failure. Cleared once the node connects.
+    internal string? _justApprovedNodeId;
+    internal string? _justApprovedLabel;
+
     internal async Task LoadNodesAsync()
     {
         if (SessionState.CurrentUser is not { } u) return;
         _nodes   = await NodeService.GetNodesAsync(u.Id);
         _pending = NodeService.GetPending(u.Id).ToList();
+        if (_justApprovedNodeId != null && _nodes.Any(n => n.NodeId == _justApprovedNodeId && n.Online))
+            _justApprovedNodeId = _justApprovedLabel = null;   // it's online — notice served its purpose
         await InvokeAsync(StateHasChanged);
     }
+
+    /// <summary>Drives the amber pulsing dot on the "// DEVICES" nav item — true while a device is
+    /// awaiting pairing approval. Read live from the enrollment service so it works even when the
+    /// devices panel has never been opened (the whole point: the user must NOTICE the request).</summary>
+    internal bool HasPendingDevices =>
+        SessionState.CurrentUser is { } u && PendingEnrollments.List(u.Id).Count > 0;
 
     // Live refresh when a device registers itself for pairing (or one is approved/expires).
     internal void OnPendingEnrollmentsChanged(string userId)
     {
-        if (SessionState.CurrentUser?.Id != userId || _activePanel != "devices") return;
-        _ = LoadNodesAsync();
+        if (SessionState.CurrentUser?.Id != userId) return;
+        if (_activePanel == "devices") { _ = LoadNodesAsync(); return; }
+        _ = InvokeAsync(StateHasChanged);   // panel closed — still update the nav pending dot
     }
 
     internal async Task ApproveDeviceAsync(string nodeId)
@@ -224,7 +239,13 @@ public partial class NavMenu
         StateHasChanged();
         var (ok, error, _) = await NodeService.ApprovePendingAsync(u.Id, nodeId, digits);
         _nodeBusy = false;
-        if (ok) { _pendingCodes.Remove(nodeId); await LoadNodesAsync(); }
+        if (ok)
+        {
+            _justApprovedNodeId = nodeId;
+            _justApprovedLabel  = _pending.FirstOrDefault(p => p.NodeId == nodeId)?.Label;
+            _pendingCodes.Remove(nodeId);
+            await LoadNodesAsync();
+        }
         else    { _nodeError = error ?? "Approval failed"; StateHasChanged(); }
     }
 

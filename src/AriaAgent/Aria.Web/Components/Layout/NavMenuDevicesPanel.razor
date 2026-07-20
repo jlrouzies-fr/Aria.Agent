@@ -39,6 +39,18 @@
         </div>
     }
     
+    @* ── Just-approved device: reconnection takes a while, don't let it look broken ── *@
+    @if (Menu._justApprovedNodeId != null)
+    {
+        <div class="device-approved-note">
+            <span class="dan-close" title="Dismiss"
+                  @onclick="() => { Menu._justApprovedNodeId = null; Menu._justApprovedLabel = null; }">✕</span>
+            ✓ Device @(string.IsNullOrWhiteSpace(Menu._justApprovedLabel) ? "" : $"\"{Menu._justApprovedLabel}\" ")approved.
+            It can take <strong>up to 5 minutes</strong> for it to reconnect and be detected by all
+            nodes — leave it running, no further action is needed. It will appear online above.
+        </div>
+    }
+
     @* ── Pending devices awaiting pairing approval ─────────────── *@
     @if (Menu._pending.Count > 0)
     {
