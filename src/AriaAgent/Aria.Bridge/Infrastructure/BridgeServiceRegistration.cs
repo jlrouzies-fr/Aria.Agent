@@ -16,9 +16,14 @@ public static class BridgeServiceRegistration
 {
     public static WebApplicationBuilder AddBridgeServices(this WebApplicationBuilder builder)
     {
-        // Loopback-only — not exposed to the network. Use localhost so OAuth redirect URI
+        // Loopback-only by default — not exposed to the network. Use localhost so OAuth redirect URI
         // validation matches the hostname users register in their app credentials.
-        builder.WebHost.UseUrls("http://localhost:5741");
+        // In container/headless deployments set ASPNETCORE_URLS (e.g. http://+:5741) to accept
+        // external traffic; direct builds keep the loopback default.
+        if (Environment.GetEnvironmentVariable("ASPNETCORE_URLS") is null)
+        {
+            builder.WebHost.UseUrls("http://localhost:5741");
+        }
 
         // CORS must be open: the WASM bridge calls this from the browser (origin = Aria.Web host).
         builder.Services.AddCors(opts => opts.AddDefaultPolicy(p =>

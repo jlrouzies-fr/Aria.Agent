@@ -71,6 +71,31 @@ Remove-Item -Recurse -Force $InstallDir
 
 > **Note:** the uninstaller removes the bridge binary and its working directory, which includes your local SQLite database (soul, sessions, history). Back it up first if you want to keep it.
 
+## Docker image
+
+A pre-built image is published to GitHub Container Registry:
+
+```bash
+docker run -d --name aria-bridge \
+  -p 5741:5741 \
+  -v aria-bridge-data:/home/app/.config/aria-bridge \
+  ghcr.io/jlrouzies-fr/aria.agent/aria-bridge:latest
+```
+
+The image:
+- Exposes port `5741`.
+- Stores the SQLite vault in `/home/app/.config/aria-bridge` — mount a volume there to keep your soul, keys, and history across container restarts.
+- Is available for `linux/amd64` and `linux/arm64`.
+- Is published manually via `.github/workflows/docker-bridge.yml`. The default run pushes `:latest`; enter a version (e.g. `1.25.8-beta`) to also tag that version and update `:latest`.
+
+To pull a specific version:
+
+```bash
+docker pull ghcr.io/jlrouzies-fr/aria.agent/aria-bridge:1.25.8-beta
+```
+
+The direct build (`dotnet run --project Aria.Bridge`) and the single-file executables continue to bind to `localhost:5741` by default; only the Docker image binds broadly so that the host port mapping works.
+
 ## Manual build
 
 If you prefer to build from source:
@@ -90,6 +115,8 @@ Pushing a tag matching `bridge-v*` triggers `.github/workflows/release-bridge.ym
 2. Builds self-contained single-file executables for `win-x64`, `linux-x64`, `osx-x64`, and `osx-arm64`.
 3. Creates a GitHub Release and uploads the platform zip files plus `install.sh`, `install.ps1`, `uninstall.sh`, and `uninstall.ps1`.
 4. Updates the public install gist so the one-liner commands always point to the latest scripts.
+
+The Docker image is published separately and manually via `.github/workflows/docker-bridge.yml`.
 
 To cut a release, bump `<Version>` in `src/AriaAgent/Aria.Bridge/Aria.Bridge.csproj` and push the matching tag:
 
