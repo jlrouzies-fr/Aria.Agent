@@ -37,8 +37,8 @@
                             <div class="bgm-step-wide">
                                 <div class="bgm-step-title">Install the bridge</div>
                                 <div class="bgm-step-desc">
-                                    Run the one-liner for your platform. It downloads the latest release,
-                                    installs to a local directory, and adds <code>aria-bridge</code> to your PATH.
+                                    Run the one-liner for your platform, or choose <strong>Docker</strong> to run the
+                                    bridge in a container. Either way, your soul data stays on your machine.
                                 </div>
 
                                 <div class="bgm-install-tabs">
@@ -187,7 +187,7 @@
     [Inject] private NavigationManager      Navigation { get; set; } = null!;
 
     private enum BridgeState { Probing, NeverRegistered, Offline, Update }
-    private enum InstallPlatform { Windows, Mac, Linux }
+    private enum InstallPlatform { Windows, Mac, Linux, Docker }
 
     // Triggered by BridgeVersionIndicator when the user clicks the update-available badge.
     public static event Action<string, string>? UpdateRequested;
@@ -229,6 +229,7 @@
         [InstallPlatform.Windows] = ("Windows", "irm https://raw.githubusercontent.com/jlrouzies-fr/Aria.Agent/main/scripts/install.ps1 | iex"),
         [InstallPlatform.Mac]     = ("macOS",   "curl -fsSL https://raw.githubusercontent.com/jlrouzies-fr/Aria.Agent/main/scripts/install.sh | bash"),
         [InstallPlatform.Linux]   = ("Linux",   "curl -fsSL https://raw.githubusercontent.com/jlrouzies-fr/Aria.Agent/main/scripts/install.sh | bash"),
+        [InstallPlatform.Docker]  = ("Docker",  "docker run -d --name aria-bridge -p 5741:5741 -v aria-bridge-data:/home/app/.config/aria-bridge ghcr.io/jlrouzies-fr/aria.agent/aria-bridge:latest"),
     };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
