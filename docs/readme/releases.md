@@ -73,20 +73,49 @@ Remove-Item -Recurse -Force $InstallDir
 
 ## Docker image
 
-A pre-built image is published to GitHub Container Registry:
+> **⚠️ Docker is a convenience option, not the intended experience.** The bridge is designed to run directly on your machine so (if configured) it can access your files, shell, and OS-specific key storage. Running inside a Linux container limits or might breaks several of those features.
+
+A pre-built image is published to GitHub Container Registry. Mount the same folder that the direct install uses so your vault, soul, and history persist:
+
+### macOS
 
 ```bash
 docker run -d --name aria-bridge \
   -p 5741:5741 \
-  -v aria-bridge-data:/home/app/.config/aria-bridge \
+  -v "~/Library/Application Support/aria-bridge:/home/app/.config/aria-bridge" \
+  ghcr.io/jlrouzies-fr/aria.agent/aria-bridge:latest
+```
+
+### Linux
+
+```bash
+docker run -d --name aria-bridge \
+  -p 5741:5741 \
+  -v ~/.config/aria-bridge:/home/app/.config/aria-bridge \
+  ghcr.io/jlrouzies-fr/aria.agent/aria-bridge:latest
+```
+
+### Windows (PowerShell)
+
+```powershell
+docker run -d --name aria-bridge `
+  -p 5741:5741 `
+  -v "C:\Users\$env:username\AppData\Roaming\aria-bridge:/home/app/.config/aria-bridge" `
   ghcr.io/jlrouzies-fr/aria.agent/aria-bridge:latest
 ```
 
 The image:
 - Exposes port `5741`.
-- Stores the SQLite vault in `/home/app/.config/aria-bridge` — mount a volume there to keep your soul, keys, and history across container restarts.
+- Stores the SQLite vault in `/home/app/.config/aria-bridge`.
 - Is available for `linux/amd64` and `linux/arm64`.
 - Is published manually via `.github/workflows/docker-bridge.yml`. The default run pushes `:latest`; enter a version (e.g. `1.25.8-beta`) to also tag that version and update `:latest`.
+
+### Limitations
+
+- **Always Linux inside the container.** **Docker** runs the bridge as a Linux process regardless of your host OS. Terminal commands, file tools, and Agent Projects are only accessible if you manually bind-mount the relevant host folders.
+- **Purely Windows-dependent projects will not work.** For example, projects targeting .NET Framework or relying on Windows-only tooling cannot run in the Linux ecosystem inside the container.
+- **OS-specific vault encryption differs.** The Windows build encrypts sensitive values with Windows DPAPI; the Linux container uses a file-based key. This means a vault created by the Windows direct install cannot be read inside the Docker container, and vice versa. Use one or the other for a given soul.
+- **Recommended:** use the direct install (`install.sh` / `install.ps1`) for full integration. Use Docker only when a headless, isolated bridge is acceptable.
 
 To pull a specific version:
 

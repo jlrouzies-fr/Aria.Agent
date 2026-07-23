@@ -83,6 +83,14 @@ public sealed class Harness : IHarness
         if (!string.IsNullOrWhiteSpace(options.ChatCapabilitiesText))
             tools.Add(ChatCapabilitiesTools.Create(options.ChatCapabilitiesText));
 
+        // Sub-agent delegation — always-on when the host wires a session-bound spawner. Headless
+        // child runs never get one, so a spawned agent cannot itself spawn (one level only).
+        if (options.SubAgentSpawner != null)
+        {
+            tools.Add(SpawnAgentTools.CreateSpawnTool(options.SubAgentSpawner));
+            tools.Add(SpawnAgentTools.CreateResultTool(options.SubAgentSpawner));
+        }
+
         foreach (var tool in options.EnabledTools)
         {
             var cfg = tool.Config;

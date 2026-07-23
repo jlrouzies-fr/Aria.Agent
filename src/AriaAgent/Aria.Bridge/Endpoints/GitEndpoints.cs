@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Aria.Bridge.Data;
+using Aria.Bridge.Infrastructure;
 using Aria.Bridge.Services.Logging;
 
 namespace Aria.Bridge.Endpoints;
@@ -16,20 +17,21 @@ namespace Aria.Bridge.Endpoints;
 /// </summary>
 public static class GitEndpoints
 {
-    private const int MaxOutputChars = 200_000;
+    internal const int MaxOutputChars = 200_000;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public static void MapGitEndpoints(this WebApplication app)
     {
         // POST /project-git/run — run one of a fixed set of git commands under Root.
-        app.MapPost("/project-git/run", async (ProjectGitRunRequest req, BridgeDbContext db) =>
+        app.MapPost("/project-git/run", async (ProjectGitRunRequest req, BridgeDbContext db, HttpRequest http) =>
         {
             if (string.IsNullOrWhiteSpace(req.Root))
                 return Results.BadRequest("root required");
 
             // Node-authoritative scope: the node's declared Allowed Paths bound every git operation;
             // the server-supplied AllowedPaths may only narrow them (empty node paths = block all).
-            var policy = await NodeTerminalPolicy.ResolveAsync(db, req.AllowedPaths);
+            // The tunnel's session stamp selects any node-signed session path grants (Wave 5).
+            var policy = await NodeTerminalPolicy.ResolveAsync(db, req.AllowedPaths, http.Headers[DirectTunnel.SessionHeaderName]);
 
             var root = Path.GetFullPath(req.Root);
             try { policy.EnforcePath(root); }
@@ -271,7 +273,8 @@ public static class GitEndpoints
         return result;
     }
 
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitAsync(string root, IEnumerable<string> args)
+    // Shared with the agent-facing git_* builtin tools (BuiltinTools.Git.cs).
+    internal static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitAsync(string root, IEnumerable<string> args)
     {
         using var proc = new Process();
         proc.StartInfo = new ProcessStartInfo

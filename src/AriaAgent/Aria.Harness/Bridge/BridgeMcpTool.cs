@@ -65,6 +65,7 @@ public sealed class BridgeMcpTool : AIFunction
             toolName      = _name,
             toolArguments = toolArgs,
             serverName    = _server.Name,
+            sessionId     = _context.SessionId,
             policy        = _server.AllowedPaths?.Length > 0 || _server.BlockedCommands?.Length > 0
                 ? new { allowedPaths = _server.AllowedPaths ?? [], blockedCommands = _server.BlockedCommands ?? [] }
                 : (object?)null,

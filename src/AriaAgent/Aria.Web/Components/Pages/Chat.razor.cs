@@ -3,6 +3,7 @@ using Aria.Shared;
 using Aria.Web.Data;
 using Aria.Web.Services.Chat;
 using Aria.Web.Services;
+using Aria.Web.Services.Tool;
 using Microsoft.Agents.AI;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
@@ -18,6 +19,7 @@ public partial class Chat : ICogitationStreamSink
     [Inject] private UserSessionState          SessionState         { get; set; } = null!;
     [Inject] private CogitationService         CogitationService    { get; set; } = null!;
     [Inject] private SubAgentService           SubAgentService      { get; set; } = null!;
+    [Inject] private SubAgentSpawnService      SpawnService         { get; set; } = null!;
     [Inject] private IJSRuntime                JS                   { get; set; } = null!;
     [Inject] private ModelBridgeRegistry       BridgeRegistry       { get; set; } = null!;
     [Inject] private CircuitAuthService        CircuitAuth          { get; set; } = null!;
@@ -34,6 +36,7 @@ public partial class Chat : ICogitationStreamSink
     [Inject] private CogitationFolderService    FolderService        { get; set; } = null!;
     [Inject] private TerminalClient             TerminalClient       { get; set; } = null!;
     [Inject] private TerminalPtyService         TerminalPtyService   { get; set; } = null!;
+    [Inject] private UserToolService             ToolService          { get; set; } = null!;
 
     [Parameter] public int? CogitationId { get; set; }
 

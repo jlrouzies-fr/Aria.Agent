@@ -22,9 +22,11 @@ public class SubAgentService(IDbContextFactory<AppDbContext> dbFactory, BridgeSy
     /// <summary>
     /// DB-based equivalent of UserSessionState.GetEnabledToolsForSubAgent.
     /// Joins SubAgentToolStates (enabled filter) with UserToolConfigs (credentials),
-    /// injects _userId, and excludes bridge-only tools.
+    /// injects _userId, and excludes bridge-only tools unless the run was explicitly
+    /// authorised for project tools (<paramref name="allowBridgeTools"/>).
     /// </summary>
-    public async Task<List<ActiveToolConfig>> GetEnabledToolConfigsAsync(int subAgentId, string userId)
+    public async Task<List<ActiveToolConfig>> GetEnabledToolConfigsAsync(
+        int subAgentId, string userId, bool allowBridgeTools = false)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
 
@@ -43,7 +45,7 @@ public class SubAgentService(IDbContextFactory<AppDbContext> dbFactory, BridgeSy
         var result = new List<ActiveToolConfig>();
         foreach (var toolId in enabledToolIds)
         {
-            if (AgentBackgroundExecutor.NoBridgeTools.Contains(toolId))
+            if (!allowBridgeTools && AgentBackgroundExecutor.NoBridgeTools.Contains(toolId))
                 continue;
 
             var cfg = new Dictionary<string, string>();
@@ -59,6 +61,19 @@ public class SubAgentService(IDbContextFactory<AppDbContext> dbFactory, BridgeSy
             result.Add(new ActiveToolConfig(toolId, cfg));
         }
         return result;
+    }
+
+    /// <summary>Resolves a user's sub-agent by persona name — matches the generated name or the
+    /// nickname (what the user actually calls it), case-insensitively. Null when no persona matches.</summary>
+    public async Task<SubAgent?> FindByNameAsync(string userId, string name)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var agents = await db.SubAgents
+            .Where(a => a.UserId == userId)
+            .ToListAsync();
+        return agents.FirstOrDefault(a =>
+            string.Equals(a.GeneratedName, name, StringComparison.OrdinalIgnoreCase) ||
+            (a.Nickname != null && string.Equals(a.Nickname, name, StringComparison.OrdinalIgnoreCase)));
     }
 
     public async Task<List<SubAgent>> GetForUserAsync(string userId)

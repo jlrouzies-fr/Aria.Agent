@@ -26,4 +26,6 @@ public sealed record CogitationRunRequest(
     AutoMemoryMode         AutoMemoryMode,
     int                    AutoMemoryInterval,
     string?                SessionId = null,
-    bool                   IsContextRetry = false);
+    bool                   IsContextRetry = false,
+    int?                   BudgetToolCalls = null,
+    int?                   BudgetFileReads = null);

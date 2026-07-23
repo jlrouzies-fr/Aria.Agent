@@ -34,6 +34,13 @@ public class AgentCollective
     public string?          SynapseMemory      { get; set; }  // Overmind broadcast injected into all drone sessions
     public bool             RequiresHumanApproval { get; set; } = false; // Pause after drone phase for soul review
 
+    /// <summary>
+    /// Explicit opt-in: Overmind and drone headless runs keep bridge/terminal project tools instead of
+    /// having them stripped. The launch-time <c>hive:{id}</c> grant already covers the sensitive-op
+    /// window; the bridge's own gates (ProjectsEnabled, SecurityPolicy paths) still apply.
+    /// </summary>
+    public bool             AllowProjectTools { get; set; } = false;
+
     // Canvas state
     public double           CanvasZoom         { get; set; } = 1;
     public double           CanvasPanX         { get; set; } = 0;

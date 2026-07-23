@@ -346,6 +346,8 @@ public partial class Chat
             case "/devices": SessionState.RequestOpenPanel("devices"); break;
 
             case "/vigil":   SessionState.OpenVigilModal();           break;
+            case "/governance": await HandleGovernanceCommandAsync(""); break;
+            case "/scope":      await HandleScopeCommandAsync("");      break;
             case "/vox":     await ToggleVoxAsync();                  break;
             case "/wargame": Nav.NavigateTo("/wargame");             break;
         }

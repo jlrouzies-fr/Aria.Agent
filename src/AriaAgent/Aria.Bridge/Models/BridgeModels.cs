@@ -12,6 +12,8 @@ public record ToolsListRequest(
 
 // Sent by Aria.Web → POST /tools/call to invoke a specific tool on a local stdio MCP server.
 // ToolArguments values are pre-serialised JsonElements so the bridge can forward them as-is.
+// SessionId is the caller's session stamp: it only SELECTS which node-signed session path grants
+// (Wave 5) union into the enforced policy — it can never widen scope on its own.
 public record ToolsCallRequest(
     string Command,
     string[] Arguments,
@@ -19,7 +21,8 @@ public record ToolsCallRequest(
     string ToolName,
     Dictionary<string, JsonElement>? ToolArguments,
     string? ServerName = null,
-    SecurityPolicy? Policy = null);
+    SecurityPolicy? Policy = null,
+    string? SessionId = null);
 
 // Returned by /tools/list — mirrors the SDK's McpClientTool fields needed by Aria.Web.
 public record BridgeToolInfo(

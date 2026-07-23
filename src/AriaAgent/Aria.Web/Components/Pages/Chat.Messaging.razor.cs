@@ -1,5 +1,6 @@
 using Aria.Web.Services.Chat;
 using Aria.Web.Services;
+using Aria.Harness.Context;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Components.Web;
@@ -190,6 +191,42 @@ public partial class Chat
         var fileContent  = _attachedFileContent;
         var fileName     = _attachedFileName;
 
+        // "/governance …" (with arguments) runs locally — it configures the session, so it must
+        // never reach the agent as a chat message. The palette path handles the bare command.
+        if (userText.Equals("/governance", StringComparison.OrdinalIgnoreCase) ||
+            userText.StartsWith("/governance ", StringComparison.OrdinalIgnoreCase))
+        {
+            _input = "";
+            await ClosePickersAsync();
+            await HandleGovernanceCommandAsync(userText["/governance".Length..]);
+            await FocusInputAsync();
+            return;
+        }
+
+        // "/compact …" also runs locally: bare opens the manual-compact confirmation; "auto …"
+        // configures auto-compaction. Neither may reach the agent as a chat message.
+        if (userText.Equals("/compact", StringComparison.OrdinalIgnoreCase) ||
+            userText.StartsWith("/compact ", StringComparison.OrdinalIgnoreCase))
+        {
+            _input = "";
+            await ClosePickersAsync();
+            await HandleCompactCommandAsync(userText["/compact".Length..]);
+            await FocusInputAsync();
+            return;
+        }
+
+        // "/scope …" (Wave 5) also runs locally: it lists the effective scope, asks the node for a
+        // session path expansion, or revokes one — it must never reach the agent as a chat message.
+        if (userText.Equals("/scope", StringComparison.OrdinalIgnoreCase) ||
+            userText.StartsWith("/scope ", StringComparison.OrdinalIgnoreCase))
+        {
+            _input = "";
+            await ClosePickersAsync();
+            await HandleScopeCommandAsync(userText["/scope".Length..]);
+            await FocusInputAsync();
+            return;
+        }
+
         // Snapshot "#"-picked files (reliable abs paths) before clearing; resolved to content below.
         var pickedRefs = _referencedFiles.ToList();
         _referencedFiles.Clear();
@@ -362,11 +399,13 @@ public partial class Chat
 
         // This turn's allowed scope for the governance scope-lock: just the selected project when one
         // is active (matching how the Terminal tools are scoped in HarnessOptions.ActiveProjectPath),
-        // else every declared project. Plus any "#"-referenced files the user explicitly attached.
+        // else every declared project. Plus any "#"-referenced files the user explicitly attached, and
+        // any node-approved session path expansions (Wave 5 — the soft copy; the bridge still enforces).
         var turnScope = SessionState.ActiveProject != null
             ? new List<string> { SessionState.ActiveProject.Path }
             : new List<string>(SessionState.AllowedProjectPaths);
         turnScope.AddRange(pickedRefs.Select(r => r.AbsPath));
+        turnScope.AddRange(SessionState.SessionScopeExpansions);
 
         var run = Registry.StartRun(new CogitationRunRequest(
             CogitationId:       cogIdNow,
@@ -386,7 +425,9 @@ public partial class Chat
             MemoryToolEnabled:  SessionState.IsToolEnabled("memory"),
             AutoMemoryMode:     SessionState.AutoMemory,
             AutoMemoryInterval: SessionState.AutoMemoryInterval,
-            SessionId:          SessionState.SessionToken));
+            SessionId:          SessionState.SessionToken,
+            BudgetToolCalls:    SessionState.GovernanceBudgetToolCalls,
+            BudgetFileReads:    SessionState.GovernanceBudgetFileReads));
 
         if (run == null)
         {
@@ -522,6 +563,15 @@ public partial class Chat
         StateHasChanged();
         await ScrollToBottomAsync();
         await CheckSuggestedFilingAsync();
+
+        // Auto-compaction: the turn has fully finished (never mid-tool-loop), so if the context
+        // crossed the session threshold, summarise now and continue on the fresh session. Uses the
+        // reported prompt-token count when the source returned usage, else a char-based estimate.
+        if (!run.WasInterrupted &&
+            AutoCompaction.ShouldCompact(run.Reply.InputTokens, TranscriptChars(), SessionState.AutoCompactThreshold))
+        {
+            await AutoCompactAsync();
+        }
 
         // Only auto-send if the user explicitly queued via Enter — never from _input
         // to avoid the oninput race condition causing spurious re-sends.

@@ -20,6 +20,8 @@ public static partial class BuiltinTools
     [
         .. ShellToolInfos(),
         .. FileToolInfos(),
+        .. GrepToolInfos(),
+        .. GitToolInfos(),
         .. CommandsIndexToolInfos(),
         .. WebToolInfos(),
         .. ScreenshotToolInfos()
@@ -49,6 +51,13 @@ public static partial class BuiltinTools
                 "edit_file"      => EditFile(args, policy, db),
                 "list_dir"       => ListDir(args, policy),
                 "glob"           => GlobFiles(args, policy),
+                "grep"           => GrepSearch(args, policy),
+                "git_status"     => await GitStatusAsync(args, policy),
+                "git_diff"       => await GitDiffAsync(args, policy),
+                "git_log"        => await GitLogAsync(args, policy),
+                "git_stage"      => await GitStageAsync(args, policy),
+                "git_commit"     => await GitCommitAsync(args, policy),
+                "git_discard"    => await GitDiscardAsync(args, policy),
                 "create_dir"     => CreateDir(args, policy),
                 "delete_file"    => DeleteFile(args, policy, db),
                 "delete_dir"     => DeleteDir(args, policy),
@@ -121,4 +130,12 @@ internal static class ArgExt
 
     public static bool? Bool(this Dictionary<string, JsonElement> a, string key)
         => a.TryGetValue(key, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False ? v.GetBoolean() : null;
+
+    public static string[]? StrArray(this Dictionary<string, JsonElement> a, string key)
+        => a.TryGetValue(key, out var v) && v.ValueKind == JsonValueKind.Array
+            ? v.EnumerateArray()
+                .Where(e => e.ValueKind == JsonValueKind.String)
+                .Select(e => e.GetString()!)
+                .ToArray()
+            : null;
 }

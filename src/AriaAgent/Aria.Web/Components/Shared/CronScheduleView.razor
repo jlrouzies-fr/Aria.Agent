@@ -239,6 +239,16 @@
                 }
             </div>
 
+            <div class="vc-book-field">
+                <label class="vc-book-lbl" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                    <input type="checkbox" @bind="Parent._allowProjectTools" />
+                    // ALLOW PROJECT TOOLS
+                </label>
+                <div style="font-size:0.72rem;opacity:0.7;margin-top:2px">
+                    Terminal, project files &amp; git — the run acts under this vigil's pre-authorised seal. Off = chat, web &amp; MCP only.
+                </div>
+            </div>
+
             <div class="vc-book-actions">
                 <button class="vc-btn-cancel" @onclick="Parent.ClearSelection">ABANDON</button>
                 <button class="vc-btn-confirm"
@@ -445,7 +455,8 @@
             sourceName:          SessionState.SelectedModelSource,
             modelId:             SessionState.SelectedModel,
             targetCogitationId:  Parent._lockedCogitation?.Id,
-            bridgeNodeId:        preferredNode);
+            bridgeNodeId:        preferredNode,
+            allowProjectTools:   Parent._allowProjectTools);
 
         if (!ok || job == null) { Parent._bookError = error ?? "Booking failed."; Parent._booking = false; Parent.Refresh(); return; }
 

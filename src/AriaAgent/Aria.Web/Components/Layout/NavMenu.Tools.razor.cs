@@ -17,12 +17,15 @@ public partial class NavMenu
 
     // ── Agent governance ──────────────────────────────────────────────────────
     internal static readonly GovernanceMode[] GovernanceModes =
-        [GovernanceMode.Off, GovernanceMode.Balanced, GovernanceMode.Strict, GovernanceMode.Paranoid];
+        [GovernanceMode.Off, GovernanceMode.Balanced, GovernanceMode.Coding, GovernanceMode.Plan,
+         GovernanceMode.Strict, GovernanceMode.Paranoid];
 
     internal static string GovernanceBlurb(GovernanceMode m) => m switch
     {
         GovernanceMode.Off      => "No restraint — every tool call runs unchecked.",
         GovernanceMode.Balanced => "Budgets + loop guard; out-of-scope asks first.",
+        GovernanceMode.Coding   => "Roomy budgets for real refactors; out-of-scope asks first.",
+        GovernanceMode.Plan     => "Read-only exploration — mutations blocked; present the plan.",
         GovernanceMode.Strict   => "Tight budgets, scope lock, mutations need approval.",
         GovernanceMode.Paranoid => "Strict + high-stakes acts need a node Seal.",
         _                       => ""
@@ -131,7 +134,7 @@ public partial class NavMenu
             $"{p.MaxToolCallsPerTurn} / turn",
             $"{p.MaxFileReadsPerTurn} / turn",
             scope,
-            p.ApproveMutations ? "ask first" : "run freely",
+            p.BlockMutations ? "blocked" : p.ApproveMutations ? "ask first" : "run freely",
             p.SealHighStakes ? "node Seal" : "—");
     }
 

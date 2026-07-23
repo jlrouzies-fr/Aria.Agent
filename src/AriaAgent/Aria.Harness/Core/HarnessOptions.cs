@@ -86,6 +86,14 @@ public sealed class HarnessOptions
     public string? ChatCapabilitiesText { get; set; }
 
     /// <summary>
+    /// When set, the always-on <c>spawn_agent</c>/<c>agent_result</c> tools are registered so the
+    /// agent can delegate self-contained subtasks to sub-agent personas running headlessly.
+    /// Web wires this (session-bound) for interactive chat sessions only — headless runs leave it
+    /// null, so a spawned child can never itself fan out (delegation depth is one level).
+    /// </summary>
+    public ISubAgentSpawner? SubAgentSpawner { get; set; }
+
+    /// <summary>
     /// Governance policy applied to every tool call. Null or <see cref="GovernanceMode.Off"/>
     /// leaves tools ungoverned (legacy behaviour).
     /// </summary>

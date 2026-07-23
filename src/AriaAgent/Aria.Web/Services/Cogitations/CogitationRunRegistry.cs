@@ -167,7 +167,8 @@ public sealed class CogitationRunRegistry(
             await foreach (var token in agentService.StreamAsync(
                 req.IsContextRetry ? ContextRetryNudge : req.AiMessage, run.Agent, run.Session, linked.Token,
                 onUsage: run.SetUsage,
-                turnScopePaths: req.TurnScopePaths, governanceMode: req.GovernanceMode))
+                turnScopePaths: req.TurnScopePaths, governanceMode: req.GovernanceMode,
+                budgetToolCalls: req.BudgetToolCalls, budgetFileReads: req.BudgetFileReads))
             {
                 run.AppendContent(token);
             }

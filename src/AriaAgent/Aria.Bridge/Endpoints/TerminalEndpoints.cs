@@ -468,8 +468,9 @@ public static class TerminalEndpoints
     /// Returns the directory argument if <paramref name="command"/> is a bare "cd &lt;dir&gt;" (no
     /// chaining operators), otherwise null. Intentionally simple — compound commands like
     /// "cd foo && bar" run in a subshell and don't persist cwd, which matches Phase 1 semantics.
+    /// Shared with the agent bash_exec tool (BuiltinTools.Shell.cs).
     /// </summary>
-    private static string? TryParseCd(string command)
+    internal static string? TryParseCd(string command)
     {
         var trimmed = command.TrimStart();
         if (!trimmed.StartsWith("cd ", StringComparison.OrdinalIgnoreCase)) return null;
@@ -481,7 +482,7 @@ public static class TerminalEndpoints
         return arg;
     }
 
-    private static string ResolveCdTarget(string currentDir, string target)
+    internal static string ResolveCdTarget(string currentDir, string target)
     {
         if (target == "~")
             return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);

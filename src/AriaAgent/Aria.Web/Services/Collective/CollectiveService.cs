@@ -95,7 +95,8 @@ public class CollectiveService(
         int id, string name, string objective,
         int? overmindSubAgentId, string? overmindSource, string? overmindModel,
         int maxRounds, bool requiresHumanApproval = false,
-        CollectiveBehavior behavior = CollectiveBehavior.HiveMind)
+        CollectiveBehavior behavior = CollectiveBehavior.HiveMind,
+        bool allowProjectTools = false)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var c = await db.AgentCollectives.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
@@ -115,6 +116,7 @@ public class CollectiveService(
                     .SetProperty(x => x.MaxRounds,            maxRounds)
                     .SetProperty(x => x.RequiresHumanApproval, requiresHumanApproval)
                     .SetProperty(x => x.Behavior,             behavior)
+                    .SetProperty(x => x.AllowProjectTools,    allowProjectTools)
                     .SetProperty(x => x.UpdatedAt,            DateTime.UtcNow));
         }
         else
@@ -131,6 +133,7 @@ public class CollectiveService(
                     .SetProperty(x => x.MaxRounds,            maxRounds)
                     .SetProperty(x => x.RequiresHumanApproval, requiresHumanApproval)
                     .SetProperty(x => x.Behavior,             behavior)
+                    .SetProperty(x => x.AllowProjectTools,    allowProjectTools)
                     .SetProperty(x => x.UpdatedAt,            DateTime.UtcNow));
         }
     }

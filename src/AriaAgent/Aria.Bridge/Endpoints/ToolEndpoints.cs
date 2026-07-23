@@ -64,7 +64,10 @@ public static class ToolEndpoints
             if (req.Command == "__aria_builtin__")
             {
                 BridgeLogger.Log("INFO", $"Calling built-in tool '{req.ToolName}'");
-                var result = await BuiltinTools.InvokeAsync(req.ToolName, req.ToolArguments, req.Policy, db);
+                // Wave 5: union this session's node-signed path grants into the enforced policy.
+                // Node-side and additive only — the server's own policy paths pass through untouched.
+                var policy = await NodeTerminalPolicy.ApplySessionPathGrantsAsync(req.Policy, req.SessionId, db);
+                var result = await BuiltinTools.InvokeAsync(req.ToolName, req.ToolArguments, policy, db);
                 BridgeLogger.Log(result.IsError ? "WARN" : "INFO",
                     $"Built-in '{req.ToolName}' returned {result.Text.Length} chars{(result.IsError ? " (isError=True)" : "")}");
                 return Results.Ok(result);

@@ -54,7 +54,11 @@ public class RequestClassifierTests
     [InlineData("read_file")]
     [InlineData("list_dir")]
     [InlineData("glob")]
+    [InlineData("grep")]
     [InlineData("commands_index")]
+    [InlineData("git_status")]
+    [InlineData("git_diff")]
+    [InlineData("git_log")]
     public void ToolsCall_ReadOnlyBuiltin_IsBenign(string tool)
     {
         var body = $$"""{"toolName":"{{tool}}"}""";
@@ -67,6 +71,9 @@ public class RequestClassifierTests
     [InlineData("edit_file")]
     [InlineData("delete_file")]
     [InlineData("move_path")]
+    [InlineData("git_stage")]
+    [InlineData("git_commit")]
+    [InlineData("git_discard")]
     public void ToolsCall_WriteOrExecBuiltin_IsSensitive(string tool)
     {
         var body = $$"""{"toolName":"{{tool}}"}""";

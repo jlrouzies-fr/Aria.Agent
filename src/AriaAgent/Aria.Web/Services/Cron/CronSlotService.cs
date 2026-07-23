@@ -70,7 +70,8 @@ public class CronSlotService(
         string taskPrompt, int? subAgentId,
         string? sourceName, string? modelId,
         int? targetCogitationId = null,
-        string? bridgeNodeId = null)
+        string? bridgeNodeId = null,
+        bool allowProjectTools = false)
     {
         // A named node must be connected at booking time.
         if (!string.IsNullOrEmpty(bridgeNodeId) && !registry.GetNodes(userId).Any(n => n.NodeId == bridgeNodeId))
@@ -113,6 +114,7 @@ public class CronSlotService(
             ModelId              = modelId,
             TargetCogitationId   = targetCogitationId,
             BridgeNodeId         = bridgeNodeId,
+            AllowProjectTools    = allowProjectTools,
             Status               = CronJobStatus.Pending,
             CreatedAt            = DateTime.UtcNow,
         };

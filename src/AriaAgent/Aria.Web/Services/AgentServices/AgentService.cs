@@ -124,7 +124,8 @@ public sealed class AgentService
         string? activeProjectPath = null,
         IReadOnlyList<TerminalProject>? terminalProjects = null,
         string? sessionId = null,
-        RecallScope recallScope = RecallScope.AllNodes)
+        RecallScope recallScope = RecallScope.AllNodes,
+        ISubAgentSpawner? subAgentSpawner = null)
     {
         var context = new HarnessContext { UserId = userId, BridgeUserId = bridgeUserId ?? userId, SessionId = sessionId };
         var options = new HarnessOptions
@@ -147,6 +148,7 @@ public sealed class AgentService
             OnApprovalRequested = onApprovalRequested,
             ActiveProjectPath  = activeProjectPath,
             RecallScope        = recallScope,
+            SubAgentSpawner    = subAgentSpawner,
             ChatCapabilitiesText = ChatCatalog.BuildAgentCapabilitiesText()
         };
 
@@ -168,9 +170,13 @@ public sealed class AgentService
         Action<ChatTokenUsage>? onUsage = null,
         Action<string>? onToolCall = null,
         IReadOnlyList<string>? turnScopePaths = null,
-        GovernanceMode? governanceMode = null)
+        GovernanceMode? governanceMode = null,
+        int? budgetToolCalls = null,
+        int? budgetFileReads = null)
     {
-        var turnPolicy = governanceMode.HasValue ? GovernancePolicy.FromMode(governanceMode.Value) : null;
+        var turnPolicy = governanceMode.HasValue
+            ? GovernancePolicy.FromMode(governanceMode.Value).WithBudgetOverrides(budgetToolCalls, budgetFileReads)
+            : null;
         var stream = _harness.StreamAsync(userMessage, agent, session, new HarnessContext { CancellationToken = ct }, turnScopePaths, turnPolicy, ct, onUsage);
         await using var enumerator = stream.GetAsyncEnumerator(ct);
         while (true)

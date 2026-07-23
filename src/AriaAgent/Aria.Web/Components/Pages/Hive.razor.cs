@@ -36,6 +36,7 @@ public partial class Hive
     public int?    _editOvermindSubAgentId;
     public bool    _configSaved              = false;
     public bool    _editRequiresHumanApproval = false;
+    public bool    _editAllowProjectTools     = false;
     public CollectiveBehavior _editBehavior  = CollectiveBehavior.HiveMind;
     public string  _editSynapseMemory        = "";
     public bool    _synapseSaved             = false;
@@ -280,6 +281,7 @@ public partial class Hive
             _editOvermindModel           = _collective.OvermindModelId;
             _editOvermindSubAgentId      = _collective.OvermindSubAgentId;
             _editRequiresHumanApproval   = _collective.RequiresHumanApproval;
+            _editAllowProjectTools       = _collective.AllowProjectTools;
             _editBehavior                = _collective.Behavior;
             _editSynapseMemory           = _collective.SynapseMemory ?? "";
             EnsureExplicitOvermindSelection();
@@ -331,8 +333,16 @@ public partial class Hive
             _editName, _editObjective,
             _editOvermindSubAgentId,
             _editOvermindSource, _editOvermindModel,
-            _editMaxRounds, _editRequiresHumanApproval, _editBehavior);
+            _editMaxRounds, _editRequiresHumanApproval, _editBehavior,
+            _editAllowProjectTools);
         _collective = await CollectiveService.GetAsync(_collective.Id);
+    }
+
+    // Checkbox in the CONFIGURATION panel — persists immediately like every other config field.
+    public async Task OnAllowProjectToolsChanged(bool v)
+    {
+        _editAllowProjectTools = v;
+        await SaveConfigAsync();
     }
 
     // Live-updates the name everywhere it's displayed as the user types (DebouncedInput already

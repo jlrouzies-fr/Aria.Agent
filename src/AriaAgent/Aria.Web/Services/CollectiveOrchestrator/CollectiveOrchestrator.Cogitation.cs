@@ -183,6 +183,9 @@ public partial class CollectiveOrchestrator
     {
         int collectiveId = collective.Id;
 
+        // Scoped terminal opt-in for this cogitation's headless fan-out (see RunCollectiveAsync).
+        using var _hiveTools = Services.Agent.AgentBackgroundExecutor.WithAmbientBridgeTools(collective.AllowProjectTools);
+
         var overmindPrefix = OvermindPrefix(collective);
 
         async Task WriteMsg(string content, string? thinking = null)

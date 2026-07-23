@@ -353,6 +353,12 @@ public static partial class BuiltinTools
             diff = capExceeded ? null : diffResult.Diff,
             adds = capExceeded ? 0 : diffResult.Adds,
             dels = capExceeded ? 0 : diffResult.Dels,
+            // Above the pre-image cap the mutation is applied but no diff preview is produced — say
+            // so explicitly instead of silently omitting the diff. The FileUndo row IS still written,
+            // so undo via revert remains available.
+            warning = capExceeded
+                ? $"File exceeds the diff cap ({DiffTools.PreImageCap / 1024}KB): no diff preview is available for this mutation — undo via revert is still available."
+                : (string?)null,
             undoToken,
             created,
             deleted

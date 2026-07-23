@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Aria.Bridge.Data;
+using Aria.Bridge.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
 namespace Aria.Bridge.Endpoints;
@@ -28,16 +29,20 @@ public static class ProjectFileEndpoints
     private const int ScanCap = 20000;       // bounded walk so huge trees return promptly
     private const int MaxReadBytes = 2 * 1024 * 1024;
 
+    // The tunnel forwards the request's session stamp on this header; it selects which node-signed
+    // session path grants (Wave 5) apply to this call. Absent → no grants, declared paths only.
+    private static string? SessionOf(HttpRequest http) => http.Headers[DirectTunnel.SessionHeaderName];
+
     public static void MapProjectFileEndpoints(this WebApplication app)
     {
         // POST /project-files/list — enumerate files under a declared project root, filtered by name.
-        app.MapPost("/project-files/list", async (ProjectFilesListRequest req, BridgeDbContext db) =>
+        app.MapPost("/project-files/list", async (ProjectFilesListRequest req, BridgeDbContext db, HttpRequest http) =>
         {
             if (string.IsNullOrWhiteSpace(req.Root))
                 return Results.BadRequest("root required");
 
             var root = Path.GetFullPath(req.Root);
-            try { (await NodeTerminalPolicy.ResolveAsync(db, req.AllowedPaths)).EnforcePath(root); }
+            try { (await NodeTerminalPolicy.ResolveAsync(db, req.AllowedPaths, SessionOf(http))).EnforcePath(root); }
             catch (TerminalSecurityException ex) { return Results.Json(new { error = ex.Message }, statusCode: 403); }
 
             if (!Directory.Exists(root))
@@ -91,13 +96,13 @@ public static class ProjectFileEndpoints
 
         // POST /project-files/tree — full recursive listing (files + dirs) under a project root, for
         // building an explorer tree client-side. No filter/limit/ranking, unlike /list.
-        app.MapPost("/project-files/tree", async (ProjectFilesTreeRequest req, BridgeDbContext db) =>
+        app.MapPost("/project-files/tree", async (ProjectFilesTreeRequest req, BridgeDbContext db, HttpRequest http) =>
         {
             if (string.IsNullOrWhiteSpace(req.Root))
                 return Results.BadRequest("root required");
 
             var root = Path.GetFullPath(req.Root);
-            try { (await NodeTerminalPolicy.ResolveAsync(db, req.AllowedPaths)).EnforcePath(root); }
+            try { (await NodeTerminalPolicy.ResolveAsync(db, req.AllowedPaths, SessionOf(http))).EnforcePath(root); }
             catch (TerminalSecurityException ex) { return Results.Json(new { error = ex.Message }, statusCode: 403); }
 
             if (!Directory.Exists(root))
@@ -138,13 +143,13 @@ public static class ProjectFileEndpoints
         });
 
         // POST /project-files/read — read a file's text content (size-capped), gated by AllowedPaths.
-        app.MapPost("/project-files/read", async (ProjectFileReadRequest req, BridgeDbContext db) =>
+        app.MapPost("/project-files/read", async (ProjectFileReadRequest req, BridgeDbContext db, HttpRequest http) =>
         {
             if (string.IsNullOrWhiteSpace(req.Path))
                 return Results.BadRequest("path required");
 
             var path = Path.GetFullPath(req.Path);
-            try { (await NodeTerminalPolicy.ResolveAsync(db, req.AllowedPaths)).EnforcePath(path); }
+            try { (await NodeTerminalPolicy.ResolveAsync(db, req.AllowedPaths, SessionOf(http))).EnforcePath(path); }
             catch (TerminalSecurityException ex) { return Results.Json(new { error = ex.Message }, statusCode: 403); }
 
             if (!File.Exists(path))
@@ -173,13 +178,13 @@ public static class ProjectFileEndpoints
         // Uses optimistic concurrency: the client must send the hash of the content it loaded;
         // if the file on disk has changed, we return 409 with the current content + hash.
         // On success we capture a FileUndo row so user edits are revertible like agent edits.
-        app.MapPost("/project-files/write", async (ProjectFileWriteRequest req, BridgeDbContext db) =>
+        app.MapPost("/project-files/write", async (ProjectFileWriteRequest req, BridgeDbContext db, HttpRequest http) =>
         {
             if (string.IsNullOrWhiteSpace(req.Path))
                 return Results.BadRequest("path required");
 
             var path = Path.GetFullPath(req.Path);
-            try { (await NodeTerminalPolicy.ResolveAsync(db, req.AllowedPaths)).EnforcePath(path); }
+            try { (await NodeTerminalPolicy.ResolveAsync(db, req.AllowedPaths, SessionOf(http))).EnforcePath(path); }
             catch (TerminalSecurityException ex) { return Results.Json(new { error = ex.Message }, statusCode: 403); }
 
             if (!File.Exists(path))
@@ -219,7 +224,7 @@ public static class ProjectFileEndpoints
         });
 
         // POST /project-files/revert — restore a file to its pre-mutation state using an undo token.
-        app.MapPost("/project-files/revert", async (RevertRequest req, BridgeDbContext db) =>
+        app.MapPost("/project-files/revert", async (RevertRequest req, BridgeDbContext db, HttpRequest http) =>
         {
             if (string.IsNullOrWhiteSpace(req.UndoToken))
                 return Results.BadRequest("undoToken required");
@@ -232,7 +237,7 @@ public static class ProjectFileEndpoints
                 return Results.Conflict(new { error = "Already reverted" });
 
             var path = undo.Path;
-            try { (await NodeTerminalPolicy.ResolveAsync(db, req.AllowedPaths)).EnforcePath(path); }
+            try { (await NodeTerminalPolicy.ResolveAsync(db, req.AllowedPaths, SessionOf(http))).EnforcePath(path); }
             catch (TerminalSecurityException ex) { return Results.Json(new { error = ex.Message }, statusCode: 403); }
 
             var currentExists = File.Exists(path);

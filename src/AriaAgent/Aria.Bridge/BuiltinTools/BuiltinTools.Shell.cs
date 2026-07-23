@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using Aria.Bridge.Endpoints;
 
 namespace Aria.Bridge;
 
@@ -20,7 +21,7 @@ public static partial class BuiltinTools
                {"type":"object",
                 "properties":{
                   "command":         {"type":"string","description":"Shell command to run."},
-                  "working_dir":     {"type":"string","description":"Working directory (absolute path). Defaults to user home."},
+                  "working_dir":     {"type":"string","description":"Working directory (absolute path). Defaults to the session cwd — set by a previous bare 'cd <dir>' command — or the first allowed project root."},
                   "timeout_seconds": {"type":"integer","description":"Kill the command if it hasn't exited after this many seconds (default 120, max 600). Applies to normal (non-background) commands only."},
                   "background":      {"type":"boolean","description":"For long-running commands that never exit on their own (dev servers, watchers, etc.) — do NOT put '&' in the command yourself, set this instead. Redirects the command's stdout+stderr to a log file and returns immediately with {pid, log_file}; tail the log with read_file and stop the process with a follow-up bash_exec running 'kill <pid>' (or 'taskkill /PID <pid> /F' on Windows)."}
                 },
@@ -28,20 +29,75 @@ public static partial class BuiltinTools
                """));
     }
 
+    // Agent-shell cwd persistence. Every bash_exec spawns a fresh /bin/sh -c, so a bare "cd <dir>"
+    // would otherwise be lost between calls — we intercept it (mirroring the Quick Exec panel's
+    // _sessionCwd) and remember the directory for subsequent calls. No session identifier reaches
+    // /tools/call, so this is a single cwd per bridge process.
+    private static string? _sessionCwd;
+
+    // Test hook: the agent session cwd is process-wide static state.
+    internal static void ResetSessionCwd() => _sessionCwd = null;
+
     private static async Task<ToolCallResponse> BashExecAsync(
         Dictionary<string, JsonElement> args, SecurityPolicy? policy)
     {
         var command  = args.Str("command") ?? throw new ArgumentException("'command' is required");
         var explicitWorkDir = args.Str("working_dir");
-        var workDir  = Expand(explicitWorkDir ?? "~");
         var background = args.Bool("background") ?? false;
 
         policy?.EnforceCommand(command);
-        // Only restrict working_dir when the model explicitly set it — the CWD only affects relative
-        // path resolution and doesn't prevent shell commands from accessing other paths anyway.
-        // Real bash security comes from EnforceCommand (blocking rm -rf / etc.) and the file tools
-        // (read_file/write_file/edit_file) which do enforce AllowedPaths on their actual arguments.
-        if (explicitWorkDir != null) policy?.EnforcePath(workDir);
+
+        // Resolve the working directory: explicit arg > remembered session cwd > first allowed
+        // project root > user home. Defaulting to an allowed root (rather than wherever the bridge
+        // happens to run) keeps relative paths inside the declared scope — RunShellCommandAsync
+        // enforces the policy on the final cwd either way, so a narrowed request scope can only
+        // ever shrink this, never widen it.
+        string workDir;
+        if (explicitWorkDir != null)
+        {
+            workDir = Expand(explicitWorkDir);
+            policy?.EnforcePath(workDir);
+        }
+        else if (_sessionCwd != null && Directory.Exists(_sessionCwd))
+        {
+            workDir = _sessionCwd;
+            policy?.EnforcePath(workDir);
+        }
+        else if (policy?.AllowedPaths?.FirstOrDefault() is { } firstAllowed)
+        {
+            workDir = Expand(firstAllowed);
+        }
+        else
+        {
+            workDir = Expand("~");
+        }
+
+        // cwd persistence: a bare "cd <dir>" updates the session cwd instead of running (the
+        // spawned shell would exit immediately and the cd would be lost). The target is validated
+        // against the same policy as any other path.
+        if (!background && TerminalEndpoints.TryParseCd(command) is { } cdTarget)
+        {
+            var newDir = TerminalEndpoints.ResolveCdTarget(workDir, cdTarget);
+            policy?.EnforcePath(newDir);
+            if (!Directory.Exists(newDir))
+            {
+                return new ToolCallResponse(JsonSerializer.Serialize(new
+                {
+                    exit_code = 1,
+                    stdout    = (string?)null,
+                    stderr    = $"cd: no such directory: {cdTarget}",
+                }), IsError: true);
+            }
+
+            _sessionCwd = newDir;
+            return new ToolCallResponse(JsonSerializer.Serialize(new
+            {
+                exit_code = 0,
+                stdout    = (string?)null,
+                stderr    = (string?)null,
+                cwd       = newDir,
+            }), IsError: false);
+        }
 
         if (background) return await BashExecBackgroundAsync(command, workDir);
 
@@ -49,6 +105,8 @@ public static partial class BuiltinTools
 
         var (stdout, stderr, exitCode, timedOut) =
             await RunShellCommandAsync(command, workDir, timeoutSeconds, policy);
+
+        _sessionCwd = workDir;
 
         var result = JsonSerializer.Serialize(new
         {

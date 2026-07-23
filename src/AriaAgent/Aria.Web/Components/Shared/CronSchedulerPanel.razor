@@ -74,6 +74,7 @@ else
     internal string    _taskPrompt         = "";
     internal string    _selectedSubAgentId = "";
     internal string?   _selectedBridgeNodeId = null;
+    internal bool      _allowProjectTools;
     internal bool      _booking;
     internal string?   _bookError;
 
@@ -166,6 +167,7 @@ else
         _taskPrompt          = string.IsNullOrWhiteSpace(PrefillTask) ? "" : PrefillTask;
         _selectedSubAgentId  = "";
         _selectedBridgeNodeId = null;
+        _allowProjectTools   = false;
         _bookError           = null;
         _booking             = false;
         if (!PrefillCogitationId.HasValue) { _lockedCogitation = null; _cogSearch = ""; _cogResults = []; }

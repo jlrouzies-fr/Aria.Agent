@@ -33,6 +33,10 @@
     </ItemGroup>
 
     <ItemGroup>
+        <InternalsVisibleTo Include="Aria.Tests" />
+    </ItemGroup>
+
+    <ItemGroup>
         <Compile Update="Components/Pages/Chat.razor.cs">
             <DependentUpon>Chat.razor</DependentUpon>
         </Compile>

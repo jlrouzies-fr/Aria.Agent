@@ -21,7 +21,12 @@ public static class ChatCatalog
     [
         // ── Session / context ────────────────────────────────────────────────
         new("/clear",   "",          "Start a fresh cogitation — clears the current conversation.",         "Session",  CatalogStatus.Available),
-        new("/compact", "",          "Summarise history to reclaim context window.",                        "Session",  CatalogStatus.Available),
+        new("/compact", "[auto [<tokens>|off]]",
+                          "Summarise history to reclaim context window; 'auto' configures automatic compaction.", "Session", CatalogStatus.Available),
+        new("/governance","[mode|budget tools=<n> reads=<n>|budget reset]",
+                          "Show governance mode + budgets; switch mode; set session budget overrides.",   "Session",  CatalogStatus.Available),
+        new("/scope",   "[add <path>|remove <path>]",
+                          "Show effective filesystem scope; ask the node for a time-boxed session path expansion.", "Session", CatalogStatus.Available),
         new("/resume",  "",          "Reload a previous cogitation.",                                       "Session",  CatalogStatus.Planned),
         new("/rewind",  "",          "Checkpoint-restore the conversation to an earlier turn.",             "Session",  CatalogStatus.Planned),
         new("/export",  "",          "Dump the transcript to markdown.",                                    "Session",  CatalogStatus.Planned),

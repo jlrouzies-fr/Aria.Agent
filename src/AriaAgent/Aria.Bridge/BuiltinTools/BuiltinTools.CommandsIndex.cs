@@ -359,7 +359,7 @@ public static partial class BuiltinTools
         _ => $"""
             ## Terminal Built-in Tools
 
-            Available tools: bash_exec, read_file, write_file, edit_file, list_dir, glob, commands_index
+            Available tools: bash_exec, read_file, write_file, edit_file, list_dir, glob, grep, git_status, git_diff, git_log, git_stage, git_commit, git_discard, commands_index
 
             Available build knowledge topics — call commands_index(topic="<name>"):
               python, typescript, rust, go, dotnet, java, swift, kotlin, ruby, php, c++, docker, git
@@ -369,8 +369,9 @@ public static partial class BuiltinTools
 
             Tips:
             - Always prefer absolute paths. Use ~ for home directory.
-            - Use list_dir or glob to explore before editing.
+            - Use list_dir or glob to explore before editing; use grep to search file contents.
             - Use read_file before edit_file to verify exact text.
+            - Use the git_* tools (not bash_exec git …) for status/diff/log/stage/commit/discard.
             - edit_file requires old_string to appear exactly once.
             - bash_exec returns JSON with fields: exit_code (int), stdout (string), stderr (string).
             """

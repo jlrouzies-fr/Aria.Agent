@@ -94,6 +94,9 @@ The node exposes native shell, file, command-index, datetime, and web-search too
 | `bash_exec` | Run a shell command (governed by allowed/blocked lists) |
 | `read_file` / `write_file` / `edit_file` | Read, write, or diff-based edit local files |
 | `list_dir` / `glob` | Directory listing and file globbing |
+| `grep` | Regex/substring content search (caps results, skips binaries and dependency dirs) |
+| `git_status` / `git_diff` / `git_log` | Read-only repository inspection |
+| `git_stage` / `git_commit` / `git_discard` | Repository mutations (discard requires explicit paths; high-stakes) |
 | `commands_index` | Recall build/run commands for common stacks |
 | `GetCurrentDateTime` | Current local date/time |
 | `SearchWeb` | Ollama web search |
