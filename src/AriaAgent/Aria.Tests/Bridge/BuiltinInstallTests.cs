@@ -191,7 +191,7 @@ public class BuiltinInstallTests
     public async Task UnknownManager_ToolReturnsError()
     {
         var r = await BuiltinTools.InvokeAsync("install_software",
-            Args(new { manager = "apt", package = "ripgrep" }), policy: null);
+            Args(new { manager = "yum", package = "ripgrep" }), policy: null);
         Assert.True(r.IsError);
         Assert.Contains("Unknown package manager", r.Text);
     }

@@ -113,6 +113,7 @@ public class ToolClassifierTests
     [InlineData("process_list")]
     [InlineData("process_output")]
     [InlineData("wait_for")]
+    [InlineData("project_info")]
     public void NewReadTools_CountAgainstReadBudget(string tool)
     {
         var ctx = Ctx(GovernanceMode.Balanced);
@@ -217,6 +218,26 @@ public class ToolClassifierTests
         var v = ToolClassifier.Classify(ctx, "install_software",
             Args(new { manager = "brew", package = "ripgrep" }), "brew install ripgrep");
         Assert.Equal(ToolSeverity.Allowed, v.Severity);
+    }
+
+    [Theory]
+    [InlineData("uv")]
+    [InlineData("yarn")]
+    [InlineData("pnpm")]
+    [InlineData("apt")]
+    [InlineData("choco")]
+    [InlineData("winget")]
+    public void InstallSoftware_NewManagers_StillApprovalOrSealGated(string manager)
+    {
+        var strict = Ctx(GovernanceMode.Strict);
+        var v = ToolClassifier.Classify(strict, "install_software",
+            Args(new { manager, package = "ripgrep", global = true }), $"{manager} install ripgrep");
+        Assert.Equal(ToolSeverity.NeedsApproval, v.Severity);
+
+        var paranoid = Ctx(GovernanceMode.Paranoid);
+        var v2 = ToolClassifier.Classify(paranoid, "install_software",
+            Args(new { manager, package = "ripgrep", global = true }), $"{manager} install ripgrep");
+        Assert.Equal(ToolSeverity.NeedsSeal, v2.Severity);
     }
 
     // ── Coding mode ──────────────────────────────────────────────────────────

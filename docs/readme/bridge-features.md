@@ -97,8 +97,9 @@ The node exposes native shell, file, command-index, datetime, and web-search too
 | `grep` | Regex/substring content search (caps results, skips binaries and dependency dirs) |
 | `git_status` / `git_diff` / `git_log` | Read-only repository inspection |
 | `git_stage` / `git_commit` / `git_discard` | Repository mutations (discard requires explicit paths; high-stakes) |
-| `commands_index` | Recall build/run commands for common stacks |
-| `install_software` | Install a package via an allowlisted manager (brew/npm/pip/pipx/dotnet/cargo/go); approval-gated in every governed mode |
+| `commands_index` | Recall build/run commands for common stacks; prefer `project_info` first for project-specific commands |
+| `project_info` | Read-only project introspection: detect language ecosystems, dependency files, recommended package manager, and infer build/run/test/install commands |
+| `install_software` | Install a package via an allowlisted manager (brew/npm/pip/pipx/dotnet/cargo/go/uv/yarn/pnpm/apt/choco/winget); approval-gated in every governed mode |
 | `system_info` | Read-only environment recon: OS/arch, shell, CPU/RAM, disk free, available package managers and runtimes |
 | `multi_edit` | Batch of exact-string edits to one file in a single call (unique-at-apply-time, atomic, one undo entry) |
 | `undo_file` | Restore the most recent undo snapshot for a file (stack semantics; itself undoable) |

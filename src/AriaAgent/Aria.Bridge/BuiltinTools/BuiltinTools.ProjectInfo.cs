@@ -54,16 +54,16 @@ public static partial class BuiltinTools
     // ── Result model ──────────────────────────────────────────────────────────
 
     private sealed record ProjectInfoResult(
-        string Ecosystem,
-        string[] DependencyFilesFound,
-        string[] Dependencies,
-        string RecommendedPackageManager,
-        string? InstallCommand,
-        string? RunCommand,
-        string? BuildCommand,
-        string? TestCommand,
-        bool HasLockfile,
-        bool HasVenv);
+        [property: System.Text.Json.Serialization.JsonPropertyName("ecosystem")] string Ecosystem,
+        [property: System.Text.Json.Serialization.JsonPropertyName("dependency_files_found")] string[] DependencyFilesFound,
+        [property: System.Text.Json.Serialization.JsonPropertyName("dependencies")] string[] Dependencies,
+        [property: System.Text.Json.Serialization.JsonPropertyName("recommended_package_manager")] string RecommendedPackageManager,
+        [property: System.Text.Json.Serialization.JsonPropertyName("install_command")] string? InstallCommand,
+        [property: System.Text.Json.Serialization.JsonPropertyName("run_command")] string? RunCommand,
+        [property: System.Text.Json.Serialization.JsonPropertyName("build_command")] string? BuildCommand,
+        [property: System.Text.Json.Serialization.JsonPropertyName("test_command")] string? TestCommand,
+        [property: System.Text.Json.Serialization.JsonPropertyName("has_lockfile")] bool HasLockfile,
+        [property: System.Text.Json.Serialization.JsonPropertyName("has_venv")] bool HasVenv);
 
     // ── Shared helpers ────────────────────────────────────────────────────────
 
@@ -454,17 +454,33 @@ public static partial class BuiltinTools
         var text = SafeReadFirstBytes(gomod);
         if (text != null)
         {
+            bool inRequireBlock = false;
             foreach (var line in text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
             {
                 var trimmed = line.Trim();
                 if (trimmed.StartsWith("require ", StringComparison.OrdinalIgnoreCase))
                 {
                     var remainder = trimmed["require ".Length..].Trim();
-                    // require (
-                    if (remainder.StartsWith('(')) continue;
+                    if (remainder.StartsWith('('))
+                    {
+                        inRequireBlock = true;
+                        continue;
+                    }
                     // require pkg v1.2.3
                     var space = remainder.IndexOf(' ');
                     var dep = space > 0 ? remainder[..space] : remainder;
+                    if (!string.IsNullOrWhiteSpace(dep)) deps.Add(dep);
+                }
+                else if (inRequireBlock)
+                {
+                    if (trimmed.StartsWith(')'))
+                    {
+                        inRequireBlock = false;
+                        continue;
+                    }
+                    // pkg v1.2.3 // indirect
+                    var space = trimmed.IndexOf(' ');
+                    var dep = space > 0 ? trimmed[..space] : trimmed;
                     if (!string.IsNullOrWhiteSpace(dep)) deps.Add(dep);
                 }
             }

@@ -221,7 +221,8 @@ Schedule autonomous directives that run even when your terminal is closed. A **v
 - Persistent memory (**Noosphere**)
 - Any **MCP** server you connect
 - Terminal tools: Quick Exec and PTY mode (each gated by its own off-by-default node toggle; PTY also requires a seal)
-- Software installs via `install_software` (allowlisted package managers; approval-gated in every governed mode)
+- Software installs via `install_software` (allowlisted package managers: brew/npm/pip/pipx/dotnet/cargo/go/uv/yarn/pnpm/apt/choco/winget; approval-gated in every governed mode)
+- Project-aware coding tools: `project_info` reads dependency files and infers exact build/run/test/install commands; `commands_index` provides static cheat-sheets as a fallback
 - Coding tools: `grep`, git (`status`/`diff`/`log`/`stage`/`commit`/`discard`), `multi_edit`, `undo_file`, persistent bash with background jobs (`process_list`/`process_output`/`process_kill`), `run_background`, `wait_for`, `system_info` environment recon, `http_request` API testing, `read_image` for vision models — all scoped to the node's Allowed Paths plus any `/scope` expansions
 - Agent self-management: `ask_user` (structured mid-run questions with option buttons), `context_status` (token/context pressure so the agent can wrap up before auto-compaction), `spawn_agent` delegation
 - **Voice input (Vox)** — browser speech, fully on-device Whisper on your node, or cloud Whisper; audio goes straight to your node, never the server

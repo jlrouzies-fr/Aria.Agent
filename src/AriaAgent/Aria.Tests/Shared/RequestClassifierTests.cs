@@ -64,6 +64,7 @@ public class RequestClassifierTests
     [InlineData("process_output")]
     [InlineData("read_image")]
     [InlineData("wait_for")]
+    [InlineData("project_info")]
     public void ToolsCall_ReadOnlyBuiltin_IsBenign(string tool)
     {
         var body = $$"""{"toolName":"{{tool}}"}""";
