@@ -48,6 +48,14 @@ public class ToolClassifierTests
     }
 
     [Fact]
+    public void Paranoid_RunBackground_NeedsSeal()
+    {
+        var ctx = Ctx(GovernanceMode.Paranoid);
+        var v = ToolClassifier.Classify(ctx, "run_background", Args(new { command = "python app.py" }), "server");
+        Assert.Equal(ToolSeverity.NeedsSeal, v.Severity);
+    }
+
+    [Fact]
     public void Strict_OutOfScopeRead_Blocked()
     {
         var ctx = Ctx(GovernanceMode.Strict, scope: new[] { "/home/user/project" });
@@ -101,6 +109,10 @@ public class ToolClassifierTests
     [InlineData("git_status")]
     [InlineData("git_diff")]
     [InlineData("git_log")]
+    [InlineData("system_info")]
+    [InlineData("process_list")]
+    [InlineData("process_output")]
+    [InlineData("wait_for")]
     public void NewReadTools_CountAgainstReadBudget(string tool)
     {
         var ctx = Ctx(GovernanceMode.Balanced);
@@ -125,6 +137,28 @@ public class ToolClassifierTests
         Assert.Equal(ToolSeverity.NeedsApproval, v.Severity);
     }
 
+    [Theory]
+    [InlineData("process_kill")]
+    [InlineData("multi_edit")]
+    [InlineData("undo_file")]
+    [InlineData("run_background")]
+    public void NewMutations_Strict_NeedApproval(string tool)
+    {
+        var ctx = Ctx(GovernanceMode.Strict);
+        var v = ToolClassifier.Classify(ctx, tool,
+            Args(new { path = "/x/a.txt", pid = 1 }), "m");
+        Assert.Equal(ToolSeverity.NeedsApproval, v.Severity);
+    }
+
+    [Fact]
+    public void Paranoid_ProcessKill_NeedsApproval_NotSeal()
+    {
+        // Registry-validated kills are Mutating but NOT HighStakes — no Seal escalation.
+        var ctx = Ctx(GovernanceMode.Paranoid);
+        var v = ToolClassifier.Classify(ctx, "process_kill", Args(new { pid = 1 }), "kill");
+        Assert.Equal(ToolSeverity.NeedsApproval, v.Severity);
+    }
+
     [Fact]
     public void Paranoid_GitDiscard_NeedsSeal_OtherGitMutations_NeedApproval()
     {
@@ -140,6 +174,49 @@ public class ToolClassifierTests
         var commit = ToolClassifier.Classify(ctx, "git_commit",
             Args(new { repo_path = "/x", message = "m" }), "commit");
         Assert.Equal(ToolSeverity.NeedsApproval, commit.Severity);
+    }
+
+    // ── install_software: approval-gated in every governed mode ───────────────
+
+    [Theory]
+    [InlineData(GovernanceMode.Balanced)]
+    [InlineData(GovernanceMode.Coding)]
+    [InlineData(GovernanceMode.Strict)]
+    public void InstallSoftware_NeedsApproval_InEveryLaxOrStrictMode(GovernanceMode mode)
+    {
+        // Coding and Balanced let ordinary mutations run freely — install_software must still ask.
+        var ctx = Ctx(mode);
+        var v = ToolClassifier.Classify(ctx, "install_software",
+            Args(new { manager = "brew", package = "ripgrep" }), "brew install ripgrep");
+        Assert.Equal(ToolSeverity.NeedsApproval, v.Severity);
+    }
+
+    [Fact]
+    public void Plan_InstallSoftware_Blocked_LikeAnyMutation()
+    {
+        var ctx = Ctx(GovernanceMode.Plan);
+        var v = ToolClassifier.Classify(ctx, "install_software",
+            Args(new { manager = "brew", package = "ripgrep" }), "brew install ripgrep");
+        Assert.Equal(ToolSeverity.Blocked, v.Severity);
+        Assert.Contains("Plan mode", v.Reason);
+    }
+
+    [Fact]
+    public void Paranoid_InstallSoftware_NeedsSeal()
+    {
+        var ctx = Ctx(GovernanceMode.Paranoid);
+        var v = ToolClassifier.Classify(ctx, "install_software",
+            Args(new { manager = "brew", package = "ripgrep" }), "brew install ripgrep");
+        Assert.Equal(ToolSeverity.NeedsSeal, v.Severity);
+    }
+
+    [Fact]
+    public void Off_InstallSoftware_RunsUnchecked()
+    {
+        var ctx = Ctx(GovernanceMode.Off);
+        var v = ToolClassifier.Classify(ctx, "install_software",
+            Args(new { manager = "brew", package = "ripgrep" }), "brew install ripgrep");
+        Assert.Equal(ToolSeverity.Allowed, v.Severity);
     }
 
     // ── Coding mode ──────────────────────────────────────────────────────────

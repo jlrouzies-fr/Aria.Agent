@@ -98,6 +98,15 @@ The node exposes native shell, file, command-index, datetime, and web-search too
 | `git_status` / `git_diff` / `git_log` | Read-only repository inspection |
 | `git_stage` / `git_commit` / `git_discard` | Repository mutations (discard requires explicit paths; high-stakes) |
 | `commands_index` | Recall build/run commands for common stacks |
+| `install_software` | Install a package via an allowlisted manager (brew/npm/pip/pipx/dotnet/cargo/go); approval-gated in every governed mode |
+| `system_info` | Read-only environment recon: OS/arch, shell, CPU/RAM, disk free, available package managers and runtimes |
+| `multi_edit` | Batch of exact-string edits to one file in a single call (unique-at-apply-time, atomic, one undo entry) |
+| `undo_file` | Restore the most recent undo snapshot for a file (stack semantics; itself undoable) |
+| `process_list` / `process_output` / `process_kill` | Manage background jobs started by `bash_exec background:true` (kill only works on registry-tracked pids) |
+| `run_background` | Start a long-running process (dev server, watcher) — returns immediately with pid/log; same command gate as `bash_exec` |
+| `wait_for` | Wait for a TCP port, a URL to respond, or a background job's log to match a pattern (readiness probe) |
+| `http_request` | Structured HTTP client (methods/headers/body, status + raw response, no auto-redirect); Sensitive — it can reach localhost/LAN from the node |
+| `read_image` | Feed a local image (png/jpeg/gif/webp, magic-byte sniffed, ≤10MB) to vision-capable models |
 | `GetCurrentDateTime` | Current local date/time |
 | `SearchWeb` | Ollama web search |
 

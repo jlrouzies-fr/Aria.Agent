@@ -350,8 +350,10 @@ fi
 success "Binary found at: ${BIN_PATH}"
 
 section "INSTALLING"
-rm -rf "${INSTALL_DIR:?}"/*
-cp -R "$SOURCE_DIR/"* "$INSTALL_DIR/"
+rm -rf "${INSTALL_DIR:?}"
+mkdir -p "$INSTALL_DIR"
+# Copy with '/.' so hidden entries (notably .playwright — the screenshot driver) are included.
+cp -R "$SOURCE_DIR/." "$INSTALL_DIR/"
 chmod +x "${INSTALL_DIR}/${BIN_NAME}"
 
 ln -sf "${INSTALL_DIR}/${BIN_NAME}" "${BIN_DIR}/${BIN_NAME}"

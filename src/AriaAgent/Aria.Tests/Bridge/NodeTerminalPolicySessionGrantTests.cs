@@ -9,9 +9,10 @@ namespace Aria.Tests.Bridge;
 
 /// <summary>
 /// Verifies the Wave 5 enforcement seam: a session's node-signed path grants union into the effective
-/// allowed set in <see cref="NodeTerminalPolicy.ResolveAsync"/> (and into a server-supplied built-in
-/// tools policy via <see cref="NodeTerminalPolicy.ApplySessionPathGrantsAsync"/>) — only for the
-/// session they were minted for, while the request-may-only-narrow rule stays untouched.
+/// allowed set in <see cref="NodeTerminalPolicy.ResolveAsync"/> — and into the built-in tools policy
+/// via <see cref="NodeTerminalPolicy.ResolveBuiltinPolicyAsync"/>, the same node-authoritative
+/// resolution — only for the session they were minted for, while the request-may-only-narrow rule
+/// stays untouched.
 /// </summary>
 public class NodeTerminalPolicySessionGrantTests : IDisposable
 {
@@ -131,31 +132,90 @@ public class NodeTerminalPolicySessionGrantTests : IDisposable
     }
 
     [Fact]
-    public async Task BuiltinPolicy_UnionAddsGrantPaths_OnlyForTheRightSession()
+    public async Task BuiltinPolicy_ProjectsOff_BlocksEvenServerSuppliedPaths()
+    {
+        await SeedSoulAsync(projectsEnabled: false);
+
+        // A server sending its own AllowedPaths must not resurrect access when the node's Projects
+        // capability is off — the node-authoritative set is empty, which fails closed.
+        var policy = await NodeTerminalPolicy.ResolveBuiltinPolicyAsync(
+            _db, new SecurityPolicy(AllowedPaths: [_declared]), "sess-1");
+
+        Assert.Throws<TerminalSecurityException>(() => policy.EnforcePath(ChildOf(_declared)));
+    }
+
+    [Fact]
+    public async Task BuiltinPolicy_HonorsSessionPathGrants_OnlyForTheRightSession()
     {
         var soul = await SeedSoulAsync();
         await ContextGrantStore.GrantPathAsync(_db, soul, "sess-1", _granted, TimeSpan.FromHours(8));
 
-        var serverPolicy = new SecurityPolicy(AllowedPaths: [_declared]);
+        // The server includes the granted path in its narrowing (Harness scope focus): it survives
+        // the intersection because the node-signed grant put it in the node's base set.
+        var policy = await NodeTerminalPolicy.ResolveBuiltinPolicyAsync(
+            _db, new SecurityPolicy(AllowedPaths: [_granted]), "sess-1");
+        policy.EnforcePath(ChildOf(_granted));
 
-        var merged = await NodeTerminalPolicy.ApplySessionPathGrantsAsync(serverPolicy, "sess-1", _db);
-        Assert.NotNull(merged);
-        merged!.EnforcePath(ChildOf(_granted));
-        Assert.Throws<TerminalSecurityException>(() => merged.EnforcePath(ChildOf(_other)));
-
-        var otherSession = await NodeTerminalPolicy.ApplySessionPathGrantsAsync(serverPolicy, "sess-2", _db);
-        Assert.Same(serverPolicy, otherSession);   // untouched — no grant for that session
+        // Another session gets no union — the same request narrows to nothing and blocks all.
+        var other = await NodeTerminalPolicy.ResolveBuiltinPolicyAsync(
+            _db, new SecurityPolicy(AllowedPaths: [_granted]), "sess-2");
+        Assert.Throws<TerminalSecurityException>(() => other.EnforcePath(ChildOf(_granted)));
     }
 
     [Fact]
-    public async Task BuiltinPolicy_NullOrUnrestricted_PassesThrough()
+    public async Task BuiltinPolicy_RequestNarrowing_AppliesOnTopOfGrants()
+    {
+        var soul = await SeedSoulAsync();
+        await ContextGrantStore.GrantPathAsync(_db, soul, "sess-1", _granted, TimeSpan.FromHours(8));
+
+        // Harness active-project focus: the request narrows to the declared project only, so the
+        // session grant stays out of reach until the server includes it in its AllowedPaths.
+        var policy = await NodeTerminalPolicy.ResolveBuiltinPolicyAsync(
+            _db, new SecurityPolicy(AllowedPaths: [_declared]), "sess-1");
+
+        policy.EnforcePath(ChildOf(_declared));
+        Assert.Throws<TerminalSecurityException>(() => policy.EnforcePath(ChildOf(_granted)));
+    }
+
+    [Fact]
+    public async Task BuiltinPolicy_NoDeclaredPaths_FailsClosed()
+    {
+        var soul = TestCrypto.GenerateSoul(out _);
+        soul.Name = "test-soul";
+        soul.ProjectsEnabled = true;   // capability on, but no Terminal allowed paths declared
+        _db.Souls.Add(soul);
+        await _db.SaveChangesAsync();
+
+        var policy = await NodeTerminalPolicy.ResolveBuiltinPolicyAsync(
+            _db, new SecurityPolicy(AllowedPaths: [_declared]), "sess-1");
+
+        Assert.Throws<TerminalSecurityException>(() => policy.EnforcePath(ChildOf(_declared)));
+    }
+
+    [Fact]
+    public async Task BuiltinPolicy_NoRequestPolicy_ResolvesToNodeSetPlusGrants()
+    {
+        var soul = await SeedSoulAsync();
+        await ContextGrantStore.GrantPathAsync(_db, soul, "sess-1", _granted, TimeSpan.FromHours(8));
+
+        // No server policy at all: the effective set is the node's (declared ∪ session grants) —
+        // NOT unrestricted, and NOT the server's own paths.
+        var policy = await NodeTerminalPolicy.ResolveBuiltinPolicyAsync(_db, null, "sess-1");
+
+        policy.EnforcePath(ChildOf(_declared));
+        policy.EnforcePath(ChildOf(_granted));
+        Assert.Throws<TerminalSecurityException>(() => policy.EnforcePath(ChildOf(_other)));
+    }
+
+    [Fact]
+    public async Task BuiltinPolicy_ServerBlockedCommands_ArePreserved()
     {
         await SeedSoulAsync();
 
-        Assert.Null(await NodeTerminalPolicy.ApplySessionPathGrantsAsync(null, "sess-1", _db));
+        var policy = await NodeTerminalPolicy.ResolveBuiltinPolicyAsync(
+            _db, new SecurityPolicy(AllowedPaths: [_declared], BlockedCommands: ["sudo"]), "sess-1");
 
-        var unrestricted = new SecurityPolicy();
-        Assert.Same(unrestricted,
-            await NodeTerminalPolicy.ApplySessionPathGrantsAsync(unrestricted, "sess-1", _db));
+        Assert.Throws<TerminalSecurityException>(() => policy.EnforceCommand("sudo rm x"));
+        policy.EnforceCommand("ls -la");
     }
 }

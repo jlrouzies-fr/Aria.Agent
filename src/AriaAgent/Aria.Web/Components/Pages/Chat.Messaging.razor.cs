@@ -628,6 +628,7 @@ public partial class Chat
     {
         if (_attachedRun != run) return;
         _pendingApproval = run.PendingApproval;
+        _pendingAskUser  = run.PendingAskUser;
         if (run.Status == CogitationRunStatus.AwaitingContextApproval)
         {
             _awaitingContextApprovalSessionId = run.ContextApprovalSessionId;

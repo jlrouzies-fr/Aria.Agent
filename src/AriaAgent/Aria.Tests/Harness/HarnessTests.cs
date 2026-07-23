@@ -1,5 +1,6 @@
 using Aria.Agent;
 using Aria.Console.Harness;
+using Aria.Harness.Context;
 using Aria.Harness.Core;
 using Aria.Harness.Formats;
 using Aria.Harness.Tools;
@@ -120,6 +121,34 @@ public class HarnessTests
         var runtime = new ConsoleHarnessRuntime(new ConfigurationBuilder().Build(), bridgeBaseUrl: "http://127.0.0.1:1");
         var available = await runtime.IsBridgeAvailableAsync(HarnessContext.Empty);
         Assert.True(available);
+    }
+
+    [Fact]
+    public async Task CreateSessionAsync_WithAskUserAndContextStatusWired_Succeeds()
+    {
+        var runtime = new FakeHarnessRuntime();
+        runtime.AddSource(new ModelSource
+        {
+            Name = "OpenAI",
+            Url = "https://api.openai.com/v1",
+            IsPublicProvider = true,
+            Models = ["gpt-4o"]
+        });
+
+        var harness = new Aria.Harness.Core.Harness(NullLogger<Aria.Harness.Core.Harness>.Instance, runtime);
+        var options = new HarnessOptions
+        {
+            SelectedSourceName = "OpenAI",
+            SelectedModel = "gpt-4o",
+            EnabledTools = [],
+            OnAskUser = (_, _, _) => Task.FromResult<string?>(null),
+            ContextStatusProvider = () => new ContextStatusSnapshot(null, 0, null, 0, 0),
+        };
+
+        var (agent, session) = await harness.CreateSessionAsync(options, HarnessContext.Empty);
+
+        Assert.NotNull(agent);
+        Assert.NotNull(session);
     }
 
     [Fact]

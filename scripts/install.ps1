@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 param(
     [string]$Version = "latest",
     [switch]$NoKill
@@ -287,8 +287,13 @@ if (-not $BinPath) {
 Write-Success "Binary found at: $($BinPath.FullName)"
 
 Write-Section -Title "INSTALLING"
-Remove-Item -Recurse -Force $InstallDir\*
+Remove-Item -Recurse -Force $InstallDir
+New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Copy-Item -Path "$SourceDir\*" -Destination $InstallDir -Recurse -Force
+# Wildcards skip hidden entries — copy .playwright (the screenshot driver) explicitly.
+if (Test-Path "$SourceDir\.playwright") {
+    Copy-Item -Path "$SourceDir\.playwright" -Destination $InstallDir -Recurse -Force
+}
 
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($UserPath -notlike "*${InstallDir}*") {

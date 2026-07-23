@@ -440,15 +440,18 @@ public sealed class ContextApprovalService(
     }
 
     /// <summary>Revokes a session's path expansion on the node that minted it ("/scope remove").
-    /// A narrowing operation — safe for the server to relay. Revocation is local to that node
-    /// (same as context-grant revocations); a replicated copy on a sibling simply lapses.</summary>
+    /// A narrowing operation — safe for the server to relay. The node signs a revocation tombstone
+    /// on revoke; it reaches siblings through the same replication channel as the grants, so the
+    /// replicated copies die too rather than merely lapsing at expiry.</summary>
     public async Task<bool> RevokePathGrantAsync(
         string userId, string sessionId, string path, string? nodeId = null)
     {
         var body = JsonSerializer.Serialize(new { sessionId, path });
         var resp = await registry.SendLocalRestAsync(
             userId, "POST", "/scope/revoke", body, nodeId ?? registry.ResolveApprovalNode(userId));
-        return resp is { StatusCode: 200 };
+        if (resp is not { StatusCode: 200 }) return false;
+        await ReplicateBestEffortAsync(userId);   // push the fresh tombstone to siblings now
+        return true;
     }
 
     /// <summary>True when the node reports a live, verified path grant for this exact path and

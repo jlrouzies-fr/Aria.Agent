@@ -162,17 +162,11 @@ public class HeadlessToolGatingTests : IDisposable
         Assert.Null(c.OriginNodeId);
         Assert.False(c.AllowProjectTools);   // default off
 
-        // NOTE: CollectiveService.UpdateConfigAsync uses EF Core ExecuteUpdateAsync, which the test
-        // host cannot run for Aria.Web — the Web assembly is compiled against EF Core 9 while the
-        // test project loads EF Core 10 (TypeLoadException on SetPropertyCalls). The legacy branch's
-        // update is a plain column write; flip it the same way here and verify the flag round-trips
-        // through the service's read path.
-        using (var db = await _dbFactory.CreateDbContextAsync())
-        {
-            var row = await db.AgentCollectives.FindAsync(c.Id);
-            row!.AllowProjectTools = true;
-            await db.SaveChangesAsync();
-        }
+        // Flip the flag through the service's real write path (ExecuteUpdateAsync) — EF Core
+        // versions are aligned across the solution now, so the test host can run it directly.
+        await collectives.UpdateConfigAsync(
+            c.Id, c.Name, c.Objective, c.OvermindSubAgentId, c.OvermindSourceName, c.OvermindModelId,
+            c.MaxRounds, c.RequiresHumanApproval, c.Behavior, allowProjectTools: true);
 
         var reloaded = await collectives.GetAsync(c.Id);
         Assert.True(reloaded!.AllowProjectTools);

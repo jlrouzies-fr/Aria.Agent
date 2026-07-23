@@ -18,12 +18,19 @@ Supersedes [`referenceProjectFiles.md`](./referenceProjectFiles.md) — that ori
 > below the current-state table for exactly what landed and where. The per-item
 > tables further down still describe the target design; treat their `Effort`/phase
 > labels as historical, and check `ChatCatalog.cs` for live status.
+>
+> **Status update (2026-07-22):** shipped since the note above — `/governance`
+> (mode switch + per-session budget overrides), `/scope` (node-approved session path
+> expansion: `add`/`remove`/list), `/compact auto [<tokens>|off]` (auto-compaction
+> threshold). All registered `Available` in `ChatCatalog.cs`; typed-with-args forms
+> are intercepted in `Chat.Messaging.razor.cs` (`SendAsync`), bare forms dispatch via
+> the palette in `Chat.FilePicker.razor.cs`.
 
 ## Current state
 
 | Surface | Today | Backing |
 |---|---|---|
-| `/` palette | `/clear`, `/compact`, `/project`, `/tools`, `/mcp`, `/agents`, `/skills`, `/soul`, `/devices`, `/hive`, `/vigil`, `/vox`, `/wargame`, `/help`, `/index` | `ChatCatalog.Commands`, dispatched in `Chat.FilePicker.razor.cs` |
+| `/` palette | `/clear`, `/compact` (incl. `auto`), `/project`, `/tools`, `/mcp`, `/agents`, `/skills`, `/soul`, `/devices`, `/hive`, `/vigil`, `/vox`, `/wargame`, `/governance`, `/scope`, `/help`, `/index` | `ChatCatalog.Commands`, dispatched in `Chat.FilePicker.razor.cs` (+ arg forms in `Chat.Messaging.razor.cs`) |
 | `#` reference | `#<path>`, `#folder:<dir>`/`#dir:`, `#git:diff`/`#git:status`/`#git:log` | `ChatCatalog.References` → `ProjectFileEndpoints` / `GitEndpoints` |
 | agent awareness | agent can call `list_chat_capabilities` to see the `Available` list above on demand | `ChatCapabilitiesTools.cs` (Aria.Tools) + `ChatCatalog.BuildAgentCapabilitiesText()` |
 

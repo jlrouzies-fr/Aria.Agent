@@ -78,6 +78,16 @@ public sealed class Harness : IHarness
         if (options.OnTodoUpdate != null)
             tools.Add(TodoTools.Create(options.OnTodoUpdate));
 
+        // Structured user question — always-on when the host wires an ask-and-wait callback
+        // (interactive chat only; headless runs leave it null and the tool is absent). The
+        // callback pauses the call until the user answers, times out, or skips.
+        if (options.OnAskUser != null)
+            tools.Add(AskUserTools.Create(options.OnAskUser));
+
+        // Context pressure self-report — always-on when the host wires a snapshot provider.
+        if (options.ContextStatusProvider != null)
+            tools.Add(ContextStatusTools.Create(options.ContextStatusProvider));
+
         // Chat capabilities index — always-on, in-process, Web-only-when-wired (Console never
         // sets this, so the tool is simply absent there).
         if (!string.IsNullOrWhiteSpace(options.ChatCapabilitiesText))
@@ -209,6 +219,37 @@ public sealed class Harness : IHarness
                             ? "The captured image is shown to you directly, so you can visually verify layout, styling, and rendered content."
                             : "You do not have vision on this channel: the result is a text description only (URL, dimensions) — describe what you expected and ask the user to confirm how it actually looks."),
                         """{"type":"object","properties":{"url":{"type":"string","description":"The localhost URL to capture, e.g. http://localhost:5129/chat. Must be localhost or 127.0.0.1 — other hosts are rejected."}},"required":["url"]}""",
+                        llmNodeId, vision == VisionSupport.Supported));
+                    break;
+                }
+
+                case "http_request":
+                {
+                    if (!bridgeUp) break;
+                    tools.Add(BuiltinBridgeTool("http_request",
+                        "Performs an HTTP request from the user's machine and returns the raw response: status code, " +
+                        "headers, and body (unprocessed — no HTML stripping or text extraction). Useful for API testing " +
+                        "against localhost or remote endpoints. Redirects are NOT followed (3xx and Location are reported). " +
+                        "http:// and https:// URLs only.",
+                        """{"type":"object","properties":{"method":{"type":"string","description":"HTTP method: GET, POST, PUT, PATCH, DELETE, HEAD, or OPTIONS."},"url":{"type":"string","description":"Absolute http:// or https:// URL."},"headers":{"type":"object","description":"Optional request headers as name/value string pairs.","additionalProperties":{"type":"string"}},"body":{"type":"string","description":"Optional request body (sent verbatim as UTF-8)."},"timeout_seconds":{"type":"integer","description":"Request timeout in seconds (1-60, default 30)."}},"required":["method","url"]}""",
+                        llmNodeId));
+                    break;
+                }
+
+                case "read_image":
+                {
+                    if (!bridgeUp) break;
+
+                    // Same vision probe as TakeScreenshot (cached per channel/model — cheap on repeat).
+                    var vision = await DetectVisionSupportAsync(options.SelectedSourceName, options.SelectedModel, context, ct);
+                    options.OnProgress?.Invoke($"// VISION:  {(vision == VisionSupport.Supported ? "YES" : "NO")}");
+
+                    tools.Add(BuiltinBridgeTool("read_image",
+                        "Reads a local image file (png/jpeg/gif/webp, detected by content, max 10 MB) from the user's machine. " +
+                        (vision == VisionSupport.Supported
+                            ? "The image is shown to you directly, so you can visually inspect screenshots, diagrams, photos, and renders."
+                            : "You do not have vision on this channel: the user sees the image, but you only get a text confirmation (path, format, size) — ask the user to describe what matters."),
+                        """{"type":"object","properties":{"path":{"type":"string","description":"Absolute path to the image file (png/jpeg/gif/webp, max 10 MB)."}},"required":["path"]}""",
                         llmNodeId, vision == VisionSupport.Supported));
                     break;
                 }
@@ -573,6 +614,10 @@ public sealed class Harness : IHarness
         - Shell: **{shellName}**
         - {sepHint} {homeMacro} (e.g., {homeExample}).
         - **bash_exec** — run any shell command (returns JSON with exit_code, stdout, stderr)
+        - **run_background** — start a long-running command detached (dev server, watcher, etc.)
+        - **wait_for** — wait for a port, URL, or log pattern to become ready
+        - **process_output** — read the log of a tracked background job
+        - **process_kill** — stop a tracked background job
         - **read_file** — read file contents (supports line ranges; returns numbered lines)
         - **write_file** — write/create a file (creates parent directories automatically)
         - **edit_file** — replace an exact string in a file (old_string must appear exactly once; widen context if ambiguous)
@@ -586,6 +631,7 @@ public sealed class Harness : IHarness
         - **Before editing (not reading)**: use `list_dir` or `glob` to locate a file if its exact path is unknown, and `read_file` to confirm exact content before calling `edit_file`.
         - **edit_file requires uniqueness**: if `old_string` is not found or appears multiple times, the call will fail — add more surrounding lines to make it unique.
         - **Check exit codes**: `bash_exec` returns `exit_code`; treat non-zero as an error and inspect `stderr`.
+        - **Long-running process loop**: for dev servers, watchers, and similar, use `run_background`; wait for readiness with `wait_for` (port, URL, or log pattern); stream logs with `process_output`; stop with `process_kill`. If a foreground `bash_exec` exceeds `timeout_seconds`, it is converted to a background job instead of being killed.
         - Call `commands_index(topic="rust")` (or python, go, dotnet, docker, git, etc.) before running unfamiliar build commands.
         """;
     }

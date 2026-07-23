@@ -1,4 +1,5 @@
 using Aria.Agent;
+using Aria.Harness.Context;
 using Aria.Harness.Formats;
 using Aria.Harness.Governance;
 using Aria.Harness.Tools;
@@ -77,6 +78,22 @@ public sealed class HarnessOptions
     /// When set, the always-on <c>update_task_manifest</c> tool is registered.
     /// </summary>
     public Action<IReadOnlyList<TodoItem>>? OnTodoUpdate { get; set; }
+
+    /// <summary>
+    /// When set, the always-on <c>ask_user</c> tool is registered: the agent can pause mid-run and
+    /// ask a structured question (with up to 4 option buttons). The callback surfaces the question
+    /// in chat and returns the user's answer — chosen option label or typed text — or null on
+    /// timeout/skip, which the tool turns into a "proceed with your best judgment" result.
+    /// Web wires this for interactive sessions only; headless runs leave it null.
+    /// </summary>
+    public Func<string, string[]?, CancellationToken, Task<string?>>? OnAskUser { get; set; }
+
+    /// <summary>
+    /// When set, the always-on <c>context_status</c> tool is registered: the agent can check its own
+    /// context pressure (last reported input tokens, transcript estimate, auto-compact headroom).
+    /// The host supplies a cheap per-session snapshot provider.
+    /// </summary>
+    public Func<ContextStatusSnapshot>? ContextStatusProvider { get; set; }
 
     /// <summary>
     /// Plain-text index of the host UI's "/" commands and "#" references. When set, the

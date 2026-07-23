@@ -90,17 +90,23 @@ public static class ContextEndpoints
             return Results.Ok(new { enabled = ContextGrantStore.EnforcementEnabled });
         });
 
-        // GET /context/grants/export — the node's live, signed grants, for mesh replication. The server
-        // relays these to sibling nodes; it can't read anything sensitive (a grant is just soul id +
-        // expiry + signature) and can't forge one.
+        // GET /context/grants/export — the node's live, signed grants AND revocation tombstones, for
+        // mesh replication. The server relays these to sibling nodes; it can't read anything sensitive
+        // (a grant is just soul id + expiry + signature) and can't forge one — nor a revocation.
+        // Tombstones ride as GrantType="revoke" entries: an old sibling rejects them as unverifiable
+        // grants (fail closed) instead of reviving a revoked grant.
         app.MapGet("/context/grants/export", async (BridgeDbContext db) =>
         {
             var grants = await ContextGrantStore.ExportLiveGrantsAsync(db);
-            return Results.Ok(grants.Select(g => new ContextGrantDto(g.ContextId, g.GrantType, g.ExpiryUnix, g.SignatureBase64)));
+            var revocations = await ContextGrantStore.ExportRevocationsAsync(db);
+            return Results.Ok(grants
+                .Select(g => new ContextGrantDto(g.ContextId, g.GrantType, g.ExpiryUnix, g.SignatureBase64))
+                .Concat(revocations.Select(r => new ContextGrantDto(
+                    r.ContextId, ContextGrantStore.RevocationGrantType, r.GrantExpiryUnix, r.SignatureBase64))));
         });
 
-        // POST /context/grants/import — accept grants from a sibling. Each is stored only if its
-        // signature verifies under one of this soul's acceptable keys.
+        // POST /context/grants/import — accept grants and revocation tombstones from a sibling. Each
+        // is stored only if its signature verifies under one of this soul's acceptable keys.
         app.MapPost("/context/grants/import", async (ContextGrantDto[] grants, BridgeDbContext db) =>
         {
             var soul = await ActiveSoulAsync(db);
@@ -108,6 +114,12 @@ public static class ContextEndpoints
             var imported = 0;
             foreach (var g in grants ?? [])
             {
+                if (g.GrantType == ContextGrantStore.RevocationGrantType)
+                {
+                    if (await ContextGrantStore.ImportRevocationAsync(db, soul, g.ContextId, g.ExpiryUnix, g.SignatureBase64))
+                        imported++;
+                    continue;
+                }
                 var row = new ContextGrant { ContextId = g.ContextId, GrantType = g.GrantType, ExpiryUnix = g.ExpiryUnix, SignatureBase64 = g.SignatureBase64 };
                 if (await ContextGrantStore.ImportGrantAsync(db, soul, row)) imported++;
             }
@@ -324,8 +336,8 @@ public static class ContextEndpoints
             return Results.Ok(grants.Select(g => new { path = g.Path, expiryUnix = g.ExpiryUnix }));
         });
 
-        // POST /scope/revoke — end a session's path expansion immediately (node-side delete; like
-        // context-grant revocations it is local and does not replicate — a sibling's copy simply lapses).
+        // POST /scope/revoke — end a session's path expansion immediately. The node signs a revocation
+        // tombstone that replicates to siblings through the same export/import channel as the grants.
         app.MapPost("/scope/revoke", async (ScopeRevokeDto req, BridgeDbContext db, SecurityAuditLog audit) =>
         {
             var soul = await ActiveSoulAsync(db);

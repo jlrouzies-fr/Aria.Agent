@@ -329,6 +329,9 @@ public partial class Chat : ICogitationStreamSink
         // unresolved on the orphaned run until its own timeout. Reattaching (AttachToRun) re-derives
         // this fresh from the run's current PendingApproval, so clearing it here loses nothing.
         _pendingApproval = null;
+        // Same stale-gate reasoning as the approval bar: reattaching re-derives this from the
+        // run's current PendingAskUser, so clearing it here loses nothing.
+        _pendingAskUser  = null;
         _awaitingContextApprovalSessionId = null;
         _isStreaming = false;
         _router      = null;

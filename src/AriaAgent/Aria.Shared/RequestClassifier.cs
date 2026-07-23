@@ -46,7 +46,8 @@ public static class RequestClassifier
     private static readonly HashSet<string> ReadOnlyBuiltinTools = new(StringComparer.OrdinalIgnoreCase)
     {
         "read_file", "list_dir", "glob", "grep", "commands_index", "GetCurrentDateTime",
-        "git_status", "git_diff", "git_log",
+        "git_status", "git_diff", "git_log", "system_info",
+        "process_list", "process_output", "read_image", "wait_for", "project_info",
     };
 
     public static RequestSensitivity Classify(string? method, string? path)

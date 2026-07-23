@@ -2,10 +2,10 @@ namespace Aria.Web.Services.ModelBridge;
 
 /// <summary>
 /// Replicates Layer B context grants between a soul's connected nodes (defense-in-depth plan §4–§5),
-/// mirroring <see cref="KeyReplicationService"/>. Each node's live signed grants are exported and
-/// imported into every other node; the server relays opaque signed blobs it can neither read for
-/// anything sensitive nor forge (the importing node re-verifies the signature). Lets an approval on
-/// one node satisfy the gate on its siblings.
+/// mirroring <see cref="KeyReplicationService"/>. Each node's live signed grants — and signed
+/// revocation tombstones — are exported and imported into every other node; the server relays opaque
+/// signed blobs it can neither read for anything sensitive nor forge (the importing node re-verifies
+/// the signature). Lets an approval — or a revocation — on one node take effect on its siblings.
 /// </summary>
 public sealed class GrantReplicationService(ModelBridgeRegistry registry, ILogger<GrantReplicationService> log)
 {

@@ -11,6 +11,13 @@ public partial class Chat
     private TaskCompletionSource<bool>? _approvalTcs;
     private CancellationTokenSource? _sealCts;
 
+    // The ask_user question currently awaiting the user's answer (null when none) — a variant of
+    // the approval pause above, except the resolution is a payload (option label or typed text)
+    // rather than a boolean. Same single-slot reasoning; timeout/skip resolve to null.
+    private AskUserPrompt? _pendingAskUser;
+    private TaskCompletionSource<string?>? _askUserTcs;
+    private string _askUserInput = "";
+
     // Reactive context approval: set when a halted run is waiting for a node-signed session grant.
     private string? _awaitingContextApprovalSessionId;
     private CancellationTokenSource? _contextApprovalCts;
@@ -77,6 +84,64 @@ public partial class Chat
             _approvalTcs?.TrySetResult(false);
             _sealCts?.Cancel();   // also cancels a pending node Seal wait
         }
+    }
+
+    /// <summary>
+    /// Passed to the harness as <c>onAskUser</c>. Parks the ask_user tool call until the user
+    /// answers (option button or free text), skips, or the 2h window elapses — same pause/resume
+    /// machinery as the in-chat approval, except the resolution is the answer payload, not a
+    /// boolean. Timeout/skip resolve to null, which the tool reports as "user did not answer —
+    /// proceed with your best judgment" rather than failing the run.
+    /// </summary>
+    private async Task<string?> RequestAskUserAsync(string question, string[]? options, CancellationToken ct)
+    {
+        var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await InvokeAsync(() =>
+        {
+            _pendingAskUser     = new AskUserPrompt(question, options);
+            _askUserTcs         = tcs;
+            _askUserInput       = "";
+            _smartScrollPending = true;
+            StateHasChanged();
+        });
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromHours(2));
+        using var linked  = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+
+        string? answer;
+        try   { answer = await tcs.Task.WaitAsync(linked.Token); }
+        catch (OperationCanceledException) { answer = null; }
+
+        await InvokeAsync(() =>
+        {
+            _pendingAskUser = null;
+            _askUserTcs     = null;
+            _askUserInput   = "";
+            StateHasChanged();
+        });
+
+        return answer;
+    }
+
+    // Like the approval gate, the question can be hosted by this component directly or by an
+    // attached CogitationRun — route to whichever is holding it.
+    private void AnswerAskUser(string answer)
+    {
+        if (string.IsNullOrWhiteSpace(answer)) return;
+        if (_attachedRun != null) _attachedRun.ResolveAskUser(answer);
+        else _askUserTcs?.TrySetResult(answer);
+    }
+
+    private void SkipAskUser()
+    {
+        if (_attachedRun != null) _attachedRun.ResolveAskUser(null);
+        else _askUserTcs?.TrySetResult(null);
+    }
+
+    private void OnAskUserKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") AnswerAskUser(_askUserInput);
     }
 
     // High-stakes path: the verdict comes from the node, not the terminal. Show a passive "awaiting

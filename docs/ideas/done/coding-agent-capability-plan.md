@@ -150,20 +150,82 @@ Everything was added *inside* that model.
     governance/vigils/sub-agent README sections updated, phase-2 closeout checkbox checked
     (schema-drift test was already fixed in `VaultEncryptionTests.cs`).
 
-## Follow-ups (small, non-blocking)
+## Follow-ups (closed 2026-07-22)
 
-- **Builtin-tools policy path gap** (flagged in wave 5): `/tools/call` enforces the
-  server-supplied policy merged with node paths + session grants, but does not route through
-  `NodeTerminalPolicy.ResolveAsync` like the project-file/git endpoints do. Node base + grant
-  verification still cap it, but unifying the two enforcement paths would remove a class of
-  drift. Worth a dedicated look.
-- **Revocation locality**: path-grant revocations are local to the minting node (replicated
-  copies lapse at expiry) — same semantics as existing context grants; document or add
-  revocation replication if multi-node revocation latency matters.
-- **EF 9↔10 split**: Aria.Web/Aria.Bridge pin EF Core 9.0.5 while the test host loads EF 10;
-  `ExecuteUpdateAsync` throws `TypeLoadException` across the boundary (two call sites rewritten
-  load-and-save as a workaround). Align EF versions when convenient.
-- `docs/commands-and-references-plan.md` predates the catalogue-as-source-of-truth; consider
-  syncing or pointing it at `ChatCatalog.cs`.
+- ✅ **Builtin-tools policy path gap** — closed, and it was a real hole: `/tools/call` previously
+  enforced the server-supplied policy directly (null policy = unrestricted; the server could
+  widen builtins scope with its own `AllowedPaths`). Builtins now resolve through
+  `NodeTerminalPolicy.ResolveBuiltinPolicyAsync` — the same node-authoritative seam as the
+  project-file/git endpoints: node declared paths (empty when `ProjectsEnabled` off →
+  fail-closed) ∪ node-signed session grants ∩ request narrowing. One merge, no drift.
+- ✅ **Revocation replication** — tombstones ride the existing grant export/import channel as
+  signed `GrantType="revoke"` entries (distinct canonical prefix; old siblings fail closed).
+  Covers path grants, context grants, and hive one-shot seals. Out-of-order tombstones win;
+  a later-expiry re-approval counts as a fresh human decision. Known limit: re-approving the
+  *same* context id with expiry ≤ the tombstoned one won't replicate to siblings (deliberate,
+  tamper-proofing).
+- ✅ **EF Core alignment** — Bridge/Web/Tests all on EF Core **10.0.8**; the two load-and-save
+  workarounds reverted to `ExecuteUpdateAsync`; zero 9→10 breakage.
+- ✅ `docs/commands-and-references-plan.md` — status note + palette table synced with
+  `ChatCatalog.cs` (`/governance`, `/scope`, `/compact auto`).
+
+## Remaining ideas
+
 - Hive Servitor edge node (separate plan, `hive-servitor-edge-node.md`) pairs naturally with the
   `AllowProjectTools` collective flag now available.
+
+## Tool expansion (2026-07-22, second pass)
+
+- ✅ **`install_software`** — allowlisted managers (brew/npm/pip/pipx/dotnet/cargo/go),
+  injection-safe argv (no shell anywhere, strict charset validation), pip always `--user`,
+  rendered command still passes `EnforceCommand`. New `RequiresApproval` governance category:
+  asks in Balanced/Coding/Strict, blocked in Plan, seal in Paranoid, free only in Off.
+  Motivation: installs write outside any Allowed Path, so the path allowlist can never cover
+  them — approval-gating is the honest gate.
+- ✅ **`system_info`** — Benign environment recon (OS/arch, runtimes, managers on PATH, disk).
+- ✅ **`process_list`/`process_output`/`process_kill`** — registry-tracked management of
+  `bash_exec background:true` jobs (kill refuses unregistered pids; POSIX exit-code sidecar).
+- ✅ **`multi_edit`** — atomic multi-hunk edits in one call (one undo entry per batch).
+- ✅ **`undo_file`** — agent-side revert over the `FileUndo` store (stack semantics, undoable).
+- Known limits: process registry is in-memory (bridge restart loses job tracking); Windows
+  background jobs report no exit code (liveness only).
+
+## Tool expansion (2026-07-22, third pass — agent self-management)
+
+- ✅ **`ask_user`** (server-side) — structured mid-run questions (≤4 options + free-text, 2h
+  timeout, skip/timeout → "proceed with your best judgment", never fails the run). Pause/resume
+  rides the approval-bar machinery end-to-end (sink → `CogitationRun.PendingAskUser` TCS → ask
+  bar in chat). Allowed in Plan mode (it's how the agent presents choices).
+- ✅ **`context_status`** (server-side) — reported/estimated tokens vs. the effective
+  auto-compact threshold (% headroom), invariant-culture output. Benign everywhere.
+- ✅ **`http_request`** (bridge) — full verbs/headers/body, raw status + response, no
+  auto-redirect, ≤60s. Sensitive (runs on the node: localhost/LAN reach, exfiltration path).
+  Registered per-toolId like the memory tools, not via the bridge manifest (a manifest copy
+  would race the vision/wiring dedup).
+- ✅ **`read_image`** (bridge) — EnforcePath'd, magic-byte sniffed (png/jpeg/gif/webp), ≤10MB,
+  delivered via TakeScreenshot's exact multimodal path (`ToolCallResponse` base64 →
+  `MultimodalToolResult` → `DataContent` only when the vision probe passes). Benign/FileReads.
+- Test hardening: `BuiltinHttpRequestTests` serialized (`[Collection]`) + non-fatal listener
+  cleanup — `HttpListener`'s endpoint manager races ephemeral-port binds under full-suite
+  parallelism (5 consecutive green runs after the fix).
+
+## Tool expansion (2026-07-22, fourth pass — long-running processes / web servers)
+
+- ✅ **`bash_exec` timeout conversion** — when a foreground command hits `timeout_seconds`, it is
+  no longer killed. The running process is moved into the background-job registry, stdout/stderr
+  keeps draining to `.aria-bg/`, an exit-code sidecar is written on exit, and the tool returns
+  `converted_to_background: true` + `pid` + partial output. Healthy dev servers survive; the agent
+  gets guidance to call `process_output`/`process_kill`/`wait_for`. On Windows the registered pid
+  is `cmd.exe`, so cleanup works; on POSIX the registered pid is the shell wrapper, so SIGTERM may
+  miss grandchildren (same honest limit as existing `background:true`).
+- ✅ **`run_background`** — first-class "start a long-running process" tool. Models reliably use a
+  named tool. Shares the existing background launch path; gated by `ProjectsEnabled` and
+  `EnforceCommand`; Mutating + HighStakes like `bash_exec`.
+- ✅ **`wait_for`** — readiness probe: TCP port, URL response, or background-job log pattern.
+  Default 30s / max 120s; 500ms poll interval; probe-level timeouts prevent stalls. Benign/FileReads.
+- Test hardening: serialized `BuiltinProcessTests` and `BuiltinWaitForTests` via a shared
+  `[Collection("BuiltinBackgroundJobs")]` because both mutate the static `BackgroundJobs`
+  registry and reset it; `BuiltinHttpRequestTests` already had its own collection.
+- Also fixed a latent flake in `RunAsync` `ExitCode` reads: fast-exiting processes on macOS could
+  throw "No process is associated with this object" after `WaitForExitAsync`; caught and defaulted
+  to -1, mirroring the existing pattern.

@@ -8,7 +8,8 @@ public static partial class BuiltinTools
     private static IEnumerable<BridgeToolInfo> CommandsIndexToolInfos()
     {
         yield return new("commands_index",
-            "Get build, run, test and package-management commands for a language or tool. Call this before running unfamiliar commands.",
+            "Get build, run, test and package-management commands for a language or tool. " +
+            "For a specific project, call project_info(path=...) first to read its actual dependency files and infer exact commands; fall back to this static cheat-sheet only when project_info is unavailable.",
             Js("""
                {"type":"object",
                 "properties":{
@@ -359,10 +360,14 @@ public static partial class BuiltinTools
         _ => $"""
             ## Terminal Built-in Tools
 
-            Available tools: bash_exec, read_file, write_file, edit_file, list_dir, glob, grep, git_status, git_diff, git_log, git_stage, git_commit, git_discard, commands_index
+            Available tools: bash_exec, run_background, wait_for, process_list, process_output, process_kill, read_file, write_file, edit_file, multi_edit, undo_file, list_dir, glob, grep, git_status, git_diff, git_log, git_stage, git_commit, git_discard, commands_index, install_software, system_info, project_info
+
+            Project-aware workflow: call project_info(path=...) first to detect the stack and exact commands, then commands_index(topic="<name>") for general patterns if needed.
 
             Available build knowledge topics — call commands_index(topic="<name>"):
               python, typescript, rust, go, dotnet, java, swift, kotlin, ruby, php, c++, docker, git
+
+            install_software managers: brew, npm, pip, pipx, dotnet, cargo, go, uv, yarn, pnpm, apt, choco, winget
 
             Platform: {(IsWindows ? "Windows (cmd.exe / PowerShell)" : RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "macOS (/bin/sh, Homebrew)" : "Linux (/bin/sh, apt/pacman/dnf)")}
             Home directory: {Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)}
@@ -374,6 +379,7 @@ public static partial class BuiltinTools
             - Use the git_* tools (not bash_exec git …) for status/diff/log/stage/commit/discard.
             - edit_file requires old_string to appear exactly once.
             - bash_exec returns JSON with fields: exit_code (int), stdout (string), stderr (string).
+            - Long-running process workflow: start with run_background, wait for readiness with wait_for, check logs with process_output, and stop with process_kill. A foreground bash_exec that exceeds timeout_seconds is converted to a background job instead of being killed.
             """
     };
 }

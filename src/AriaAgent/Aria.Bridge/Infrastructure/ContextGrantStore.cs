@@ -211,8 +211,9 @@ public static class ContextGrantStore
         soul?.ServerSoulId is { Length: > 0 } soulId && !string.IsNullOrEmpty(sessionId)
         && await HasValidGrantAsync(db, soul, PathGrantContextId(soulId, sessionId, fullPath), ct);
 
-    /// <summary>Revokes one session's expansion to one path (node-side delete; like context grants,
-    /// revocations are local and do not replicate — a revoked grant on a sibling simply lapses).</summary>
+    /// <summary>Revokes one session's expansion to one path. The revocation mints a node-signed
+    /// tombstone (see <see cref="RevokeAsync"/>) that replicates to siblings through the same
+    /// export/import channel as the grant itself.</summary>
     public static Task RevokePathAsync(
         BridgeDbContext db, string serverSoulId, string sessionId, string fullPath, CancellationToken ct = default) =>
         RevokeAsync(db, PathGrantContextId(serverSoulId, sessionId, fullPath), ct);
@@ -256,12 +257,17 @@ public static class ContextGrantStore
     /// <summary>
     /// Imports a grant received from a sibling node (relayed by the server). Stored only if its
     /// signature verifies under one of the soul's acceptable keys — so the server cannot inject or alter
-    /// a grant in transit.
+    /// a grant in transit — and only if no verified revocation tombstone already covers this grant
+    /// instance (an out-of-order tombstone still wins when the grant arrives later).
     /// </summary>
     public static async Task<bool> ImportGrantAsync(
         BridgeDbContext db, BridgeSoul soul, ContextGrant incoming, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(incoming.ContextId) || !await VerifyGrantAsync(db, soul, incoming, ct)) return false;
+
+        var tombstoned = await db.ContextGrantTombstones.AsNoTracking()
+            .AnyAsync(t => t.ContextId == incoming.ContextId && t.GrantExpiryUnix >= incoming.ExpiryUnix, ct);
+        if (tombstoned) return false;
 
         var existing = await db.ContextGrants.FirstOrDefaultAsync(g => g.ContextId == incoming.ContextId && !g.Revoked, ct);
         // Keep the longer-lived grant; never shorten one we already trust.
@@ -297,10 +303,109 @@ public static class ContextGrantStore
 
     public static async Task RevokeAsync(BridgeDbContext db, string contextId, CancellationToken ct = default)
     {
-        // Load-and-save rather than ExecuteUpdateAsync: the bridge and its consumers may run on
-        // different EF Core majors, and the set-operator internals differ between them.
-        var rows = await db.ContextGrants.Where(g => g.ContextId == contextId && !g.Revoked).ToListAsync(ct);
+        // Grab the widest expiry first: the tombstone replicates over it so the revocation
+        // outlives every live instance of the grant.
+        var expiries = await db.ContextGrants.AsNoTracking()
+            .Where(g => g.ContextId == contextId && !g.Revoked)
+            .Select(g => g.ExpiryUnix)
+            .ToListAsync(ct);
+        if (expiries.Count == 0) return;
+        await db.ContextGrants
+            .Where(g => g.ContextId == contextId && !g.Revoked)
+            .ExecuteUpdateAsync(s => s.SetProperty(g => g.Revoked, true), ct);
+        await MintTombstoneAsync(db, contextId, expiries.Max(), ct);
+    }
+
+    // ── Revocation tombstones (replicated alongside grants via export/import) ────────────────────
+
+    /// <summary>GrantType marker under which tombstones ride the grant export/import channel. An
+    /// old bridge that receives one rejects it as an unverifiable grant (its signature is over the
+    /// distinct <c>revoke|</c> payload, never the grant payload) — fail-closed either way.</summary>
+    public const string RevocationGrantType = "revoke";
+
+    // Signs and stores a tombstone for the just-revoked grant instance so the revocation can
+    // replicate to siblings. A node without a signing key still revokes locally; it simply has
+    // nothing to propagate. Re-revoking a later (re-approved) instance widens the tombstone.
+    private static async Task MintTombstoneAsync(
+        BridgeDbContext db, string contextId, long grantExpiryUnix, CancellationToken ct)
+    {
+        var soul = await db.Souls.AsNoTracking().FirstOrDefaultAsync(x => x.Name != "", ct)
+                   ?? await db.Souls.AsNoTracking().FirstOrDefaultAsync(ct);
+        var signingKey = soul?.PrivateKeyBase64 ?? soul?.NodePrivateKeyBase64;
+        if (string.IsNullOrEmpty(signingKey)) return;
+
+        var signature = GrantCrypto.Sign(signingKey, GrantCanonical.RevocationPayload(contextId, grantExpiryUnix));
+        var existing = await db.ContextGrantTombstones.FirstOrDefaultAsync(t => t.ContextId == contextId, ct);
+        if (existing != null)
+        {
+            if (grantExpiryUnix <= existing.GrantExpiryUnix) return;
+            existing.GrantExpiryUnix = grantExpiryUnix;
+            existing.SignatureBase64 = signature;
+        }
+        else
+        {
+            db.ContextGrantTombstones.Add(new ContextGrantTombstone
+            {
+                ContextId = contextId, GrantExpiryUnix = grantExpiryUnix, SignatureBase64 = signature,
+            });
+        }
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>The node's live tombstones, for mesh replication. Tombstones whose revoked grant
+    /// would already fail closed on expiry are dead weight and stay home (the only GC tombstones
+    /// need — like grants, expired rows are filtered at read time, not deleted).</summary>
+    public static async Task<List<ContextGrantTombstone>> ExportRevocationsAsync(BridgeDbContext db, CancellationToken ct = default)
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        return await db.ContextGrantTombstones.AsNoTracking()
+            .Where(t => t.GrantExpiryUnix > now && t.SignatureBase64 != null)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Imports a revocation tombstone received from a sibling. Accepted only if its signature
+    /// verifies under one of the soul's acceptable keys — the same trust rule as grant imports, so
+    /// the server cannot forge a revocation either. Once stored, the tombstone revokes every local
+    /// live grant of the covered instance and blocks later imports of it (out-of-order delivery).
+    /// </summary>
+    public static async Task<bool> ImportRevocationAsync(
+        BridgeDbContext db, BridgeSoul soul, string contextId, long grantExpiryUnix, string? signatureBase64,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(contextId)) return false;
+        if (grantExpiryUnix <= DateTimeOffset.UtcNow.ToUnixTimeSeconds()) return false; // already lapsed
+
+        var payload = GrantCanonical.RevocationPayload(contextId, grantExpiryUnix);
+        var verified = false;
+        foreach (var key in await AcceptableKeysAsync(db, soul, ct))
+            if (GrantCrypto.Verify(key, payload, signatureBase64)) { verified = true; break; }
+        if (!verified) return false;
+
+        var existing = await db.ContextGrantTombstones.FirstOrDefaultAsync(t => t.ContextId == contextId, ct);
+        if (existing != null)
+        {
+            if (grantExpiryUnix > existing.GrantExpiryUnix)
+            {
+                existing.GrantExpiryUnix = grantExpiryUnix;
+                existing.SignatureBase64 = signatureBase64;
+            }
+        }
+        else
+        {
+            db.ContextGrantTombstones.Add(new ContextGrantTombstone
+            {
+                ContextId = contextId, GrantExpiryUnix = grantExpiryUnix, SignatureBase64 = signatureBase64,
+            });
+        }
+
+        // Kill every local live grant of the revoked instance. A re-approval with a LATER expiry
+        // survives — it is a fresh human decision, not the revoked instance.
+        var rows = await db.ContextGrants
+            .Where(g => g.ContextId == contextId && !g.Revoked && g.ExpiryUnix <= grantExpiryUnix)
+            .ToListAsync(ct);
         foreach (var g in rows) g.Revoked = true;
-        if (rows.Count > 0) await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(ct);
+        return true;
     }
 }

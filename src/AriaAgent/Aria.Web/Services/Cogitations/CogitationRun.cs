@@ -56,6 +56,11 @@ public sealed class CogitationRun : ICogitationStreamSink
     private TaskCompletionSource<bool>? _approvalTcs;
     private CancellationTokenSource?    _sealCts;
 
+    // Pending ask_user question (null when none) — same single-slot reasoning as the approval gate:
+    // tool calls are sequential within a turn.
+    public AskUserPrompt? PendingAskUser { get; private set; }
+    private TaskCompletionSource<string?>? _askUserTcs;
+
     public event Action? Updated;
     public event Action? Completed;
     public event Action? ApprovalChanged;
@@ -265,6 +270,32 @@ public sealed class CogitationRun : ICogitationStreamSink
         if (!approved) { try { _sealCts?.Cancel(); } catch { } }
         _approvalTcs?.TrySetResult(approved);
     }
+
+    // ask_user: parks the tool call until the user answers (chosen option or typed text), skips, or
+    // the same 2h window the approval gate uses elapses. Timeout/skip resolve to null — the tool
+    // turns that into a "proceed with your best judgment" result instead of failing the run.
+    public async Task<string?> AskUserAsync(string question, string[]? options, CancellationToken ct)
+    {
+        var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        PendingAskUser = new AskUserPrompt(question, options);
+        _askUserTcs    = tcs;
+        ApprovalChanged?.Invoke();
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromHours(2));
+        using var linked  = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+
+        string? answer;
+        try   { answer = await tcs.Task.WaitAsync(linked.Token); }
+        catch (OperationCanceledException) { answer = null; }
+
+        PendingAskUser = null;
+        _askUserTcs    = null;
+        ApprovalChanged?.Invoke();
+        return answer;
+    }
+
+    /// <summary>Settles a pending ask_user question with the user's answer (null = skipped).</summary>
+    public void ResolveAskUser(string? answer) => _askUserTcs?.TrySetResult(answer);
 
     public void ContextApprovalRequested(string sessionId)
     {

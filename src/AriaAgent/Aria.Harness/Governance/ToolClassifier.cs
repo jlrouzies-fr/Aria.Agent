@@ -66,6 +66,13 @@ public static class ToolClassifier
                 return new ActionDescriptor(name, argsPreview, "mutating action", path, ToolSeverity.NeedsApproval);
         }
 
+        // Approval-gated tools (e.g. install_software): a human must sign off in every governed
+        // mode — even Balanced/Coding, which let ordinary mutations run freely. Plan blocked them
+        // above via BlockMutations, Paranoid sealed them via HighStakes; only Off reaches past this.
+        if (ToolCategories.RequiresHumanApproval(name))
+            return new ActionDescriptor(name, argsPreview,
+                "installs software on this machine — requires explicit approval", path, ToolSeverity.NeedsApproval);
+
         return Allow(name, argsPreview);
     }
 

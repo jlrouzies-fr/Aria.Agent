@@ -59,6 +59,11 @@ public class RequestClassifierTests
     [InlineData("git_status")]
     [InlineData("git_diff")]
     [InlineData("git_log")]
+    [InlineData("system_info")]
+    [InlineData("process_list")]
+    [InlineData("process_output")]
+    [InlineData("read_image")]
+    [InlineData("wait_for")]
     public void ToolsCall_ReadOnlyBuiltin_IsBenign(string tool)
     {
         var body = $$"""{"toolName":"{{tool}}"}""";
@@ -67,6 +72,7 @@ public class RequestClassifierTests
 
     [Theory]
     [InlineData("bash_exec")]
+    [InlineData("run_background")]
     [InlineData("write_file")]
     [InlineData("edit_file")]
     [InlineData("delete_file")]
@@ -74,6 +80,10 @@ public class RequestClassifierTests
     [InlineData("git_stage")]
     [InlineData("git_commit")]
     [InlineData("git_discard")]
+    [InlineData("install_software")]
+    [InlineData("process_kill")]
+    [InlineData("multi_edit")]
+    [InlineData("undo_file")]
     public void ToolsCall_WriteOrExecBuiltin_IsSensitive(string tool)
     {
         var body = $$"""{"toolName":"{{tool}}"}""";

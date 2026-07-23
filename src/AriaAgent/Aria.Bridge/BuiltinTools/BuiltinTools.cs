@@ -19,10 +19,14 @@ public static partial class BuiltinTools
     public static List<BridgeToolInfo> GetToolInfos() =>
     [
         .. ShellToolInfos(),
+        .. BackgroundToolInfos(),
+        .. ProcessToolInfos(),
         .. FileToolInfos(),
         .. GrepToolInfos(),
         .. GitToolInfos(),
+        .. ProjectInfoToolInfos(),
         .. CommandsIndexToolInfos(),
+        .. InstallToolInfos(),
         .. WebToolInfos(),
         .. ScreenshotToolInfos()
     ];
@@ -39,16 +43,23 @@ public static partial class BuiltinTools
         try
         {
             // The agent's shell is part of the Projects capability (opt-in per node). If Projects is
-            // off, refuse bash_exec even when the server-side Terminal tool is toggled on.
-            if (toolName == "bash_exec" && !await IsProjectsEnabledAsync(db))
+            // off, refuse bash_exec and run_background even when the server-side Terminal tool is toggled on.
+            if ((toolName == "bash_exec" || toolName == "run_background") && !await IsProjectsEnabledAsync(db))
                 return Err("Agent Projects not enabled on this bridge. Open http://localhost:5741 → Terminal / Projects and enable Agent Projects.");
 
             return toolName switch
             {
                 "bash_exec"      => await BashExecAsync(args, policy),
+                "run_background" => await RunBackgroundAsync(args, policy),
+                "wait_for"       => await WaitForAsync(args),
+                "process_list"   => ProcessList(),
+                "process_output" => ProcessOutput(args),
+                "process_kill"   => await ProcessKillAsync(args),
                 "read_file"      => ReadFile(args, policy),
                 "write_file"     => WriteFile(args, policy, db),
                 "edit_file"      => EditFile(args, policy, db),
+                "multi_edit"     => MultiEdit(args, policy, db),
+                "undo_file"      => UndoFile(args, policy, db),
                 "list_dir"       => ListDir(args, policy),
                 "glob"           => GlobFiles(args, policy),
                 "grep"           => GrepSearch(args, policy),
@@ -62,13 +73,18 @@ public static partial class BuiltinTools
                 "delete_file"    => DeleteFile(args, policy, db),
                 "delete_dir"     => DeleteDir(args, policy),
                 "move_path"      => MovePath(args, policy, db),
+                "project_info"   => await ProjectInfoAsync(args, policy),
                 "commands_index" => CommandsIndex(args),
+                "install_software" => await InstallSoftwareAsync(args, policy),
+                "system_info"    => await SystemInfoAsync(),
                 "GetCurrentDateTime" => GetCurrentDateTime(),
                 "SearchWeb"          => await SearchWebAsync(args, db),
                 "Inscribe"           => await InscribeToolAsync(args),
                 "Probe"              => await ProbeToolAsync(args),
                 "Contemplate"        => await ContemplateToolAsync(args),
                 "TakeScreenshot"     => await TakeScreenshotAsync(args),
+                "http_request"       => await HttpRequestAsync(args),
+                "read_image"         => ReadImage(args, policy),
                 _ => Err($"Unknown built-in tool: {toolName}")
             };
         }

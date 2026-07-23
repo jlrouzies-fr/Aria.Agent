@@ -71,4 +71,15 @@ public partial class Chat
     private long TranscriptChars() =>
         _messages.Where(m => m.Role != "system").Sum(m =>
             (long)m.Content.Length + m.ToolCalls.Sum(t => (long)(t.Result?.Length ?? 0) + t.ArgsJson.Length));
+
+    // Per-session snapshot for the always-on context_status tool: last reported usage (null when the
+    // source returns none), the same transcript estimate auto-compaction falls back to, the session's
+    // threshold override, and cheap message/tool-call counts. Assembly of the report itself lives in
+    // Aria.Harness (ContextStatusReport) so it stays host-agnostic.
+    private ContextStatusSnapshot BuildContextStatusSnapshot() =>
+        new(_messages.LastOrDefault(m => m.InputTokens.HasValue)?.InputTokens,
+            TranscriptChars(),
+            SessionState.AutoCompactThreshold,
+            _messages.Count,
+            _messages.Sum(m => m.ToolCalls.Count));
 }

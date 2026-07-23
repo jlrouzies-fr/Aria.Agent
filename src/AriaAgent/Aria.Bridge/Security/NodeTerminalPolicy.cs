@@ -5,11 +5,12 @@ using Microsoft.EntityFrameworkCore;
 namespace Aria.Bridge;
 
 /// <summary>
-/// Resolves the node-authoritative Terminal policy shared by the exec, project-file, and git
-/// endpoints. The node's declared Allowed Paths (Terminal › Allowed Projects) are the maximum
-/// scope; a server-supplied request may only <em>narrow</em> them, never widen. An empty node
-/// list blocks every path (fail closed) so a compromised server cannot read or write outside the
-/// directories the node explicitly declared — even by sending its own <c>AllowedPaths</c>.
+/// Resolves the node-authoritative Terminal policy shared by the exec, project-file, git, and
+/// built-in tools (<c>/tools/call</c>) endpoints. The node's declared Allowed Paths (Terminal ›
+/// Allowed Projects) are the maximum scope; a server-supplied request may only <em>narrow</em>
+/// them, never widen. An empty node list blocks every path (fail closed) so a compromised server
+/// cannot read or write outside the directories the node explicitly declared — even by sending
+/// its own <c>AllowedPaths</c>.
 ///
 /// The one sanctioned widening is the node's OWN doing: a session path grant (Wave 5), minted and
 /// signed by this node (or a trusted sibling) after a human approved it, unions into the base set
@@ -41,20 +42,19 @@ public static class NodeTerminalPolicy
     }
 
     /// <summary>
-    /// The same Wave 5 union for the server-supplied policy of the built-in tools path
-    /// (<c>/tools/call</c>): adds this session's node-signed grant paths, nothing else — the server's
-    /// own paths pass through untouched. A null or unrestricted policy is returned as-is (there is
-    /// no enforced set to widen into).
+    /// The enforcement seam for the built-in tools path (<c>/tools/call</c>): resolves the SAME
+    /// node-authoritative policy as <see cref="ResolveAsync"/> — node declared paths (empty when
+    /// the Projects capability is off, which fails closed) ∪ this session's node-signed path
+    /// grants, then narrowed by the server-supplied request paths (e.g. active-project focus).
+    /// The server's BlockedCommands pass through so <c>bash_exec</c> keeps enforcing them; its
+    /// AllowedPaths only ever narrow the node set, never widen it.
     /// </summary>
-    public static async Task<SecurityPolicy?> ApplySessionPathGrantsAsync(
-        SecurityPolicy? policy, string? sessionId, BridgeDbContext db)
+    public static async Task<SecurityPolicy> ResolveBuiltinPolicyAsync(
+        BridgeDbContext db, SecurityPolicy? requestPolicy, string? sessionId = null)
     {
-        if (policy?.AllowedPaths is not { Length: > 0 } || string.IsNullOrEmpty(sessionId)) return policy;
-        var soul = await db.Souls.AsNoTracking().FirstOrDefaultAsync(x => x.Name != "")
-                   ?? await db.Souls.AsNoTracking().FirstOrDefaultAsync();
-        if (soul == null) return policy;
-        var granted = await ContextGrantStore.GetLiveSessionPathGrantsAsync(db, soul, sessionId);
-        if (granted.Count == 0) return policy;
-        return policy with { AllowedPaths = policy.AllowedPaths.Concat(granted.Select(g => g.Path)).ToArray() };
+        var policy = await ResolveAsync(db, requestPolicy?.AllowedPaths, sessionId);
+        return requestPolicy?.BlockedCommands is { Length: > 0 } blocked
+            ? policy with { BlockedCommands = blocked }
+            : policy;
     }
 }

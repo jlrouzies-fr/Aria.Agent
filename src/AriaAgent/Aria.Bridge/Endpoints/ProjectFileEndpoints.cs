@@ -254,55 +254,7 @@ public static class ProjectFileEndpoints
             string? reverseDiff = null;
             try
             {
-                if (undo.ToolName == "delete_file")
-                {
-                    // Recreate the deleted file from pre-content.
-                    if (undo.PreContent != null)
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                        File.WriteAllText(path, undo.PreContent);
-                        reverseDiff = DiffTools.ComputeUnifiedDiff(
-                            Array.Empty<string?>(),
-                            undo.PreContent.ReplaceLineEndings("\n").Split('\n').Cast<string?>().ToArray(),
-                            Path.GetFileName(path)).Diff;
-                    }
-                }
-                else if (undo.ToolName == "move_path" && undo.DestinationPath != null)
-                {
-                    // Restore source, remove destination.
-                    if (undo.PreContent != null)
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                        File.WriteAllText(path, undo.PreContent);
-                    }
-                    if (File.Exists(undo.DestinationPath))
-                        File.Delete(undo.DestinationPath);
-                    reverseDiff = $"Restored {path} and removed {undo.DestinationPath}";
-                }
-                else
-                {
-                    // write_file / edit_file: restore pre-content (or delete if it was created).
-                    if (undo.PreContent == null)
-                    {
-                        var before = currentExists ? File.ReadAllText(path).ReplaceLineEndings("\n").Split('\n').Cast<string?>().ToArray() : Array.Empty<string?>();
-                        if (File.Exists(path)) File.Delete(path);
-                        reverseDiff = DiffTools.ComputeUnifiedDiff(
-                            before,
-                            Array.Empty<string?>(),
-                            Path.GetFileName(path)).Diff;
-                    }
-                    else
-                    {
-                        var before = currentExists ? File.ReadAllText(path).ReplaceLineEndings("\n").Split('\n').Cast<string?>().ToArray() : Array.Empty<string?>();
-                        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                        File.WriteAllText(path, undo.PreContent);
-                        reverseDiff = DiffTools.ComputeUnifiedDiff(
-                            before,
-                            undo.PreContent.ReplaceLineEndings("\n").Split('\n').Cast<string?>().ToArray(),
-                            Path.GetFileName(path)).Diff;
-                    }
-                }
-
+                reverseDiff = FileReverter.Apply(undo);
                 undo.RevertedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync();
 

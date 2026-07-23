@@ -15,6 +15,7 @@ public interface ICogitationStreamSink
     void ToolComplete(string name, string result, string? imageBase64 = null, string? imageMediaType = null, string? metadataJson = null);
     void TodoUpdate(IReadOnlyList<TodoItem> todos);
     Task<bool> ApprovalRequestedAsync(ActionDescriptor descriptor, CancellationToken ct);
+    Task<string?> AskUserAsync(string question, string[]? options, CancellationToken ct);
     void ContextApprovalRequested(string sessionId);
 }
 
@@ -43,6 +44,11 @@ public sealed class CogitationStreamRouter : ICogitationStreamSink
 
     public Task<bool> ApprovalRequestedAsync(ActionDescriptor descriptor, CancellationToken ct) =>
         Target?.ApprovalRequestedAsync(descriptor, ct) ?? Task.FromResult(false);
+
+    // No listener (unattached run): answer null — the tool returns "user did not answer" and the
+    // agent proceeds on its best judgment rather than hanging the turn for the full timeout.
+    public Task<string?> AskUserAsync(string question, string[]? options, CancellationToken ct) =>
+        Target?.AskUserAsync(question, options, ct) ?? Task.FromResult<string?>(null);
 
     public void ContextApprovalRequested(string sessionId) => Target?.ContextApprovalRequested(sessionId);
 }

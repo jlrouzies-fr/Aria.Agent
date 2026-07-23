@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Aria.Bridge.Data;
+using Aria.Bridge.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
 namespace Aria.Bridge;
@@ -43,6 +44,34 @@ public static partial class BuiltinTools
                   "new_string": {"type":"string","description":"Replacement text."}
                 },
                 "required":["path","old_string","new_string"]}
+               """));
+
+        yield return new("multi_edit",
+            "Apply several exact-string replacements to one file in a single call. Edits apply sequentially in order; each old_string must appear exactly once at the moment it is applied. Atomic: if any edit fails, the file is left unchanged and the failing edit index is reported.",
+            Js("""
+               {"type":"object",
+                "properties":{
+                  "path":  {"type":"string","description":"Absolute path to the file."},
+                  "edits": {"type":"array",
+                            "description":"Replacements to apply in order.",
+                            "items":{"type":"object",
+                                     "properties":{
+                                       "old_string":{"type":"string","description":"Exact text to replace. Must appear exactly once when this edit is applied."},
+                                       "new_string":{"type":"string","description":"Replacement text."}
+                                     },
+                                     "required":["old_string","new_string"]}}
+                },
+                "required":["path","edits"]}
+               """));
+
+        yield return new("undo_file",
+            "Restore a file to its state before the most recent recorded mutation (write_file, edit_file, multi_edit, delete_file, …). The undo is itself recorded, so it can be undone again. Fails cleanly when no snapshot exists for the path.",
+            Js("""
+               {"type":"object",
+                "properties":{
+                  "path": {"type":"string","description":"Absolute path to the file to restore."}
+                },
+                "required":["path"]}
                """));
 
         yield return new("list_dir",
@@ -170,6 +199,88 @@ public static partial class BuiltinTools
         File.WriteAllText(path, postContent);
         var metadata = BuildFileMutationMetadata(db, path, preContent, postContent, "edit_file", out var _);
         return new ToolCallResponse($"Replaced 1 occurrence in {path}", false, MetadataJson: metadata);
+    }
+
+    private static ToolCallResponse MultiEdit(
+        Dictionary<string, JsonElement> args, SecurityPolicy? policy, BridgeDbContext? db)
+    {
+        var path = Expand(args.Str("path") ?? throw new ArgumentException("'path' is required"));
+        policy?.EnforcePath(path);
+
+        if (!args.TryGetValue("edits", out var editsEl) || editsEl.ValueKind != JsonValueKind.Array)
+            throw new ArgumentException("'edits' is required");
+
+        var edits = new List<(string Old, string New)>();
+        foreach (var e in editsEl.EnumerateArray())
+        {
+            var oldStr = e.TryGetProperty("old_string", out var ov) && ov.ValueKind == JsonValueKind.String ? ov.GetString() : null;
+            var newStr = e.TryGetProperty("new_string", out var nv) && nv.ValueKind == JsonValueKind.String ? nv.GetString() : null;
+            if (oldStr == null || newStr == null)
+                return Err($"edits[{edits.Count}]: 'old_string' and 'new_string' are required");
+            edits.Add((oldStr, newStr));
+        }
+        if (edits.Count == 0)
+            return Err("'edits' must contain at least one edit");
+
+        // Apply the whole batch against an in-memory copy first — the file is written only when
+        // every edit succeeds, so a failure anywhere leaves the file untouched (atomic per file).
+        // Each old_string must be unique AT THE TIME it applies: earlier edits can create or
+        // destroy occurrences for later ones.
+        var preContent = File.ReadAllText(path);
+        var working = preContent;
+        for (var i = 0; i < edits.Count; i++)
+        {
+            var count = CountOccurrences(working, edits[i].Old);
+            if (count == 0)
+                return Err($"Edit {i} failed: old_string not found. Edits apply sequentially — earlier edits may have changed the text. No changes were written to {path}.");
+            if (count > 1)
+                return Err($"Edit {i} failed: old_string is ambiguous ({count} occurrences at that point). Add more surrounding context to make it unique. No changes were written to {path}.");
+            working = working.Replace(edits[i].Old, edits[i].New, StringComparison.Ordinal);
+        }
+
+        File.WriteAllText(path, working);
+        var metadata = BuildFileMutationMetadata(db, path, preContent, working, "multi_edit", out var _);
+        return new ToolCallResponse($"Applied {edits.Count} edit(s) to {path}", false, MetadataJson: metadata);
+    }
+
+    private static ToolCallResponse UndoFile(
+        Dictionary<string, JsonElement> args, SecurityPolicy? policy, BridgeDbContext? db)
+    {
+        var path = Expand(args.Str("path") ?? throw new ArgumentException("'path' is required"));
+        policy?.EnforcePath(path);
+
+        if (db == null)
+            return Err("undo_file is unavailable: no bridge database in this context.");
+
+        // Most recent not-yet-reverted snapshot for this path — reverted rows are skipped so
+        // repeated undo_file calls walk the mutation history like a stack.
+        var undo = db.FileUndos
+            .Where(u => u.Path == path && u.RevertedAt == null)
+            .OrderByDescending(u => u.CreatedAt)
+            .FirstOrDefault();
+        if (undo == null)
+            return Err($"No undo snapshot found for {path}.");
+
+        // Same guard as the Explorer revert endpoint: refuse to clobber content that changed
+        // after the snapshot was taken.
+        var currentExists = File.Exists(path);
+        var currentHash = currentExists ? ComputeContentHash(File.ReadAllText(path)) : "";
+        if (currentHash != undo.PostHash)
+            return Err($"Refusing to undo: {path} has changed since the {undo.ToolName} mutation being reverted. Inspect it with read_file first.");
+
+        var preContent = currentExists ? File.ReadAllText(path) : null;
+        FileReverter.Apply(undo);
+        undo.RevertedAt = DateTime.UtcNow;
+
+        // The undo is itself a mutation — record it (BuildFileMutationMetadata also persists the
+        // RevertedAt mark above) so undo_file can be undone in turn.
+        var restoredExists = File.Exists(path);
+        var postContent = restoredExists ? File.ReadAllText(path) : "";
+        var metadata = BuildFileMutationMetadata(db, path, preContent, postContent, "undo_file",
+            out var _, deleted: !restoredExists);
+        return new ToolCallResponse(
+            $"Restored {path} to its state before the {undo.ToolName} mutation from {undo.CreatedAt:u}",
+            false, MetadataJson: metadata);
     }
 
     private static ToolCallResponse ListDir(

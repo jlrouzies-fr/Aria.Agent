@@ -65,6 +65,10 @@ public class BridgeDbContext(DbContextOptions<BridgeDbContext> options, VaultEnc
     // sensitive operations for a context (soul/session) without re-prompting, until they expire.
     public DbSet<ContextGrant> ContextGrants { get; set; }
 
+    // Node-signed revocation tombstones for those grants — replicated to siblings through the same
+    // export/import channel so a revoke on one node kills the grant everywhere, not just locally.
+    public DbSet<ContextGrantTombstone> ContextGrantTombstones { get; set; }
+
     // Layer B Phase 2: locally-verified sibling node public keys. A node's grant-signing key is
     // accepted only if its enrollment certificate chains to the soul key or another trusted sibling.
     public DbSet<TrustedSiblingKey> TrustedSiblingKeys { get; set; }
@@ -240,6 +244,13 @@ public class BridgeDbContext(DbContextOptions<BridgeDbContext> options, VaultEnc
             e.HasIndex(g => g.ContextId);
         });
 
+        b.Entity<ContextGrantTombstone>(e =>
+        {
+            e.ToTable("ContextGrantTombstones");
+            e.HasKey(t => t.Id);
+            e.HasIndex(t => t.ContextId);
+        });
+
         b.Entity<TrustedSiblingKey>(e =>
         {
             e.ToTable("TrustedSiblingKeys");
@@ -294,6 +305,24 @@ public class ContextGrant
     public long     ExpiryUnix      { get; set; }
     public string?  SignatureBase64 { get; set; }         // reserved for cross-node replication
     public bool     Revoked         { get; set; }
+    public DateTime CreatedAt       { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// A node-signed revocation tombstone for one grant context id, replicated to sibling nodes through
+/// the same export/import channel as grants. The signature is over
+/// <see cref="Aria.Shared.GrantCanonical.RevocationPayload"/> and verified against the same
+/// acceptable keys as a grant, so the relaying server cannot forge a revocation. The tombstone kills
+/// only the grant instance it was minted against (up to <see cref="GrantExpiryUnix"/>): a human
+/// re-approval with a later expiry imports despite an older tombstone, while an out-of-order import
+/// of the revoked instance still loses.
+/// </summary>
+public class ContextGrantTombstone
+{
+    public int      Id              { get; set; }
+    public string   ContextId       { get; set; } = "";
+    public long     GrantExpiryUnix { get; set; }         // expiry of the revoked grant instance
+    public string?  SignatureBase64 { get; set; }
     public DateTime CreatedAt       { get; set; } = DateTime.UtcNow;
 }
 
