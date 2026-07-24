@@ -339,6 +339,138 @@ public sealed class ContextApprovalService(
         catch { return false; }
     }
 
+    /// <summary>
+    /// Wave 5 "/scope add": asks the pinned approval node to mint a session-scoped, node-signed PATH
+    /// grant for <paramref name="path"/> (the human consents on the same local ceremony page as a
+    /// context seal). The server only relays the ask — the grant is minted and stored node-side, then
+    /// replicated to siblings. Returns true when a live grant covers the path for this session.
+    /// </summary>
+    public async Task<bool> RequestPathGrantAsync(
+        string userId, string sessionId, string path, CancellationToken ct = default)
+    {
+        // The pending approval lives in-memory on the node that receives /request, so the /poll below
+        // MUST hit that same node — the pinned approval node, exactly like the context ceremony.
+        var approvalNode = registry.ResolveApprovalNode(userId);
+        if (approvalNode == null) return false;
+
+        // Already covered (e.g. a parallel ceremony, or a grant from an earlier ask)? Nothing to do.
+        if (await HasLivePathGrantAsync(userId, sessionId, path, approvalNode)) return true;
+
+        var reqBody = JsonSerializer.Serialize(new { sessionId, kind = "scope", path });
+        var start = await registry.SendLocalRestAsync(userId, "POST", "/context/approve/request", reqBody, approvalNode);
+        if (start is not { StatusCode: 200, Body: { } startBody })
+        {
+            logger.LogWarning("Path expansion request could not reach the node for user {User}", userId);
+            return false;
+        }
+
+        string? id;
+        try
+        {
+            using var doc = JsonDocument.Parse(startBody);
+            id = doc.RootElement.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+        }
+        catch { return false; }
+
+        if (string.IsNullOrEmpty(id))
+        {
+            logger.LogWarning("Path expansion request returned no id for user {User}", userId);
+            return false;
+        }
+
+        var deadline = DateTime.UtcNow + MaxWait;
+        while (DateTime.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            await Task.Delay(PollInterval, ct);
+
+            var poll = await registry.SendLocalRestAsync(userId, "POST", $"/context/approve/{id}/poll", nodeId: approvalNode);
+            if (poll is not { StatusCode: 200, Body: { } pollBody }) continue;
+
+            string? status;
+            try
+            {
+                using var doc = JsonDocument.Parse(pollBody);
+                status = doc.RootElement.TryGetProperty("status", out var s) ? s.GetString() : "pending";
+            }
+            catch { continue; }
+
+            switch (status)
+            {
+                case "approved":
+                    logger.LogInformation("Path expansion {ApprovalId} granted for user {User}: {Path}", id[..8], userId, path);
+                    await ReplicateBestEffortAsync(userId);
+                    return true;
+                case "rejected":
+                case "expired":
+                    // A parallel ceremony may have granted this path in the meantime — honour it.
+                    if (await HasLivePathGrantAsync(userId, sessionId, path, approvalNode))
+                    {
+                        await ReplicateBestEffortAsync(userId);
+                        return true;
+                    }
+                    return false;
+            }
+        }
+
+        logger.LogInformation("Path expansion {ApprovalId} timed out for user {User}", id[..8], userId);
+        return false;
+    }
+
+    /// <summary>The session's live path expansions as reported by the node they were minted on —
+    /// read-only, never prompts. Used by the chat "/scope" display and to refresh the governance
+    /// scope-lock's soft copy. Empty when the node is unreachable.</summary>
+    public async Task<IReadOnlyList<string>> GetLivePathExpansionsAsync(
+        string userId, string sessionId, string? nodeId = null)
+    {
+        var resp = await registry.SendLocalRestAsync(
+            userId, "GET", $"/scope/list?session={Uri.EscapeDataString(sessionId)}",
+            nodeId: nodeId ?? registry.ResolveApprovalNode(userId));
+        if (resp is not { StatusCode: 200, Body: { } body }) return [];
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.EnumerateArray()
+                .Select(e => e.TryGetProperty("path", out var p) ? p.GetString() : null)
+                .Where(p => !string.IsNullOrEmpty(p))
+                .Cast<string>()
+                .ToList();
+        }
+        catch { return []; }
+    }
+
+    /// <summary>Revokes a session's path expansion on the node that minted it ("/scope remove").
+    /// A narrowing operation — safe for the server to relay. The node signs a revocation tombstone
+    /// on revoke; it reaches siblings through the same replication channel as the grants, so the
+    /// replicated copies die too rather than merely lapsing at expiry.</summary>
+    public async Task<bool> RevokePathGrantAsync(
+        string userId, string sessionId, string path, string? nodeId = null)
+    {
+        var body = JsonSerializer.Serialize(new { sessionId, path });
+        var resp = await registry.SendLocalRestAsync(
+            userId, "POST", "/scope/revoke", body, nodeId ?? registry.ResolveApprovalNode(userId));
+        if (resp is not { StatusCode: 200 }) return false;
+        await ReplicateBestEffortAsync(userId);   // push the fresh tombstone to siblings now
+        return true;
+    }
+
+    /// <summary>True when the node reports a live, verified path grant for this exact path and
+    /// session. Read-only status endpoint — never prompts.</summary>
+    private async Task<bool> HasLivePathGrantAsync(string userId, string sessionId, string path, string? nodeId)
+    {
+        var resp = await registry.SendLocalRestAsync(
+            userId, "GET",
+            $"/scope/status?session={Uri.EscapeDataString(sessionId)}&path={Uri.EscapeDataString(path)}",
+            nodeId: nodeId);
+        if (resp is not { StatusCode: 200, Body: { } body }) return false;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.TryGetProperty("granted", out var g) && g.ValueKind == JsonValueKind.True;
+        }
+        catch { return false; }
+    }
+
     private async Task ReplicateBestEffortAsync(string userId)
     {
         try { await replication.ReplicateAsync(userId); }

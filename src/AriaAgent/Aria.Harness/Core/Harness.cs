@@ -56,6 +56,7 @@ public sealed class Harness : IHarness
 
         var tools            = new List<AITool>();
         var hasTerminalTools = false;
+        var hasMemoryTools   = false;
         (string Name, string Path, string Description, string? NodeId, string? Platform)[] terminalProjects = [];
         var terminalNodePlatforms = new Dictionary<string?, string>();
 
@@ -78,10 +79,28 @@ public sealed class Harness : IHarness
         if (options.OnTodoUpdate != null)
             tools.Add(TodoTools.Create(options.OnTodoUpdate));
 
+        // Structured user question — always-on when the host wires an ask-and-wait callback
+        // (interactive chat only; headless runs leave it null and the tool is absent). The
+        // callback pauses the call until the user answers, times out, or skips.
+        if (options.OnAskUser != null)
+            tools.Add(AskUserTools.Create(options.OnAskUser));
+
+        // Context pressure self-report — always-on when the host wires a snapshot provider.
+        if (options.ContextStatusProvider != null)
+            tools.Add(ContextStatusTools.Create(options.ContextStatusProvider));
+
         // Chat capabilities index — always-on, in-process, Web-only-when-wired (Console never
         // sets this, so the tool is simply absent there).
         if (!string.IsNullOrWhiteSpace(options.ChatCapabilitiesText))
             tools.Add(ChatCapabilitiesTools.Create(options.ChatCapabilitiesText));
+
+        // Sub-agent delegation — always-on when the host wires a session-bound spawner. Headless
+        // child runs never get one, so a spawned agent cannot itself spawn (one level only).
+        if (options.SubAgentSpawner != null)
+        {
+            tools.Add(SpawnAgentTools.CreateSpawnTool(options.SubAgentSpawner));
+            tools.Add(SpawnAgentTools.CreateResultTool(options.SubAgentSpawner));
+        }
 
         foreach (var tool in options.EnabledTools)
         {
@@ -156,9 +175,10 @@ public sealed class Harness : IHarness
                     if (bridgeUp)
                     {
                         tools.Add(BuiltinBridgeTool("Inscribe",
-                            "Use when you need to commit information, events, or intelligence into memory for future retrieval — such as recording facts about entities encountered, decisions made, or observations witnessed during your crusade.",
-                            """{"type":"object","properties":{"content":{"type":"string","description":"The information to commit to memory — facts, events, intelligence reports, or any data worthy of preservation in the archive"}},"required":["content"]}""",
+                            "Commit a fact, preference, decision, or observation to persistent memory for future sessions. Use proactively — without being asked — whenever the user states a preference or constraint, makes or defers a decision (\"we'll do that later\"), corrects you, or reveals a durable fact about their projects, machines, or accounts. The archive merges duplicates automatically, so inscribe even when unsure the fact is new. Do NOT use for ephemeral task progress, secrets, or small talk.",
+                            """{"type":"object","properties":{"content":{"type":"string","description":"The information to preserve, with enough context to stand alone in a future session (who/what/why). For deferred work, include what was deferred and the reason."}},"required":["content"]}""",
                             llmNodeId));
+                        hasMemoryTools = true;
                         // Recall (Probe/Contemplate): single LLM node, or fan-out across all connected
                         // nodes when RecallScope.AllNodes — memory stores stay node-local either way.
                         const string probeSchema = """{"type":"object","properties":{"query":{"type":"string","description":"The query in natural language describing what intelligence you seek (e.g., 'What are this soul's preferences?', 'What happened in their timeline?')"}},"required":["query"]}""";
@@ -205,17 +225,48 @@ public sealed class Harness : IHarness
                     break;
                 }
 
+                case "http_request":
+                {
+                    if (!bridgeUp) break;
+                    tools.Add(BuiltinBridgeTool("http_request",
+                        "Performs an HTTP request from the user's machine and returns the raw response: status code, " +
+                        "headers, and body (unprocessed — no HTML stripping or text extraction). Useful for API testing " +
+                        "against localhost or remote endpoints. Redirects are NOT followed (3xx and Location are reported). " +
+                        "http:// and https:// URLs only.",
+                        """{"type":"object","properties":{"method":{"type":"string","description":"HTTP method: GET, POST, PUT, PATCH, DELETE, HEAD, or OPTIONS."},"url":{"type":"string","description":"Absolute http:// or https:// URL."},"headers":{"type":"object","description":"Optional request headers as name/value string pairs.","additionalProperties":{"type":"string"}},"body":{"type":"string","description":"Optional request body (sent verbatim as UTF-8)."},"timeout_seconds":{"type":"integer","description":"Request timeout in seconds (1-60, default 30)."}},"required":["method","url"]}""",
+                        llmNodeId));
+                    break;
+                }
+
+                case "read_image":
+                {
+                    if (!bridgeUp) break;
+
+                    // Same vision probe as TakeScreenshot (cached per channel/model — cheap on repeat).
+                    var vision = await DetectVisionSupportAsync(options.SelectedSourceName, options.SelectedModel, context, ct);
+                    options.OnProgress?.Invoke($"// VISION:  {(vision == VisionSupport.Supported ? "YES" : "NO")}");
+
+                    tools.Add(BuiltinBridgeTool("read_image",
+                        "Reads a local image file (png/jpeg/gif/webp, detected by content, max 10 MB) from the user's machine. " +
+                        (vision == VisionSupport.Supported
+                            ? "The image is shown to you directly, so you can visually inspect screenshots, diagrams, photos, and renders."
+                            : "You do not have vision on this channel: the user sees the image, but you only get a text confirmation (path, format, size) — ask the user to describe what matters."),
+                        """{"type":"object","properties":{"path":{"type":"string","description":"Absolute path to the image file (png/jpeg/gif/webp, max 10 MB)."}},"required":["path"]}""",
+                        llmNodeId, vision == VisionSupport.Supported));
+                    break;
+                }
+
                 case "terminal":
                 {
                     if (!await _runtime.IsBridgeAvailableAsync(context, ct)) break;
 
                     // Bridge-authoritative project list takes precedence; fall back to the legacy
                     // tool-config AllowedPaths only when the host did not supply it.
-                    var namedProjects = options.TerminalProjects is { Count: > 0 }
+                    var allNamedPaths = options.TerminalProjects is { Count: > 0 }
                         ? options.TerminalProjects.Select(p => (p.Name, p.Path, p.Description, p.NodeId, p.Platform)).ToArray()
                         : ParseNamedPaths(cfg.GetValueOrDefault("AllowedPaths", ""));
-                    var namedPaths   = namedProjects;
-                    var blockedCmds  = ParseConfigLines(cfg.GetValueOrDefault("BlockedCommands", ""));
+                    var scopedNamedPaths = allNamedPaths;
+                    var blockedCmds      = ParseConfigLines(cfg.GetValueOrDefault("BlockedCommands", ""));
 
                     // Active-project scope: when the chat has a project selected, restrict the Terminal
                     // tool to just that project so the bridge's path enforcement blocks every other
@@ -230,12 +281,12 @@ public sealed class Harness : IHarness
                             catch { return p; }
                         }
                         var target = Norm(options.ActiveProjectPath);
-                        var scoped = namedPaths.Where(p => Norm(p.Path) == target).ToArray();
-                        if (scoped.Length > 0) namedPaths = scoped;
+                        var scoped = allNamedPaths.Where(p => Norm(p.Path) == target).ToArray();
+                        if (scoped.Length > 0) scopedNamedPaths = scoped;
                     }
 
                     // Group projects by target bridge node. Null/empty nodeId means "use the LLM node".
-                    var projectsByNode = namedPaths
+                    var projectsByNode = scopedNamedPaths
                         .GroupBy(p => string.IsNullOrEmpty(p.NodeId) ? llmNodeId : p.NodeId)
                         .ToList();
 
@@ -301,7 +352,7 @@ public sealed class Harness : IHarness
                     }
 
                     if (hasTerminalTools)
-                        terminalProjects = namedPaths;
+                        terminalProjects = allNamedPaths;
                     break;
                 }
 
@@ -343,7 +394,11 @@ public sealed class Harness : IHarness
 
         var baseInstructions = options.InstructionsOverride ?? AgentDefaults.SystemMessage;
         if (hasTerminalTools)
-            baseInstructions += BuildTerminalAddendum(terminalProjects, terminalNodePlatforms);
+            baseInstructions += BuildTerminalAddendum(terminalProjects, terminalNodePlatforms, options.ActiveProjectPath);
+        // Gated on actual tool registration (not on the user's toggle): the memory tools also vanish
+        // when the bridge is down, and the prompt must never reference absent tools.
+        if (hasMemoryTools)
+            baseInstructions += BuildMemoryAddendum();
 
         // Always wrap every tool in a governance decorator (even when the initial mode is Off) so a
         // later mode change applies to this existing session — the per-turn policy is refreshed in
@@ -516,12 +571,46 @@ public sealed class Harness : IHarness
         }
     }
 
+    // ── Memory addendum ───────────────────────────────────────────────────────
+
+    // Injected only when the memory tools were actually registered this session (see the hasMemoryTools
+    // gate at the assembly site). Gives the model concrete save/recall triggers — the tool descriptions
+    // alone proved too weak, especially for small local models, and the Minimal Action Principle
+    // otherwise suppresses self-initiated Inscribe calls.
+    private static string BuildMemoryAddendum() => """
+
+
+        ## Memory (Noosphere)
+
+        You have persistent memory that survives across sessions. Saving to it is ALWAYS permitted — it is exempt from the Minimal Action Principle and needs no explicit request from the user.
+
+        Inscribe proactively when the user reveals something with value beyond this session:
+        - Preferences, constraints, or standing rules ("I prefer X", "never do Y", "from now on…")
+        - Decisions and deferrals ("let's do Z later", "we'll go with option B") — record what was decided or deferred, and why, so a future session can resume it
+        - Corrections ("no, use W not V") — record the corrected fact
+        - Durable facts about the user's machines, projects, servers, accounts, or environment quirks
+        - Named tools, technologies, or people the user clearly intends to revisit
+
+        Do NOT inscribe: ephemeral task progress, anything already recorded in the project/repo itself, secrets or credentials, and small talk.
+
+        The archive merges duplicates and links entities automatically — never hold back an Inscribe because the fact might already exist. When a fact changes, simply inscribe the new version.
+
+        Probe memory whenever a request may depend on earlier sessions — recurring project or person names, "what did we decide about…", or any task that resumes prior work.
+        """;
+
     // ── Terminal addendum ─────────────────────────────────────────────────────
 
     private static string BuildTerminalAddendum(
         (string Name, string Path, string Description, string? NodeId, string? Platform)[] projects,
-        IReadOnlyDictionary<string?, string> nodePlatforms)
+        IReadOnlyDictionary<string?, string> nodePlatforms,
+        string? activeProjectPath = null)
     {
+        static string Norm(string p)
+        {
+            try { return Path.GetFullPath(p).TrimEnd(Path.DirectorySeparatorChar); }
+            catch { return p; }
+        }
+
         var distinctPlatforms = projects.Select(p => p.Platform).Concat(nodePlatforms.Values)
             .Where(p => !string.IsNullOrEmpty(p)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var mixedPlatforms = distinctPlatforms.Count > 1;
@@ -550,10 +639,23 @@ public sealed class Harness : IHarness
         var projectsSection = projects.Length > 0
             ? "\n\n### Allowed Projects\n" +
               string.Join("\n", projects.Select(ProjectLabel)) +
-              "\n\nYou may only access files and run commands within these paths. Use these exact absolute paths — do not guess or infer other locations." +
+              "\n\nYou may only access files and run commands within these paths. Use these exact absolute paths — do not guess or infer other locations. " +
+              "If the user names a project by its name or path above, use it directly without asking for clarification. " +
+              "Project names may be partial, lowercase, or abbreviated — match them case-insensitively and by prefix/substring (e.g. 'spectra' → 'Spectra.MLX'). " +
+              "The user can switch the active project at any time by typing `/project`." +
               (mixedPlatforms
                   ? " Projects live on DIFFERENT machines: every tool call is executed on the machine that owns the path you pass, so always copy the project's path prefix verbatim (drive letter and separators included) and never rewrite it into another OS's style."
                   : "")
+            : "\n\n### Allowed Projects\nNo terminal projects are currently available. Do not access the filesystem.";
+
+        var otherProjects = activeProjectPath is null
+            ? []
+            : projects.Where(p => !string.Equals(
+                Norm(p.Path), Norm(activeProjectPath), StringComparison.OrdinalIgnoreCase)).ToArray();
+        var otherSection = otherProjects.Length > 0
+            ? "\n\n### Other known projects (not currently active)\n" +
+              string.Join("\n", otherProjects.Select(ProjectLabel)) +
+              "\n\nIf the user asks about one of these, tell them which project is currently active and that they can switch to it with `/project` — do not attempt to read or list files outside the Allowed Projects list."
             : "";
 
         return $"""
@@ -565,12 +667,16 @@ public sealed class Harness : IHarness
         - Shell: **{shellName}**
         - {sepHint} {homeMacro} (e.g., {homeExample}).
         - **bash_exec** — run any shell command (returns JSON with exit_code, stdout, stderr)
+        - **run_background** — start a long-running command detached (dev server, watcher, etc.)
+        - **wait_for** — wait for a port, URL, or log pattern to become ready
+        - **process_output** — read the log of a tracked background job
+        - **process_kill** — stop a tracked background job
         - **read_file** — read file contents (supports line ranges; returns numbered lines)
         - **write_file** — write/create a file (creates parent directories automatically)
         - **edit_file** — replace an exact string in a file (old_string must appear exactly once; widen context if ambiguous)
         - **list_dir** — list directory entries with types and sizes
         - **glob** — find files by pattern (supports ** recursion, e.g. `**/*.cs`, `src/**/*.ts`)
-        - **commands_index** — get build/run/test commands for any language or framework{projectsSection}
+        - **commands_index** — get build/run/test commands for any language or framework{projectsSection}{otherSection}
 
         ### Workflow guidelines
         - **Act minimally**: take only the steps the user explicitly requested. If asked to read one file, read that one file — do not explore directories or read other files unless required.
@@ -578,6 +684,7 @@ public sealed class Harness : IHarness
         - **Before editing (not reading)**: use `list_dir` or `glob` to locate a file if its exact path is unknown, and `read_file` to confirm exact content before calling `edit_file`.
         - **edit_file requires uniqueness**: if `old_string` is not found or appears multiple times, the call will fail — add more surrounding lines to make it unique.
         - **Check exit codes**: `bash_exec` returns `exit_code`; treat non-zero as an error and inspect `stderr`.
+        - **Long-running process loop**: for dev servers, watchers, and similar, use `run_background`; wait for readiness with `wait_for` (port, URL, or log pattern); stream logs with `process_output`; stop with `process_kill`. If a foreground `bash_exec` exceeds `timeout_seconds`, it is converted to a background job instead of being killed.
         - Call `commands_index(topic="rust")` (or python, go, dotnet, docker, git, etc.) before running unfamiliar build commands.
         """;
     }

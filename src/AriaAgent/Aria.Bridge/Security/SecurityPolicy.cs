@@ -132,7 +132,8 @@ public record SecurityPolicy(
 
         if (!allowed)
             throw new TerminalSecurityException(
-                $"Path '{path}' is outside the allowed directories. Add it under Terminal › Allowed Paths to grant access.");
+                $"Path '{path}' is outside the allowed directories. Add it under Terminal › Allowed Paths on the node " +
+                $"for permanent access, or the user can grant a time-boxed session expansion from chat: /scope add {path}");
     }
 
     public void EnforceCommand(string command)

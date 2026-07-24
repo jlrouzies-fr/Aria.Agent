@@ -468,6 +468,20 @@ public static class BridgeDatabaseInitializer
             CREATE INDEX IF NOT EXISTS IX_ContextGrants_ContextId ON ContextGrants (ContextId);
         """);
 
+        // Revocation tombstones: node-signed revocations that replicate alongside grants, so a
+        // revoke on one node kills the grant on every sibling (kills only the revoked instance —
+        // a later re-approval with a longer expiry is not blocked).
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS ContextGrantTombstones (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ContextId TEXT NOT NULL,
+                GrantExpiryUnix INTEGER NOT NULL,
+                SignatureBase64 TEXT,
+                CreatedAt TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS IX_ContextGrantTombstones_ContextId ON ContextGrantTombstones (ContextId);
+        """);
+
         // Layer B Phase 2: locally-verified sibling node public keys.
         await db.Database.ExecuteSqlRawAsync("""
             CREATE TABLE IF NOT EXISTS TrustedSiblingKeys (

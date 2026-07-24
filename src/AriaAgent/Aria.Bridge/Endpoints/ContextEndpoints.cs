@@ -90,17 +90,23 @@ public static class ContextEndpoints
             return Results.Ok(new { enabled = ContextGrantStore.EnforcementEnabled });
         });
 
-        // GET /context/grants/export — the node's live, signed grants, for mesh replication. The server
-        // relays these to sibling nodes; it can't read anything sensitive (a grant is just soul id +
-        // expiry + signature) and can't forge one.
+        // GET /context/grants/export — the node's live, signed grants AND revocation tombstones, for
+        // mesh replication. The server relays these to sibling nodes; it can't read anything sensitive
+        // (a grant is just soul id + expiry + signature) and can't forge one — nor a revocation.
+        // Tombstones ride as GrantType="revoke" entries: an old sibling rejects them as unverifiable
+        // grants (fail closed) instead of reviving a revoked grant.
         app.MapGet("/context/grants/export", async (BridgeDbContext db) =>
         {
             var grants = await ContextGrantStore.ExportLiveGrantsAsync(db);
-            return Results.Ok(grants.Select(g => new ContextGrantDto(g.ContextId, g.GrantType, g.ExpiryUnix, g.SignatureBase64)));
+            var revocations = await ContextGrantStore.ExportRevocationsAsync(db);
+            return Results.Ok(grants
+                .Select(g => new ContextGrantDto(g.ContextId, g.GrantType, g.ExpiryUnix, g.SignatureBase64))
+                .Concat(revocations.Select(r => new ContextGrantDto(
+                    r.ContextId, ContextGrantStore.RevocationGrantType, r.GrantExpiryUnix, r.SignatureBase64))));
         });
 
-        // POST /context/grants/import — accept grants from a sibling. Each is stored only if its
-        // signature verifies under one of this soul's acceptable keys.
+        // POST /context/grants/import — accept grants and revocation tombstones from a sibling. Each
+        // is stored only if its signature verifies under one of this soul's acceptable keys.
         app.MapPost("/context/grants/import", async (ContextGrantDto[] grants, BridgeDbContext db) =>
         {
             var soul = await ActiveSoulAsync(db);
@@ -108,6 +114,12 @@ public static class ContextEndpoints
             var imported = 0;
             foreach (var g in grants ?? [])
             {
+                if (g.GrantType == ContextGrantStore.RevocationGrantType)
+                {
+                    if (await ContextGrantStore.ImportRevocationAsync(db, soul, g.ContextId, g.ExpiryUnix, g.SignatureBase64))
+                        imported++;
+                    continue;
+                }
                 var row = new ContextGrant { ContextId = g.ContextId, GrantType = g.GrantType, ExpiryUnix = g.ExpiryUnix, SignatureBase64 = g.SignatureBase64 };
                 if (await ContextGrantStore.ImportGrantAsync(db, soul, row)) imported++;
             }
@@ -118,12 +130,25 @@ public static class ContextEndpoints
 
         // POST /context/approve/request — server asks a node with a human present to approve a session-
         // scoped context grant. Stores a pending approval, opens the local page, returns the id.
+        // kind="scope" (Wave 5) asks for a session path expansion instead: req.path is normalised and
+        // carried on the pending approval; approving mints a node-signed path grant, not a context grant.
         app.MapPost("/context/approve/request", async (ContextApprovalRequestDto req, BridgeDbContext db, SecurityAuditLog audit) =>
         {
             PrunePending();
             var soul = await ActiveSoulAsync(db);
             if (soul == null || string.IsNullOrEmpty(soul.ServerSoulId))
                 return Results.Ok(new { id = (string?)null, error = "No linked soul on this node." });
+
+            // A scope expansion is always session-scoped and carries a signable absolute path.
+            string? scopePath = null;
+            if (req.kind == "scope")
+            {
+                if (string.IsNullOrEmpty(req.sessionId))
+                    return Results.Ok(new { id = (string?)null, error = "A scope expansion needs a session id." });
+                scopePath = NormalizeScopePath(req.path);
+                if (scopePath == null)
+                    return Results.Ok(new { id = (string?)null, error = "A scope expansion needs a valid absolute path (no '|')." });
+            }
 
             var id = Guid.NewGuid().ToString("N");
             var now = DateTime.UtcNow;
@@ -138,6 +163,7 @@ public static class ContextEndpoints
                 Kind               = req.kind,
                 TaskPreview        = req.taskPreview,
                 SlotLabel          = req.slotLabel,
+                Path               = scopePath,
             };
 
             var url = $"http://localhost:5741/context/approve/{id}"
@@ -145,7 +171,9 @@ public static class ContextEndpoints
             LaunchContextPage(url);
 
             audit.Record("context-approval", "requested", allowed: true,
-                detail: $"Context approval {id[..8]} requested for session {req.sessionId ?? "(soul-wide)"}");
+                detail: req.kind == "scope"
+                    ? $"Path expansion approval {id[..8]} requested for session {req.sessionId}: {scopePath}"
+                    : $"Context approval {id[..8]} requested for session {req.sessionId ?? "(soul-wide)"}");
             return Results.Ok(new { id });
         });
 
@@ -178,6 +206,26 @@ public static class ContextEndpoints
             if (soul == null || string.IsNullOrEmpty(soul.ServerSoulId))
                 return json ? Results.Json(new { ok = false, message = "No linked soul on this node." })
                             : Results.Content(Done("No linked soul on this node."), "text/html");
+
+            // Wave 5 scope expansion: the human authorises ONE additional directory for ONE session.
+            // Mints a node-signed path grant (not a context grant) — verified on every use, and
+            // replicated to siblings through the same export/import channel as context grants.
+            if (p.Kind == "scope")
+            {
+                if (string.IsNullOrEmpty(p.Path) || string.IsNullOrEmpty(p.SessionId))
+                    return json ? Results.Json(new { ok = false, message = "This scope approval is missing its path or session." })
+                                : Results.Content(Done("This scope approval is missing its path or session."), "text/html");
+                var okScope = await ContextGrantStore.GrantPathAsync(db, soul, p.SessionId, p.Path, GrantLifetime);
+                if (!okScope)
+                    return json ? Results.Json(new { ok = false, message = "This node has no signing key — cannot issue a grant." })
+                                : Results.Content(Done("This node has no signing key — cannot issue a grant."), "text/html");
+                p.Status = "approved";
+                audit.Record("context-approval", "approved", allowed: true, capability: "path-grant",
+                    detail: $"Path expansion {id[..8]} granted for session {p.SessionId}: {p.Path}");
+                var scopeMsg = $"✓ Path authorised for 8h — this browser session may now work under {p.Path}. You may close this.";
+                return json ? Results.Json(new { ok = true, message = scopeMsg })
+                            : Results.Content(Done(scopeMsg), "text/html");
+            }
 
             var ctxId = ContextGrantStore.ContextId(soul.ServerSoulId, p.SessionId);
 
@@ -264,6 +312,45 @@ public static class ContextEndpoints
             if (soul?.ServerSoulId is not { Length: > 0 } soulId) return Results.Ok(new { revoked = false });
             await ContextGrantStore.RevokeAsync(db, ContextGrantStore.ContextId(soulId, req.Session));
             return Results.Ok(new { revoked = true });
+        });
+
+        // ── Session path expansions (Wave 5, "/scope" chat command) ──────────────────────────────
+        // Read-only status/list plus a narrowing revoke. None of these can widen anything: the grant
+        // itself is only ever minted by the local approval ceremony above, signed by this node.
+
+        // GET /scope/status?session=…&path=… — is a live, verified path grant in force for this exact
+        // path and session? Lets the server skip a redundant ceremony (idempotent /scope add).
+        app.MapGet("/scope/status", async (BridgeDbContext db, string? session, string? path) =>
+        {
+            var soul = await ActiveSoulAsync(db);
+            var norm = NormalizeScopePath(path);
+            var live = norm != null && await ContextGrantStore.HasLivePathGrantAsync(db, soul, session, norm);
+            return Results.Ok(new { granted = live, path = norm });
+        });
+
+        // GET /scope/list?session=… — the session's live path expansions (drives the chat /scope display).
+        app.MapGet("/scope/list", async (BridgeDbContext db, string? session) =>
+        {
+            var soul   = await ActiveSoulAsync(db);
+            var grants = await ContextGrantStore.GetLiveSessionPathGrantsAsync(db, soul, session);
+            return Results.Ok(grants.Select(g => new { path = g.Path, expiryUnix = g.ExpiryUnix }));
+        });
+
+        // POST /scope/revoke — end a session's path expansion immediately. The node signs a revocation
+        // tombstone that replicates to siblings through the same export/import channel as the grants.
+        app.MapPost("/scope/revoke", async (ScopeRevokeDto req, BridgeDbContext db, SecurityAuditLog audit) =>
+        {
+            var soul = await ActiveSoulAsync(db);
+            var norm = NormalizeScopePath(req.Path);
+            var revoked = false;
+            if (soul?.ServerSoulId is { Length: > 0 } soulId && norm != null && !string.IsNullOrEmpty(req.SessionId))
+            {
+                await ContextGrantStore.RevokePathAsync(db, soulId, req.SessionId!, norm);
+                revoked = true;
+                audit.Record("context-approval", "path-grant-revoked", allowed: true, capability: "path-grant",
+                    detail: $"Path expansion revoked for session {req.SessionId}: {norm}");
+            }
+            return Results.Ok(new { revoked });
         });
     }
 
@@ -396,9 +483,10 @@ public static class ContextEndpoints
         public DateTime ExpiresAt = DateTime.UtcNow;
         // Vigil pre-authorisation extras (null for a normal in-chat session approval).
         public long?    ExpiryUnixOverride;    // absolute slot-end expiry to sign the grant with
-        public string?  Kind;                  // "vigil" | null
+        public string?  Kind;                  // "vigil" | "hive" | "scope" | null
         public string?  TaskPreview;           // the scheduled task, shown so the human knows what they authorise
         public string?  SlotLabel;             // human-readable slot, e.g. "Thu 14 Jul · 07:00 UTC"
+        public string?  Path;                  // "scope": the normalised absolute directory being authorised
     }
 
     private static readonly ConcurrentDictionary<string, PendingContextApproval> _pending = new();
@@ -427,6 +515,7 @@ public static class ContextEndpoints
     private static string RenderCeremonyPage(PendingContextApproval p)
     {
         if (p.Kind is "vigil" or "hive") return RenderUnattendedCeremonyPage(p);
+        if (p.Kind == "scope") return RenderScopeCeremonyPage(p);
 
         string E(string v) => System.Net.WebUtility.HtmlEncode(v);
         var hasSession = !string.IsNullOrEmpty(p.SessionId);
@@ -466,6 +555,53 @@ public static class ContextEndpoints
             </div>
             <div class="note">This decision is made locally on your node. The hosted server cannot grant
               it on your behalf. The grant expires automatically after 8 hours.</div>
+          </div>
+          {{CeremonyResolverScript(p.Id)}}
+        </body></html>
+        """;
+    }
+
+    // Wave 5 "/scope add" page: the human authorises ONE additional directory, outside the declared
+    // Terminal projects, for ONE browser session — time-boxed to 8h. The path they are granting is the
+    // most prominent thing on the page; approving mints a node-signed path grant, never a context grant.
+    private static string RenderScopeCeremonyPage(PendingContextApproval p)
+    {
+        string E(string v) => System.Net.WebUtility.HtmlEncode(v);
+        return $$"""
+        <!doctype html><html><head><meta charset="utf-8"><title>Path Expansion</title>
+        <style>
+          body{background:#0a0806;color:#d8c89a;font-family:ui-monospace,Menlo,monospace;
+               display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+          .card{border:1px solid #b09040;border-left:4px solid #d4a020;background:#160f04;
+                padding:28px 32px;max-width:560px;box-shadow:0 0 32px rgba(180,140,20,.35)}
+          h1{font-size:15px;letter-spacing:3px;color:#f0d060;margin:0 0 14px}
+          .ctx{color:#a98;font-size:12px;margin-bottom:8px}
+          .scope{color:#e8c060;font-size:12px;margin-bottom:12px;border:1px solid #6a5010;
+                 background:#100a02;padding:8px 10px;letter-spacing:1px;word-break:break-all}
+          .scope b{color:#f0d060}
+          .sid{color:#a98;word-break:break-all}
+          .window{color:#f0d060;font-size:13px;font-weight:bold;letter-spacing:2px;margin:6px 0 12px}
+          .row{display:flex;gap:12px;margin-top:20px}
+          button{flex:1;padding:12px;font-family:inherit;font-size:12px;letter-spacing:2px;cursor:pointer;border:none}
+          .ok{background:#b09040;color:#160404;font-weight:bold}
+          .no{background:#220;color:#c99;border:1px solid #533}
+          .note{font-size:10px;color:#765;margin-top:16px;line-height:1.5}
+        </style></head><body>
+          <div class="card">
+            <h1>⛨ AUTHORISE PATH EXPANSION</h1>
+            <div class="ctx">Approval request from your terminal</div>
+            <div class="scope">Path: <b>{{E(p.Path ?? "")}}</b></div>
+            <div class="scope">Scope: <b>THIS BROWSER SESSION</b> · <span class="sid">{{E(p.SessionId ?? "")}}</span></div>
+            <div class="window">⏱ VALID FOR 8 HOURS · THIS SESSION · THIS DIRECTORY ONLY</div>
+            <div>Allow the terminal to read, write, and run commands under this directory — outside your
+              declared Terminal projects — for the next 8 hours?</div>
+            <div class="row">
+              <button class="ok" data-ctx-action="approve" type="button">⛨ AUTHORISE PATH 8h &amp; CLOSE</button>
+              <button class="no" data-ctx-action="reject"  type="button">✕ REFUSE &amp; CLOSE</button>
+            </div>
+            <div class="note">This decision is made locally on your node. The hosted server cannot grant
+              it on your behalf, and it covers only this directory, only this session. The grant expires
+              automatically after 8 hours.</div>
           </div>
           {{CeremonyResolverScript(p.Id)}}
         </body></html>
@@ -583,9 +719,27 @@ public static class ContextEndpoints
     public record ContextGrantDto(string ContextId, string GrantType, long ExpiryUnix, string? SignatureBase64);
     public record ContextApprovalRequestDto(
         string? sessionId, long? expiryUnix = null, string? kind = null,
-        string? taskPreview = null, string? slotLabel = null);
+        string? taskPreview = null, string? slotLabel = null, string? path = null);
     public record EnforcementDto(bool Enabled);
     public record RevokeSessionDto(string? Session);
+    public record ScopeRevokeDto(string? SessionId, string? Path);
+
+    /// <summary>
+    /// Normalises a requested expansion path to the canonical absolute form the grant is minted for —
+    /// same expansion rules as the built-in tools (~, stray quotes/whitespace), trailing separators
+    /// trimmed. Returns null for empty or '|'-carrying paths: '|' is the grant-payload field separator,
+    /// so a path containing it can never become a signed claim.
+    /// </summary>
+    internal static string? NormalizeScopePath(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        try
+        {
+            var full = BuiltinTools.Expand(raw).TrimEnd('/', '\\');
+            return full.Length == 0 || full.Contains('|') ? null : full;
+        }
+        catch { return null; }
+    }
 
     private static string Done(string msg)
     {

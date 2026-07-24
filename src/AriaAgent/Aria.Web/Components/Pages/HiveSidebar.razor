@@ -69,6 +69,15 @@
                               Options="Hive.BehaviorOptions()" ControlClass="hv-input" />
             </div>
 
+            <div class="hv-field">
+                <label class="hv-label hv-checkbox-label">
+                    <input type="checkbox" class="hv-checkbox"
+                           checked="@Parent._editAllowProjectTools"
+                           @onchange="e => Parent.OnAllowProjectToolsChanged(e.Value is true)" />
+                    ALLOW PROJECT TOOLS<span class="hv-help" data-tip="Overmind and drones keep terminal, project-file and git tools in their headless runs — acting under the collective's pre-authorised seal. Off = chat, web and MCP only.">?</span>
+                </label>
+            </div>
+
             <div class="hv-section-lbl" style="margin-top:12px">OVERMIND</div>
             <div class="hv-field">
                 <label class="hv-label">AGENT</label>

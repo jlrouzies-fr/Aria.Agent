@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Aria.Harness.Governance;
 using Aria.Harness.Tools;
 using Aria.Tools;
 using Aria.Web.Data;
@@ -12,7 +13,9 @@ namespace Aria.Web.Services.Agent;
 
 /// <summary>
 /// Runs an agent session headlessly — no live Blazor circuit required.
-/// Bridge-dependent tools (terminal, wargame) are excluded; cloud and SSE-MCP tools work normally.
+/// Bridge-dependent tools (terminal, wargame) are excluded unless the run carries an explicit
+/// authorisation (an opted-in vigil/Hive collective, or an interactive session's spawned child);
+/// cloud and SSE-MCP tools work normally.
 /// </summary>
 public class AgentBackgroundExecutor(
     AgentService             agentService,
@@ -20,7 +23,7 @@ public class AgentBackgroundExecutor(
     IServiceScopeFactory     scopeFactory,
     ModelBridgeRegistry      bridgeRegistry,
     BridgeCogitationClient   bridgeCogitation,
-    ILogger<AgentBackgroundExecutor> logger)
+    ILogger<AgentBackgroundExecutor> logger) : IHeadlessAgentRunner
 {
     public static readonly HashSet<string> NoBridgeTools = ["terminal", "wargame"];
 
@@ -30,6 +33,13 @@ public class AgentBackgroundExecutor(
     // AsyncLocal isolates concurrent runs (each collective run is its own async flow); an explicit
     // sessionId argument always wins over the ambient value.
     private static readonly AsyncLocal<string?> _ambientSessionId = new();
+
+    // Ambient bridge-tools authorisation for a headless fan-out. Same rationale as _ambientSessionId:
+    // the Hive orchestrator sets it once from the collective's AllowProjectTools flag so every
+    // Overmind/drone run in the flow keeps terminal/file tools instead of having them stripped,
+    // without threading a flag through a dozen call sites. An explicit allowBridgeTools argument
+    // always wins (OR-ed).
+    private static readonly AsyncLocal<bool?> _ambientAllowBridgeTools = new();
 
     /// <summary>Sets the ambient headless session id for the returned scope; restores the prior value on
     /// dispose. Headless runs started within the scope that don't pass their own sessionId inherit it.</summary>
@@ -43,6 +53,25 @@ public class AgentBackgroundExecutor(
     private sealed class SessionScope(string? prev) : IDisposable
     {
         public void Dispose() => _ambientSessionId.Value = prev;
+    }
+
+    /// <summary>Sets the ambient bridge-tools authorisation for the returned scope; restores the prior
+    /// value on dispose. Headless runs started within the scope keep bridge/terminal tools when
+    /// <paramref name="allowed"/> is true (the default — null/false — strips them as before).</summary>
+    public static IDisposable WithAmbientBridgeTools(bool allowed)
+    {
+        var prev = _ambientAllowBridgeTools.Value;
+        _ambientAllowBridgeTools.Value = allowed;
+        return new BridgeToolsScope(prev);
+    }
+
+    /// <summary>Whether the current async flow carries an ambient bridge-tools authorisation.
+    /// Internal for unit tests.</summary>
+    internal static bool AmbientBridgeToolsAllowed => _ambientAllowBridgeTools.Value == true;
+
+    private sealed class BridgeToolsScope(bool? prev) : IDisposable
+    {
+        public void Dispose() => _ambientAllowBridgeTools.Value = prev;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -62,10 +91,13 @@ public class AgentBackgroundExecutor(
         IReadOnlyList<ChatMessage>? seedHistory = null,
         string? instructionsPrefix = null,
         string? sessionId = null,
+        bool allowBridgeTools = false,
+        GovernanceMode? governanceMode = null,
         CancellationToken ct = default)
     {
         var (text, _) = await RunHeadlessCoreAsync(
-            userId, subAgentId, prompt, sourceName, modelId, seedHistory, instructionsPrefix, sessionId, ct);
+            userId, subAgentId, prompt, sourceName, modelId, seedHistory, instructionsPrefix, sessionId,
+            allowBridgeTools, governanceMode, ct);
         return text;
     }
 
@@ -81,8 +113,24 @@ public class AgentBackgroundExecutor(
         IReadOnlyList<ChatMessage>? seedHistory = null,
         string? instructionsPrefix = null,
         string? sessionId = null,
+        bool allowBridgeTools = false,
+        GovernanceMode? governanceMode = null,
         CancellationToken ct = default)
-        => RunHeadlessCoreAsync(userId, subAgentId, prompt, sourceName, modelId, seedHistory, instructionsPrefix, sessionId, ct);
+        => RunHeadlessCoreAsync(userId, subAgentId, prompt, sourceName, modelId, seedHistory, instructionsPrefix, sessionId,
+            allowBridgeTools, governanceMode, ct);
+
+    /// <summary><see cref="IHeadlessAgentRunner"/> entry point for delegated child runs: a headless
+    /// persona run under the parent's session grant and governance mode.</summary>
+    public Task<string> SpawnChildRunAsync(
+        string userId,
+        int subAgentId,
+        string prompt,
+        string? sessionId,
+        bool allowBridgeTools,
+        GovernanceMode governanceMode,
+        CancellationToken ct = default)
+        => RunHeadlessAsync(userId, subAgentId, prompt, sourceName: null, modelId: null,
+            sessionId: sessionId, allowBridgeTools: allowBridgeTools, governanceMode: governanceMode, ct: ct);
 
     private async Task<(string Text, string? Thinking)> RunHeadlessCoreAsync(
         string userId,
@@ -93,6 +141,8 @@ public class AgentBackgroundExecutor(
         IReadOnlyList<ChatMessage>? seedHistory,
         string? instructionsPrefix,
         string? sessionId,
+        bool allowBridgeTools,
+        GovernanceMode? governanceMode,
         CancellationToken ct)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
@@ -107,6 +157,10 @@ public class AgentBackgroundExecutor(
         var modelSources = dbSources.Select(UserLocalSourceService.ToModelSource).ToList();
         agentService.SetUserLocalSources(userId, modelSources);
 
+        // Bridge/terminal tools survive the headless filter only for explicitly-authorised runs
+        // (an opted-in vigil/Hive via the ambient flag, or an interactive session's spawned child).
+        var allowBridge = allowBridgeTools || _ambientAllowBridgeTools.Value == true;
+
         // Build tool list — user tools for base Aria, or sub-agent tools for a drone
         List<ActiveToolConfig> enabledTools;
         string? instructionsOverride = null;
@@ -115,7 +169,7 @@ public class AgentBackgroundExecutor(
 
         if (subAgentId.HasValue)
         {
-            enabledTools = await subAgentService.GetEnabledToolConfigsAsync(subAgentId.Value, userId);
+            enabledTools = await subAgentService.GetEnabledToolConfigsAsync(subAgentId.Value, userId, allowBridge);
 
             // Build persona for the sub-agent
             subAgent = await subAgentService.GetByIdAsync(subAgentId.Value);
@@ -137,7 +191,7 @@ public class AgentBackgroundExecutor(
         }
         else
         {
-            enabledTools = await BuildUserToolListAsync(toolService, userId);
+            enabledTools = await BuildUserToolListAsync(toolService, userId, allowBridge);
         }
 
         // Callers (e.g. the Hive orchestrator) can prepend role-specific framing — like the Overmind's
@@ -169,7 +223,10 @@ public class AgentBackgroundExecutor(
             agentNameOverride:    agentNameOverride,
             terminalProjects:     terminalProjects,
             // An explicit sessionId wins; otherwise inherit the ambient one (e.g. a Hive run's hive:{id}).
-            sessionId:            sessionId ?? _ambientSessionId.Value);
+            sessionId:            sessionId ?? _ambientSessionId.Value,
+            // A spawned child inherits its parent's governance mode (fresh per-session counters/budgets);
+            // other headless callers leave this null and run ungoverned as before.
+            governanceMode:       governanceMode ?? GovernanceMode.Off);
 
         if (seedHistory is { Count: > 0 })
             session.SetInMemoryChatHistory(seedHistory.ToList());
@@ -194,10 +251,13 @@ public class AgentBackgroundExecutor(
         IReadOnlyList<ChatMessage>? seedHistory = null,
         string? instructionsPrefix = null,
         string? sessionId = null,
+        bool allowBridgeTools = false,
+        GovernanceMode? governanceMode = null,
         CancellationToken ct = default)
     {
         var (text, thinking) = await RunHeadlessCoreAsync(
-            userId, subAgentId, prompt, sourceName, modelId, seedHistory, instructionsPrefix, sessionId, ct);
+            userId, subAgentId, prompt, sourceName, modelId, seedHistory, instructionsPrefix, sessionId,
+            allowBridgeTools, governanceMode, ct);
         var tokens = (prompt.Length + text.Length) / 4;   // rough estimate: ~4 chars per token
         return (text, tokens, thinking);
     }
@@ -273,7 +333,9 @@ public class AgentBackgroundExecutor(
                 job.Id, modelSources.Count, job.UserId,
                 string.Join(", ", modelSources.Select(s => s.Name)));
 
-            var enabledTools = await BuildUserToolListAsync(toolService, job.UserId);
+            // Bridge/terminal tools are stripped for vigils by default; a vigil booked with
+            // "allow project tools" keeps them, acting under the slot's pre-authorised grant.
+            var enabledTools = await BuildUserToolListAsync(toolService, job.UserId, job.AllowProjectTools);
 
             var mcpInfos   = await mcpClient.GetMcpInfosAsync(job.UserId);
             var mcpServers = mcpInfos
@@ -370,11 +432,23 @@ public class AgentBackgroundExecutor(
         }
     }
 
-    private static async Task<List<ActiveToolConfig>> BuildUserToolListAsync(UserToolService toolService, string userId)
+    private static async Task<List<ActiveToolConfig>> BuildUserToolListAsync(
+        UserToolService toolService, string userId, bool allowBridgeTools = false)
     {
         var states = await toolService.GetToolStatesAsync(userId);
+        return BuildToolList(states, userId, allowBridgeTools);
+    }
+
+    /// <summary>Pure headless tool-list filter: keeps the user's enabled tools, stamps the user id into
+    /// each config, and strips bridge-dependent tools (<see cref="NoBridgeTools"/>) unless the run was
+    /// explicitly authorised for project tools. Internal for unit tests.</summary>
+    internal static List<ActiveToolConfig> BuildToolList(
+        Dictionary<string, (bool Enabled, Dictionary<string, string> Config)> states,
+        string userId,
+        bool allowBridgeTools)
+    {
         return states
-            .Where(kv => kv.Value.Enabled && !NoBridgeTools.Contains(kv.Key))
+            .Where(kv => kv.Value.Enabled && (allowBridgeTools || !NoBridgeTools.Contains(kv.Key)))
             .Select(kv =>
             {
                 var cfg = new Dictionary<string, string>(kv.Value.Config);

@@ -38,6 +38,14 @@
             <span class="gov-blurb-icon">⛨</span>
             <span>@NavMenu.GovernanceBlurb(Menu.SessionState.Governance)</span>
         </div>
+        @if (Menu.SessionState.HasGovernanceBudgetOverrides)
+        {
+            var eff = Menu.SessionState.EffectiveGovernancePolicy();
+            <div class="gov-blurb">
+                <span class="gov-blurb-icon">⚙</span>
+                <span>session override: @eff.MaxToolCallsPerTurn calls · @eff.MaxFileReadsPerTurn reads — "/governance budget reset" to clear</span>
+            </div>
+        }
     </div>
 
     <div class="tool-category">VOX INPUT</div>

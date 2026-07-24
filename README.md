@@ -17,11 +17,12 @@
 
 ## ◈ Dataslate Index
 
-> `ARIA://DATASLATE/INDEX — 16 ENTRIES LOGGED`
+> `ARIA://DATASLATE/INDEX — 17 ENTRIES LOGGED`
 
-- `01` [What she does](#-what-she-does) — the terminal's capabilities
+- `01` [What it does](#-what-it-does) — the terminal's capabilities
 - `02` [The Cogitator Terminal](#-the-cogitator-terminal) — the vox-link itself
 - `03` [The Bridge Node](#-the-bridge-node) — the local process behind it all
+- `03a` [Architecture Overview](#-architecture-overview) — how the pieces connect
 - `04` [Sub-agents & Personas](#-sub-agents--personas) — mercenaries for hire
 - `05` [The Hive](#-the-hive) — swarm deliberation under an Overmind
 - `06` [Vigils](#-vigils) — autonomous scheduled directives
@@ -38,7 +39,7 @@
 
 ---
 
-## ◈ What she does
+## ◈ What it does
 
 ### 🧠 The Cogitator Terminal
 
@@ -73,6 +74,25 @@ From the bridge you can:
 
 ---
 
+### ⚙ Architecture Overview
+
+`Aria.Web` is the reference Blazor Server UI. It can run locally or be deployed to a host, and it acts as the orchestration layer: it authenticates users, routes traffic, and persists non-sensitive metadata (agents, cogitation lists, access codes), but it never stores API keys, OAuth tokens, conversation content, or the soul private key.
+
+`Aria.Bridge` is a small daemon that runs on the user's own machine. Each bridge:
+
+- Holds an ECDSA P-256 identity (the soul keypair) and authenticates to the server via challenge-response.
+- Stores LLM provider API keys, OAuth tokens, and local channel configuration.
+- Runs local services: LLM proxy, Noosphere memory, MCP servers, terminal tools, and telemetry.
+- Opens an **outbound** SignalR direct tunnel to `Aria.Web`, so a hosted server can reach the user's local network without inbound ports.
+
+One user (soul) can have multiple bridges enrolled. Routing is explicit: a chat or probe uses the bridge bound to its channel; terminal file tools are dispatched to the bridge that owns the requested path; configuration snapshots are pushed to every connected bridge.
+
+The diagram below shows `Aria.Web` at the top as the switchboard, two bridge nodes below (each with its own local LM and project files), and a numbered example of Node 2 reading files from Node 1 through the server.
+
+<p align="center"><img src="docs/img/architecture-overview.png" alt="Aria architecture — Web, bridges, local LMs, and cross-node file flow" width="92%"><br><sub><span style="color: gray;"><em>Aria.Web orchestrates; Aria.Bridge nodes hold keys and local services. The cyan trace shows a cross-node file request.</em></span></sub></p>
+
+---
+
 ### 🎭 Sub-agents & Personas
 
 Define named personas with their own model, colour, avatar, and reusable skill snippets; activate one to take over the chat. Each sub-agent is a complete prompt wrapper — system instructions, tone, and available skills — so a single directive can switch the cogitator from a Commissar's drill-sergeant brevity to a Farseer's cryptic foresight.
@@ -83,6 +103,7 @@ Define named personas with their own model, colour, avatar, and reusable skill s
 - **Skills** — attach bite-sized prompt fragments (coding conventions, project context, reply formats) to any agent.
 - **Activation** — mention an agent by name, use the Agents panel, or reference one inline with `#agent:<name>`.
 - **Hive-ready** — every sub-agent can also be drafted as a drone in a Hive collective.
+- **Delegation** — the agent can hire hands on its own: `spawn_agent` starts a named persona on a sub-task in the background (inheriting your governance mode and session grant, one level deep, capped at four concurrent), and `agent_result` collects its report.
 
 <table>
   <tr>
@@ -134,6 +155,7 @@ Schedule autonomous directives that run even when your terminal is closed. A **v
 - **Agent selection** — run a vigil as Aria or as any custom sub-agent.
 - **Resume in chat** — completed vigils append their transcript to the chosen cogitation, ready to continue when you return.
 - **Fair-use limits** — 2 active vigils per soul, 2 vigils per day, 2 souls per slot.
+- **Project tools opt-in** — by default vigils and Hive drones run headless with chat, web, and MCP tools only. Tick **allow project tools** when booking a vigil (or in a collective's configuration) and the run also gets the agent's file, grep, git, and bash tools — pre-authorised by the time-boxed vigil/hive grant minted at scheduling time, and still bound by the node's `Projects` toggle and Allowed Paths.
 
 ---
 
@@ -161,13 +183,16 @@ Schedule autonomous directives that run even when your terminal is closed. A **v
 <table>
   <tr>
     <td valign="top">
-      <p>Pick how far the agent is trusted to act on its own (<strong>Off / Balanced / Strict / Paranoid</strong>). Each level changes how tightly the harness constrains exploration and mutation:</p>
+      <p>Pick how far the agent is trusted to act on its own (<strong>Off / Balanced / Coding / Plan / Strict / Paranoid</strong>). Each level changes how tightly the harness constrains exploration and mutation:</p>
       <ul>
         <li><strong>Off</strong> — no automatic enforcement; tools run freely.</li>
-        <li><strong>Balanced</strong> — per-turn tool-call and read budgets, a scope-lock to your project paths, and loop detection stop the agent wandering and burning tokens.</li>
+        <li><strong>Balanced</strong> — per-turn tool-call and read budgets (30 calls / 18 reads), a scope-lock to your project paths, and loop detection stop the agent wandering and burning tokens.</li>
+        <li><strong>Coding</strong> — roomier budgets (60 calls / 40 reads) for real multi-file coding work; out-of-scope calls still ask for approval.</li>
+        <li><strong>Plan</strong> — read-only exploration: mutations are blocked so the agent presents a plan before touching anything.</li>
         <li><strong>Strict</strong> — file writes, shell commands, deletes, and other mutations pause for in-chat approval before running.</li>
         <li><strong>Paranoid</strong> — high-stakes actions require a node-signed <strong>Inquisitorial Seal</strong> the hosted server cannot forge.</li>
       </ul>
+      <p>The <code>/governance</code> chat command shows the active mode and effective budgets, switches mode, and sets per-session budget overrides (<code>/governance budget tools=&lt;n&gt; reads=&lt;n&gt;</code>, <code>budget reset</code> to clear).</p>
     </td>
     <td align="center" width="280" valign="middle">
       <img src="docs/img/governance.png" alt="Governance modes" width="240">
@@ -175,11 +200,15 @@ Schedule autonomous directives that run even when your terminal is closed. A **v
   </tr>
 </table>
 
-<p><strong>Inquisitorial Seal.</strong> Sensitive operations — provider-key spend, shell commands, and tool execution — can be gated behind a seal that is granted locally on your cogitator node. The seal is valid for <strong>8 hours</strong>, binds to the current browser session, and is signed with your soul key. The hosted terminal cannot grant it on your behalf; only a human at the node can approve it. The seal expires automatically and can be revoked at any time.</p>
+<p><strong>Inquisitorial Seal.</strong> The highest-stakes operations — soul export, key rotation, PTY shell access, and (in Paranoid mode) high-stakes tool calls — are gated behind a seal that is granted locally on your cogitator node. A seal is <strong>single-use</strong> and <strong>capability-bound</strong>: the node signs the exact human-readable statement you approved, an unclaimed approval expires after <strong>5 minutes</strong>, and a consumed seal cannot be replayed or reused for a different capability. The hosted terminal cannot grant it on your behalf; only a human at the node can approve it.</p>
+
+<p><strong>Context grant.</strong> The broader stream of sensitive server-relayed operations — provider-key spend, shell commands, the project file/git surface, MCP tool execution — is gated separately: the first such op in a session raises an approval prompt, and approving issues a node-signed <strong>context grant</strong> valid for <strong>8 hours</strong> and bound to the current browser session, so you are not re-prompted for every call. The grant expires automatically and can be revoked at any time from the bridge.</p>
+
+<p><strong>Scope expansion.</strong> The agent's filesystem reach is the node's declared Allowed Paths — fail-closed, and the server can never widen it. When the agent legitimately needs a path outside that set, you can grant a time-boxed expansion from chat: <code>/scope add &lt;path&gt;</code> asks the node, a human approves at the node, and the node mints a signed <strong>path grant</strong> bound to the session for 8 hours. <code>/scope</code> lists the effective scope; <code>/scope remove &lt;path&gt;</code> revokes. The request only asks — the node alone grants.</p>
 
 <p align="center"><img src="docs/img/session-seal.png" alt="Inquisitorial Seal authorisation" width="48%"></p>
 
-<p><strong>Terminal limits.</strong> Shell access is further gated by a master <strong>Terminal Capability</strong> toggle on the bridge. <strong>Quick Exec</strong> inspects every command against the node's SecurityPolicy before it runs. <strong>PTY mode</strong> opens a full interactive shell, but disables the quick-exec policy because keystrokes to a live shell cannot be honestly filtered — the Inquisitorial Seal is what guarantees a human at the node consented.</p>
+<p><strong>Terminal limits.</strong> Shell and file access are gated by three independent, off-by-default toggles on the bridge — a human at the node opts into each. <strong>Agent Projects</strong> lets the agent work inside your declared projects: reading, writing and searching files, git operations, and its persistent bash shell, all scoped to the node's Allowed Paths. <strong>Quick Exec</strong> lets the user-facing web Terminal run one-shot commands, each inspected against the node's SecurityPolicy before it runs. <strong>PTY mode</strong> opens a full interactive shell, but disables the quick-exec policy because keystrokes to a live shell cannot be honestly filtered — it is gated by its own time-limited Inquisitorial Seal, which is what guarantees a human at the node consented.</p>
 
 <p align="center"><img src="docs/img/terminal.png" alt="Terminal Quick Exec and PTY mode" width="70%"></p>
 
@@ -191,7 +220,11 @@ Schedule autonomous directives that run even when your terminal is closed. A **v
 - Web search & web-page fetch
 - Persistent memory (**Noosphere**)
 - Any **MCP** server you connect
-- Terminal tools: Quick Exec and PTY mode (gated by the node's Terminal Capability toggle)
+- Terminal tools: Quick Exec and PTY mode (each gated by its own off-by-default node toggle; PTY also requires a seal)
+- Software installs via `install_software` (allowlisted package managers: brew/npm/pip/pipx/dotnet/cargo/go/uv/yarn/pnpm/apt/choco/winget; approval-gated in every governed mode)
+- Project-aware coding tools: `project_info` reads dependency files and infers exact build/run/test/install commands; `commands_index` provides static cheat-sheets as a fallback
+- Coding tools: `grep`, git (`status`/`diff`/`log`/`stage`/`commit`/`discard`), `multi_edit`, `undo_file`, persistent bash with background jobs (`process_list`/`process_output`/`process_kill`), `run_background`, `wait_for`, `system_info` environment recon, `http_request` API testing, `read_image` for vision models — all scoped to the node's Allowed Paths plus any `/scope` expansions
+- Agent self-management: `ask_user` (structured mid-run questions with option buttons), `context_status` (token/context pressure so the agent can wrap up before auto-compaction), `spawn_agent` delegation
 - **Voice input (Vox)** — browser speech, fully on-device Whisper on your node, or cloud Whisper; audio goes straight to your node, never the server
 
 <br>
@@ -278,6 +311,8 @@ curl -fsSL https://raw.githubusercontent.com/jlrouzies-fr/Aria.Agent/main/script
 
 See **[Bridge Releases](docs/readme/releases.md)** for full install, update, uninstall, and release details.
 
+> A pre-built **Docker image** is also available, but it runs the bridge in an isolated Linux container and limits host file/terminal integration. See the [Docker image](docs/readme/releases.md#docker-image) section for details and warnings.
+
 ### Situation 2 - The terminal is hosted on a hosting platform
 
 When `Aria.Web` is deployed (see **[Fly.io Deployment](docs/readme/fly.io.md)** — one hosting example; adapt to your own platform), a layered access gate protects every page. The host hands you an **admin invite code** — configured on the server as the `GuestAccess__Codes` environment variable, in `CODE:ISO-8601-UTC-expiry` form (comma/semicolon-separated for several codes):
@@ -329,9 +364,9 @@ The node opens a persistent outbound SignalR connection to the server (the **dir
 
 The same trust primitive backs the **Inquisitorial Seal**: in Paranoid governance mode a high-stakes tool call (e.g. a shell command) is paused, and a confirmation window opens *on your machine*. Only after you approve there does the node sign the server's nonce with your soul key; the server verifies that signature before the action runs. The hosted terminal cannot grant it — authorising a consequential act requires a human at the node, and no signature the server could forge will do.
 
-The shared **Terminal** panel has two modes. **Quick Exec** is the default: each command is inspected by the bridge's `SecurityPolicy` (blocklist + allowed-project paths) before it runs. **PTY mode** is a full interactive shell on the node — vim, top, ssh, etc. — and is gated by its own Inquisitorial Seal; once enabled it persists on that node until revoked from the bridge status page (`localhost:5741`). PTY mode disables the quick-exec policy entirely because keystrokes to a live shell cannot be honestly filtered. The seal guarantees a human at the node consented.
+The shared **Terminal** panel has two modes. **Quick Exec** is the default: each command is inspected by the bridge's `SecurityPolicy` (blocklist + allowed-project paths) before it runs. **PTY mode** is a full interactive shell on the node — vim, top, ssh, etc. — and is gated by its own Inquisitorial Seal; the grant is time-limited (10 minutes by default, tunable on the node) and can be revoked early from the bridge status page (`localhost:5741`). PTY mode disables the quick-exec policy entirely because keystrokes to a live shell cannot be honestly filtered. The seal guarantees a human at the node consented.
 
-As of bridge **0.25.0-beta**, both Quick Exec and PTY require a master **Terminal Capability** toggle to be enabled on the bridge first ([http://localhost:5741](http://localhost:5741), Telemetry tab). Enabling the Terminal tool in the web UI alone is not sufficient — the node refuses shell commands until a human at the node opts in.
+Shell and agent file access are opt-in per node via three independent, off-by-default toggles on the bridge ([http://localhost:5741](http://localhost:5741), Terminal / Projects): **Agent Projects** (the agent's file, grep, git, and bash tools inside your declared projects), **Quick Exec** (one-shot commands from the web Terminal), and **PTY** (the interactive shell, seal-gated as above). Enabling a tool in the web UI alone is not sufficient — the node refuses until a human at the node opts in.
 
 See **[Architecture → Security guarantees](docs/readme/architecture.md#security-guarantees)** for exactly what's guaranteed (and the honest limits).
 

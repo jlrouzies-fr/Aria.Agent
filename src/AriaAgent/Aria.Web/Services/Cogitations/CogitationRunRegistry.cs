@@ -164,10 +164,20 @@ public sealed class CogitationRunRegistry(
 
         try
         {
+            var outgoing = req.IsContextRetry ? ContextRetryNudge : req.AiMessage;
+            // ModelAuto leaves the save decision to the model; the heuristic nudge makes sure the
+            // question is actually asked on turns that look like preferences/decisions/deferrals.
+            // Skipped in Off (user wants explicit-only) and Regular/Always (harness inscribes anyway).
+            if (!req.IsContextRetry && req.MemoryToolEnabled
+                && req.AutoMemoryMode == AutoMemoryMode.ModelAuto
+                && MemoryNudge.ShouldNudge(req.UserText))
+                outgoing += MemoryNudge.NudgeText;
+
             await foreach (var token in agentService.StreamAsync(
-                req.IsContextRetry ? ContextRetryNudge : req.AiMessage, run.Agent, run.Session, linked.Token,
+                outgoing, run.Agent, run.Session, linked.Token,
                 onUsage: run.SetUsage,
-                turnScopePaths: req.TurnScopePaths, governanceMode: req.GovernanceMode))
+                turnScopePaths: req.TurnScopePaths, governanceMode: req.GovernanceMode,
+                budgetToolCalls: req.BudgetToolCalls, budgetFileReads: req.BudgetFileReads))
             {
                 run.AppendContent(token);
             }

@@ -103,6 +103,10 @@ public static class DatabaseInitializer
                 "ALTER TABLE CogitationMessages ADD COLUMN ImageMediaType TEXT;",
                 // ── Tool activity sections (diff cards, etc.) — serialized so they survive a reload.
                 "ALTER TABLE CogitationMessages ADD COLUMN SectionsJson TEXT;",
+                // ── Scoped terminal opt-in: an opted-in vigil / Hive collective keeps bridge project
+                //    tools in its headless runs (default off — chat+web+MCP only, as before). ──
+                "ALTER TABLE AgentCronJobs ADD COLUMN AllowProjectTools INTEGER NOT NULL DEFAULT 0;",
+                "ALTER TABLE AgentCollectives ADD COLUMN AllowProjectTools INTEGER NOT NULL DEFAULT 0;",
             })
             {
                 await using var cmd = conn.CreateCommand();

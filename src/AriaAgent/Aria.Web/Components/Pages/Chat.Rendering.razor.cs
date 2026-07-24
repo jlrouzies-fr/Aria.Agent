@@ -518,6 +518,8 @@ public partial class Chat
     void ICogitationStreamSink.TodoUpdate(IReadOnlyList<Aria.Tools.TodoItem> todos) => OnTodoUpdate(todos);
     Task<bool> ICogitationStreamSink.ApprovalRequestedAsync(ActionDescriptor descriptor, CancellationToken ct) =>
         RequestToolApprovalAsync(descriptor, ct);
+    Task<string?> ICogitationStreamSink.AskUserAsync(string question, string[]? options, CancellationToken ct) =>
+        RequestAskUserAsync(question, options, ct);
     void ICogitationStreamSink.ContextApprovalRequested(string sessionId) =>
         _ = InvokeAsync(() => { _awaitingContextApprovalSessionId = sessionId; StateHasChanged(); });
 

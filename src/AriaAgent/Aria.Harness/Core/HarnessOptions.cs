@@ -1,4 +1,5 @@
 using Aria.Agent;
+using Aria.Harness.Context;
 using Aria.Harness.Formats;
 using Aria.Harness.Governance;
 using Aria.Harness.Tools;
@@ -79,11 +80,35 @@ public sealed class HarnessOptions
     public Action<IReadOnlyList<TodoItem>>? OnTodoUpdate { get; set; }
 
     /// <summary>
+    /// When set, the always-on <c>ask_user</c> tool is registered: the agent can pause mid-run and
+    /// ask a structured question (with up to 4 option buttons). The callback surfaces the question
+    /// in chat and returns the user's answer — chosen option label or typed text — or null on
+    /// timeout/skip, which the tool turns into a "proceed with your best judgment" result.
+    /// Web wires this for interactive sessions only; headless runs leave it null.
+    /// </summary>
+    public Func<string, string[]?, CancellationToken, Task<string?>>? OnAskUser { get; set; }
+
+    /// <summary>
+    /// When set, the always-on <c>context_status</c> tool is registered: the agent can check its own
+    /// context pressure (last reported input tokens, transcript estimate, auto-compact headroom).
+    /// The host supplies a cheap per-session snapshot provider.
+    /// </summary>
+    public Func<ContextStatusSnapshot>? ContextStatusProvider { get; set; }
+
+    /// <summary>
     /// Plain-text index of the host UI's "/" commands and "#" references. When set, the
     /// always-on <c>list_chat_capabilities</c> tool is registered so the agent can answer
     /// "how do I do X" questions about the interface. Web-only — Console leaves this null.
     /// </summary>
     public string? ChatCapabilitiesText { get; set; }
+
+    /// <summary>
+    /// When set, the always-on <c>spawn_agent</c>/<c>agent_result</c> tools are registered so the
+    /// agent can delegate self-contained subtasks to sub-agent personas running headlessly.
+    /// Web wires this (session-bound) for interactive chat sessions only — headless runs leave it
+    /// null, so a spawned child can never itself fan out (delegation depth is one level).
+    /// </summary>
+    public ISubAgentSpawner? SubAgentSpawner { get; set; }
 
     /// <summary>
     /// Governance policy applied to every tool call. Null or <see cref="GovernanceMode.Off"/>

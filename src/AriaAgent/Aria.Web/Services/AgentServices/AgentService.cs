@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Aria.Agent;
 using Aria.Harness.Core;
+using Aria.Harness.Context;
 using Aria.Harness.Formats;
 using Aria.Harness.Models;
 using Aria.Harness.Governance;
@@ -124,7 +125,10 @@ public sealed class AgentService
         string? activeProjectPath = null,
         IReadOnlyList<TerminalProject>? terminalProjects = null,
         string? sessionId = null,
-        RecallScope recallScope = RecallScope.AllNodes)
+        RecallScope recallScope = RecallScope.AllNodes,
+        ISubAgentSpawner? subAgentSpawner = null,
+        Func<string, string[]?, CancellationToken, Task<string?>>? onAskUser = null,
+        Func<ContextStatusSnapshot>? contextStatusProvider = null)
     {
         var context = new HarnessContext { UserId = userId, BridgeUserId = bridgeUserId ?? userId, SessionId = sessionId };
         var options = new HarnessOptions
@@ -145,8 +149,11 @@ public sealed class AgentService
             OnTodoUpdate       = onTodoUpdate,
             Governance         = GovernancePolicy.FromMode(governanceMode),
             OnApprovalRequested = onApprovalRequested,
+            OnAskUser          = onAskUser,
+            ContextStatusProvider = contextStatusProvider,
             ActiveProjectPath  = activeProjectPath,
             RecallScope        = recallScope,
+            SubAgentSpawner    = subAgentSpawner,
             ChatCapabilitiesText = ChatCatalog.BuildAgentCapabilitiesText()
         };
 
@@ -168,9 +175,13 @@ public sealed class AgentService
         Action<ChatTokenUsage>? onUsage = null,
         Action<string>? onToolCall = null,
         IReadOnlyList<string>? turnScopePaths = null,
-        GovernanceMode? governanceMode = null)
+        GovernanceMode? governanceMode = null,
+        int? budgetToolCalls = null,
+        int? budgetFileReads = null)
     {
-        var turnPolicy = governanceMode.HasValue ? GovernancePolicy.FromMode(governanceMode.Value) : null;
+        var turnPolicy = governanceMode.HasValue
+            ? GovernancePolicy.FromMode(governanceMode.Value).WithBudgetOverrides(budgetToolCalls, budgetFileReads)
+            : null;
         var stream = _harness.StreamAsync(userMessage, agent, session, new HarnessContext { CancellationToken = ct }, turnScopePaths, turnPolicy, ct, onUsage);
         await using var enumerator = stream.GetAsyncEnumerator(ct);
         while (true)

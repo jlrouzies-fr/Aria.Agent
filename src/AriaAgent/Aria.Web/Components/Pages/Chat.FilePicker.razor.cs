@@ -131,9 +131,11 @@ public partial class Chat
         _commandPaletteOpen = false;
         _filePickerOpen     = false;
         _gitPickerOpen      = false;
-        _pickerSel          = 0;
         _projectPickerOptions = new List<(string Path, string Name)> { ("", "— select project —") };
         _projectPickerOptions.AddRange(SessionState.Projects.Select(p => (p.Path, p.Name)));
+        // Preselect the currently-active project so Enter is a no-op confirmation, not a clear.
+        var activeIdx = _projectPickerOptions.FindIndex(o => o.Path == SessionState.ActiveProject?.Path);
+        _pickerSel = activeIdx >= 0 ? activeIdx : 0;
         _ = SetPickerOpenAsync(true);
     }
 
@@ -346,6 +348,8 @@ public partial class Chat
             case "/devices": SessionState.RequestOpenPanel("devices"); break;
 
             case "/vigil":   SessionState.OpenVigilModal();           break;
+            case "/governance": await HandleGovernanceCommandAsync(""); break;
+            case "/scope":      await HandleScopeCommandAsync("");      break;
             case "/vox":     await ToggleVoxAsync();                  break;
             case "/wargame": Nav.NavigateTo("/wargame");             break;
         }

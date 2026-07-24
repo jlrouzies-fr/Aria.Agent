@@ -10,7 +10,11 @@ public enum GovernanceMode
     /// <summary>Tight budgets, scope lock (out-of-scope blocked), mutations require approval.</summary>
     Strict,
     /// <summary>As Strict, but high-stakes actions require a node-signed Inquisitorial Seal.</summary>
-    Paranoid
+    Paranoid,
+    /// <summary>Roomy budgets for real multi-file coding work; out-of-scope calls still ask for approval.</summary>
+    Coding,
+    /// <summary>Read-only exploration — mutations are blocked so the agent presents a plan first.</summary>
+    Plan
 }
 
 /// <summary>How the scope lock treats a tool call whose target path is outside the allowed scope.</summary>
@@ -27,14 +31,26 @@ public sealed record GovernancePolicy(
     ScopeEnforcement  Scope,
     bool              ApproveMutations,
     bool              SealHighStakes,
+    bool              BlockMutations,
     int               LoopThreshold)
 {
     public static GovernancePolicy FromMode(GovernanceMode mode) => mode switch
     {
-        GovernanceMode.Off      => new(mode, int.MaxValue, int.MaxValue, ScopeEnforcement.Off,     false, false, int.MaxValue),
-        GovernanceMode.Balanced => new(mode, 30,           18,           ScopeEnforcement.Approve, false, false, 3),
-        GovernanceMode.Strict   => new(mode, 12,           6,            ScopeEnforcement.Block,   true,  false, 3),
-        GovernanceMode.Paranoid => new(mode, 8,            4,            ScopeEnforcement.Block,   true,  true,  2),
+        GovernanceMode.Off      => new(mode, int.MaxValue, int.MaxValue, ScopeEnforcement.Off,     false, false, false, int.MaxValue),
+        GovernanceMode.Balanced => new(mode, 30,           18,           ScopeEnforcement.Approve, false, false, false, 3),
+        GovernanceMode.Strict   => new(mode, 12,           6,            ScopeEnforcement.Block,   true,  false, false, 3),
+        GovernanceMode.Paranoid => new(mode, 8,            4,            ScopeEnforcement.Block,   true,  true,  false, 2),
+        GovernanceMode.Coding   => new(mode, 60,           40,           ScopeEnforcement.Approve, false, false, false, 4),
+        GovernanceMode.Plan     => new(mode, 40,           40,           ScopeEnforcement.Approve, false, false, true,  3),
         _                       => FromMode(GovernanceMode.Balanced)
     };
+
+    /// <summary>Per-session budget overrides layered on top of the mode's defaults — a null leaves
+    /// the mode's own limit in place. Session-scoped only; never persisted.</summary>
+    public GovernancePolicy WithBudgetOverrides(int? maxToolCalls, int? maxFileReads) =>
+        this with
+        {
+            MaxToolCallsPerTurn = maxToolCalls ?? MaxToolCallsPerTurn,
+            MaxFileReadsPerTurn = maxFileReads ?? MaxFileReadsPerTurn
+        };
 }

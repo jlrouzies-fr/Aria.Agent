@@ -15,11 +15,11 @@
         <PackageReference Include="Microsoft.Extensions.AI" Version="10.6.0" />
         <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.6.0" />
 <PackageReference Include="OpenAI" Version="2.10.0" />
-        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.5" />
-        <!-- EF Core Sqlite 9.0.5 transitively pulls SQLitePCLRaw 2.1.10, flagged by GHSA-2m69-gcr7-jv3q
-             (affects <= 2.1.11, no 2.x patch). 3.0.x is the unaffected line; verified working with EF 9. -->
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.8" />
+        <!-- Pinned above EF Core Sqlite's transitive SQLitePCLRaw requirement: the 2.1.x line is
+             flagged by GHSA-2m69-gcr7-jv3q (affects <= 2.1.11, no 2.x patch). 3.0.x is unaffected. -->
         <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
-        <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.5">
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.8">
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
             <PrivateAssets>all</PrivateAssets>
         </PackageReference>
@@ -30,6 +30,10 @@
         <ProjectReference Include="..\Aria.Tools\Aria.Tools.csproj" />
         <ProjectReference Include="..\Aria.Shared\Aria.Shared.csproj" />
         <ProjectReference Include="..\Aria.Harness\Aria.Harness.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Aria.Tests" />
     </ItemGroup>
 
     <ItemGroup>

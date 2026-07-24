@@ -33,6 +33,10 @@ public sealed class DirectTunnel : IHostedService
     private string?                          _joinCode;
     public static string? CurrentJoinCode { get; private set; }
 
+    /// <summary>Loopback header that carries the request's session stamp to local endpoints, so
+    /// node-side path policy can honour that session's node-signed path grants (Wave 5).</summary>
+    internal const string SessionHeaderName = "X-Aria-Session";
+
     private readonly PtySessionStore _ptySessions;
     private readonly SiblingRoster   _siblingRoster;
 
@@ -601,6 +605,12 @@ public sealed class DirectTunnel : IHostedService
             var httpReq = new HttpRequestMessage(method, "http://localhost:5741" + req.Path);
             if (!string.IsNullOrEmpty(req.Body))
                 httpReq.Content = new StringContent(req.Body, Encoding.UTF8, "application/json");
+
+            // Forward the envelope's session stamp so node-side policy can honour session-scoped path
+            // grants (Wave 5). The stamp is server-supplied but cannot itself widen scope — it only
+            // selects which node-SIGNED grants apply; verification happens against node keys per use.
+            if (!string.IsNullOrEmpty(req.SessionId))
+                httpReq.Headers.TryAddWithoutValidation(SessionHeaderName, req.SessionId);
 
             using var resp = await http.SendAsync(httpReq);
             var body = await resp.Content.ReadAsStringAsync();

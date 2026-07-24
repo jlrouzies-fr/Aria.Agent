@@ -210,10 +210,16 @@ public partial class Chat
                 onTodoUpdate:   _router.TodoUpdate,
                 governanceMode: SessionState.Governance,
                 onApprovalRequested: _router.ApprovalRequestedAsync,
+                onAskUser: _router.AskUserAsync,
+                contextStatusProvider: BuildContextStatusSnapshot,
                 activeProjectPath: SessionState.ActiveProject?.Path,
                 terminalProjects: SessionState.Projects,
                 sessionId: SessionState.SessionToken,
-                recallScope: SessionState.RecallScope);
+                recallScope: SessionState.RecallScope,
+                // Interactive chat sessions may delegate: spawn_agent/agent_result run a persona
+                // headlessly under this session's grant + governance. Depth 0 — children get none.
+                subAgentSpawner: SpawnService.ForSession(
+                    SessionState.CurrentUser?.Id, SessionState.SessionToken, SessionState.Governance));
 
             _agentSource    = sourceName;
             _agentModel     = modelId;
@@ -537,10 +543,16 @@ public partial class Chat
                     onTodoUpdate:   _router.TodoUpdate,
                 governanceMode: SessionState.Governance,
                 onApprovalRequested: _router.ApprovalRequestedAsync,
+                onAskUser: _router.AskUserAsync,
+                contextStatusProvider: BuildContextStatusSnapshot,
                 activeProjectPath: SessionState.ActiveProject?.Path,
                 terminalProjects: SessionState.Projects,
                 sessionId: SessionState.SessionToken,
-                recallScope: SessionState.RecallScope);
+                recallScope: SessionState.RecallScope,
+                // Interactive chat sessions may delegate: spawn_agent/agent_result run a persona
+                // headlessly under this session's grant + governance. Depth 0 — children get none.
+                subAgentSpawner: SpawnService.ForSession(
+                    SessionState.CurrentUser?.Id, SessionState.SessionToken, SessionState.Governance));
 
                 _agentSource    = sourceName;
                 _agentModel     = modelId;
@@ -652,10 +664,16 @@ public partial class Chat
                 onTodoUpdate:   _router.TodoUpdate,
                 governanceMode: SessionState.Governance,
                 onApprovalRequested: _router.ApprovalRequestedAsync,
+                onAskUser: _router.AskUserAsync,
+                contextStatusProvider: BuildContextStatusSnapshot,
                 activeProjectPath: SessionState.ActiveProject?.Path,
                 terminalProjects: SessionState.Projects,
                 sessionId: SessionState.SessionToken,
-                recallScope: SessionState.RecallScope);
+                recallScope: SessionState.RecallScope,
+                // Interactive chat sessions may delegate: spawn_agent/agent_result run a persona
+                // headlessly under this session's grant + governance. Depth 0 — children get none.
+                subAgentSpawner: SpawnService.ForSession(
+                    SessionState.CurrentUser?.Id, SessionState.SessionToken, SessionState.Governance));
 
             _agentSource = sourceName;
             _agentModel  = modelId;
@@ -737,10 +755,16 @@ public partial class Chat
                 onTodoUpdate:   newRouter.TodoUpdate,
                 governanceMode: SessionState.Governance,
                 onApprovalRequested: newRouter.ApprovalRequestedAsync,
+                onAskUser: newRouter.AskUserAsync,
+                contextStatusProvider: BuildContextStatusSnapshot,
                 activeProjectPath: SessionState.ActiveProject?.Path,
                 terminalProjects: SessionState.Projects,
                 sessionId: SessionState.SessionToken,
-                recallScope: SessionState.RecallScope);
+                recallScope: SessionState.RecallScope,
+                // Interactive chat sessions may delegate: spawn_agent/agent_result run a persona
+                // headlessly under this session's grant + governance. Depth 0 — children get none.
+                subAgentSpawner: SpawnService.ForSession(
+                    SessionState.CurrentUser?.Id, SessionState.SessionToken, SessionState.Governance));
 
             // Atomic swap — only now do the old agent/session/router give way to the new ones.
             _router          = newRouter;

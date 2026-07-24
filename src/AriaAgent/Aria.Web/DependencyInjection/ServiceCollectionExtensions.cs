@@ -105,6 +105,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<GrantReplicationService>();
         services.AddHostedService<GrantReplicationBackgroundService>();
         services.AddSingleton<AgentBackgroundExecutor>();
+        services.AddSingleton<IHeadlessAgentRunner>(sp => sp.GetRequiredService<AgentBackgroundExecutor>());
+        services.AddSingleton<SubAgentSpawnService>();
         services.AddSingleton<CronSchedulerHostedService>();
         services.AddHostedService(sp => sp.GetRequiredService<CronSchedulerHostedService>());
         services.AddScoped<CollectiveService>();

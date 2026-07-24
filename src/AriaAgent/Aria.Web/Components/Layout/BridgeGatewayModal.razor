@@ -37,8 +37,8 @@
                             <div class="bgm-step-wide">
                                 <div class="bgm-step-title">Install the bridge</div>
                                 <div class="bgm-step-desc">
-                                    Run the one-liner for your platform, or choose <strong>Docker</strong> to run the
-                                    bridge in a container. Either way, your soul data stays on your machine.
+                                    Run the one-liner for your platform. It downloads the latest release,
+                                    installs to a local directory, and adds <code>aria-bridge</code> to your PATH.
                                 </div>
 
                                 <div class="bgm-install-tabs">
@@ -53,6 +53,21 @@
                                     <button class="bgm-install-copy" @onclick="CopyInstallCommand">
                                         @(_copyStatus ?? "COPY")
                                     </button>
+                                </div>
+                                <div class="bgm-install-label">
+                                    Or run in Docker:
+                                </div>
+                                <div class="bgm-install-box">
+                                    <code class="bgm-install-cmd">@GetDockerCommand()</code>
+                                    <button class="bgm-install-copy" @onclick="CopyDockerCommand">
+                                        @(_dockerCopyStatus ?? "COPY")
+                                    </button>
+                                </div>
+                                <div class="bgm-install-warning">
+                                    <strong>Limited support:</strong> <strong>Docker</strong> runs the bridge in an isolated Linux container.
+                                    Terminal, file tools, and host projects are only accessible if you mount the relevant host folders.
+                                    Purely Windows-dependent projects (e.g. .NET Framework) will not work in the Linux ecosystem.
+                                    Use the install script above for the intended experience.
                                 </div>
                                 <div class="bgm-install-fallback">
                                     Prefer a manual download? See <a href="https://github.com/jlrouzies-fr/Aria.Agent/releases/latest" target="_blank">GitHub Releases</a>.
@@ -187,7 +202,7 @@
     [Inject] private NavigationManager      Navigation { get; set; } = null!;
 
     private enum BridgeState { Probing, NeverRegistered, Offline, Update }
-    private enum InstallPlatform { Windows, Mac, Linux, Docker }
+    private enum InstallPlatform { Windows, Mac, Linux }
 
     // Triggered by BridgeVersionIndicator when the user clicks the update-available badge.
     public static event Action<string, string>? UpdateRequested;
@@ -223,13 +238,20 @@
 
     private InstallPlatform _activeTab = InstallPlatform.Mac;
     private string?         _copyStatus;
+    private string?         _dockerCopyStatus;
 
     private readonly Dictionary<InstallPlatform, (string Label, string Command)> _installTabs = new()
     {
         [InstallPlatform.Windows] = ("Windows", "irm https://raw.githubusercontent.com/jlrouzies-fr/Aria.Agent/main/scripts/install.ps1 | iex"),
         [InstallPlatform.Mac]     = ("macOS",   "curl -fsSL https://raw.githubusercontent.com/jlrouzies-fr/Aria.Agent/main/scripts/install.sh | bash"),
         [InstallPlatform.Linux]   = ("Linux",   "curl -fsSL https://raw.githubusercontent.com/jlrouzies-fr/Aria.Agent/main/scripts/install.sh | bash"),
-        [InstallPlatform.Docker]  = ("Docker",  "docker run -d --name aria-bridge -p 5741:5741 -v aria-bridge-data:/home/app/.config/aria-bridge ghcr.io/jlrouzies-fr/aria.agent/aria-bridge:latest"),
+    };
+
+    private string GetDockerCommand() => _activeTab switch
+    {
+        InstallPlatform.Windows => "docker run -d --name aria-bridge -p 5741:5741 -v \"C:\\Users\\$env:username\\AppData\\Roaming\\aria-bridge:/home/app/.config/aria-bridge\" ghcr.io/jlrouzies-fr/aria.agent/aria-bridge:latest",
+        InstallPlatform.Mac     => "docker run -d --name aria-bridge -p 5741:5741 -v \"~/Library/Application Support/aria-bridge:/home/app/.config/aria-bridge\" ghcr.io/jlrouzies-fr/aria.agent/aria-bridge:latest",
+        _                       => "docker run -d --name aria-bridge -p 5741:5741 -v ~/.config/aria-bridge:/home/app/.config/aria-bridge ghcr.io/jlrouzies-fr/aria.agent/aria-bridge:latest",
     };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -261,6 +283,23 @@
         StateHasChanged();
         await Task.Delay(1200);
         _copyStatus = null;
+        StateHasChanged();
+    }
+
+    private async Task CopyDockerCommand()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("ariaInterop.copyText", GetDockerCommand());
+            _dockerCopyStatus = "Copied";
+        }
+        catch
+        {
+            _dockerCopyStatus = "Failed";
+        }
+        StateHasChanged();
+        await Task.Delay(1200);
+        _dockerCopyStatus = null;
         StateHasChanged();
     }
 

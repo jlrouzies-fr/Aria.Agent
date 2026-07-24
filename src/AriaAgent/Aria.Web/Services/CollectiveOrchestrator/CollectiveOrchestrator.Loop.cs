@@ -25,6 +25,12 @@ public partial class CollectiveOrchestrator
                 return;
             }
 
+            // Scoped terminal opt-in: when the collective allows project tools, every Overmind/drone
+            // headless run in this flow keeps bridge/terminal tools instead of having them stripped.
+            // The hive:{id} grant pre-authorised at launch already covers the sensitive-op window;
+            // the bridge's own gates (ProjectsEnabled, path policy) apply unchanged.
+            using var _hiveTools = Services.Agent.AgentBackgroundExecutor.WithAmbientBridgeTools(collective.AllowProjectTools);
+
             // Bridge-owned collectives require their origin node to be online.
             if (!string.IsNullOrEmpty(collective.OriginNodeId) &&
                 !_bridgeRegistry.GetNodes(collective.UserId).Any(n => n.NodeId == collective.OriginNodeId))

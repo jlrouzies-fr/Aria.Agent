@@ -35,6 +35,11 @@ public static class TunnelAllowlist
         // Read-only Layer B status (enforcement flag + effective grant expiry) — drives the header seal
         // countdown. No secret and no state change; the human still approves grants locally.
         "/context/status",
+        // Wave 5 session path expansions: read-only status/list, plus a narrowing revoke. A grant
+        // itself is only ever minted by the node's local approval ceremony — never through the tunnel.
+        "/scope/status",
+        "/scope/list",
+        "/scope/revoke",
         "/seal/request",
         "/seal/poll",
         "/node/session-code",

@@ -14,6 +14,7 @@ namespace Aria.Tests.Bridge;
 /// Verifies the reactive in-chat context approval ceremony endpoints:
 /// request, local approval page, approve/reject, poll, and grant creation.
 /// </summary>
+[Collection("BridgeApprovalCeremony")]   // shares the static pending-approval store + page launcher with ScopeApprovalEndpointsTests
 public class ContextApprovalEndpointsTests : IDisposable
 {
     private readonly WebApplicationFactory<Aria.Bridge.Program> _factory;

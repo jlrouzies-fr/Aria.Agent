@@ -111,6 +111,25 @@ public class UserSessionState
     /// via <see cref="UserToolService"/>; defaults to Balanced until loaded.</summary>
     public GovernanceMode Governance { get; set; } = GovernanceMode.Balanced;
 
+    /// <summary>Per-session governance budget overrides, set via the "/governance budget …" chat
+    /// command. Session-scoped only — never persisted; cleared by "/governance budget reset".</summary>
+    public int? GovernanceBudgetToolCalls { get; set; }
+    public int? GovernanceBudgetFileReads { get; set; }
+
+    public bool HasGovernanceBudgetOverrides =>
+        GovernanceBudgetToolCalls != null || GovernanceBudgetFileReads != null;
+
+    /// <summary>Per-session auto-compaction threshold in tokens, set via the "/compact auto …" chat
+    /// command. Null = default (<see cref="Aria.Harness.Context.AutoCompaction.DefaultThresholdTokens"/>),
+    /// 0 = off. Session-scoped only — never persisted.</summary>
+    public int? AutoCompactThreshold { get; set; }
+
+    /// <summary>The active mode's policy with any per-session budget overrides layered on top.
+    /// Recomputed on demand so a mode switch or override applies from the next turn.</summary>
+    public GovernancePolicy EffectiveGovernancePolicy() =>
+        GovernancePolicy.FromMode(Governance)
+            .WithBudgetOverrides(GovernanceBudgetToolCalls, GovernanceBudgetFileReads);
+
     /// <summary>How aggressively the Noosphere Inscribe tool is used without an explicit user request.
     /// Persisted per user via <see cref="UserToolService"/>; defaults to ModelAuto until loaded.</summary>
     public AutoMemoryMode AutoMemory { get; set; } = AutoMemoryMode.ModelAuto;
@@ -222,6 +241,14 @@ public class UserSessionState
 
     /// <summary>The project paths the bridge is allowed to read (gates the "#" picker file access).</summary>
     public string[] AllowedProjectPaths => Projects.Select(p => p.Path).ToArray();
+
+    /// <summary>
+    /// Node-approved session path expansions (Wave 5, "/scope add"), as last reported by the node.
+    /// This is the SOFT copy used by the governance scope-lock's turn scope; the bridge remains the
+    /// hard enforcer — a stale (expired) entry here still fails closed at the node. Refreshed whenever
+    /// a "/scope" command runs.
+    /// </summary>
+    public List<string> SessionScopeExpansions { get; } = [];
 
     private TerminalProject? _activeProject;
 

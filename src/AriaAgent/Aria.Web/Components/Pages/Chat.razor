@@ -994,8 +994,7 @@
 
         @if (_pendingApproval is { } appr)
         {
-            var isSeal = appr.Severity == Aria.Harness.Governance.ToolSeverity.NeedsSeal;
-            <div class="approval-bar @(isSeal ? "approval-bar--seal" : "")">
+            var isSeal = appr.Severity == Aria.Harness.Governance.ToolSeverity.NeedsSeal;            <div class="approval-bar @(isSeal ? "approval-bar--seal" : "")">
                 <div class="approval-header">
                     <span class="approval-icon">@(isSeal ? "⛨" : "⚠")</span>
                     <span class="approval-title">@(isSeal ? "PURITY SEAL REQUIRED" : "AUTHORISATION REQUIRED")</span>
@@ -1020,6 +1019,38 @@
                             <button class="approval-btn approval-deny" @onclick="DenyToolCall">✕ REFUSE</button>
                         </div>
                     }
+                </div>
+            </div>
+        }
+
+        @if (_pendingAskUser is { } ask)
+        {
+            <div class="approval-bar">
+                <div class="approval-header">
+                    <span class="approval-icon">?</span>
+                    <span class="approval-title">QUESTION FROM THE AGENT</span>
+                </div>
+                <div class="approval-body">
+                    <div class="approval-detail">
+                        <span class="approval-tool">ASK_USER</span>
+                        <span class="approval-reason">@ask.Question</span>
+                    </div>
+                    @if (ask.Options is { Length: > 0 })
+                    {
+                        <div class="approval-actions">
+                            @foreach (var opt in ask.Options)
+                            {
+                                <button class="approval-btn approval-approve" @onclick="() => AnswerAskUser(opt)">@opt</button>
+                            }
+                        </div>
+                    }
+                    <div class="approval-actions">
+                        <input class="approval-input" @bind="_askUserInput" @bind:event="oninput"
+                               placeholder="Or type your own answer…"
+                               @onkeydown="OnAskUserKeyDown" />
+                        <button class="approval-btn approval-approve" @onclick="() => AnswerAskUser(_askUserInput)">➤ SEND</button>
+                        <button class="approval-btn approval-deny" @onclick="SkipAskUser">✕ SKIP</button>
+                    </div>
                 </div>
             </div>
         }
@@ -1093,16 +1124,23 @@
                 <div class="ref-picker">
                     <div class="ref-picker-header">// SELECT PROJECT — the # picker searches here</div>
                     <div class="ref-picker-body">
-                        @{ var projects = SessionState.Projects; }
-                        @for (var i = 0; i < projects.Count; i++)
+                        @for (var i = 0; i < _projectPickerOptions.Count; i++)
                         {
-                            var idx  = i;
-                            var proj = projects[i];
+                            var idx = i;
+                            var opt = _projectPickerOptions[i];
                             <div class="ref-row @(idx == _pickerSel ? "sel" : "")"
                                  @onmouseenter="() => _pickerSel = idx"
                                  @onclick="() => AcceptPickerAsync(idx)">
-                                <span class="ref-row-name">▣ @proj.Name</span>
-                                <span class="ref-row-path">@proj.Path</span>
+                                @if (string.IsNullOrWhiteSpace(opt.Path))
+                                {
+                                    <span class="ref-row-name">▢ (no active project)</span>
+                                    <span class="ref-row-path">clear project scope</span>
+                                }
+                                else
+                                {
+                                    <span class="ref-row-name">▣ @opt.Name</span>
+                                    <span class="ref-row-path">@opt.Path</span>
+                                }
                             </div>
                         }
                     </div>

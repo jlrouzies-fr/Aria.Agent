@@ -3,6 +3,7 @@ using Aria.Shared;
 using Aria.Web.Data;
 using Aria.Web.Services.Chat;
 using Aria.Web.Services;
+using Aria.Web.Services.Tool;
 using Microsoft.Agents.AI;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
@@ -18,6 +19,7 @@ public partial class Chat : ICogitationStreamSink
     [Inject] private UserSessionState          SessionState         { get; set; } = null!;
     [Inject] private CogitationService         CogitationService    { get; set; } = null!;
     [Inject] private SubAgentService           SubAgentService      { get; set; } = null!;
+    [Inject] private SubAgentSpawnService      SpawnService         { get; set; } = null!;
     [Inject] private IJSRuntime                JS                   { get; set; } = null!;
     [Inject] private ModelBridgeRegistry       BridgeRegistry       { get; set; } = null!;
     [Inject] private CircuitAuthService        CircuitAuth          { get; set; } = null!;
@@ -34,6 +36,8 @@ public partial class Chat : ICogitationStreamSink
     [Inject] private CogitationFolderService    FolderService        { get; set; } = null!;
     [Inject] private TerminalClient             TerminalClient       { get; set; } = null!;
     [Inject] private TerminalPtyService         TerminalPtyService   { get; set; } = null!;
+    [Inject] private UserToolService             ToolService          { get; set; } = null!;
+    [Inject] private ILogger<Chat>                _log                 { get; set; } = null!;
 
     [Parameter] public int? CogitationId { get; set; }
 
@@ -171,8 +175,13 @@ public partial class Chat : ICogitationStreamSink
         {
             var projects = await TerminalClient.GetAllProjectsAsync(userId);
             SessionState.SetProjects(projects);
+            _log.LogInformation("Terminal projects refreshed: {Count} project(s) — {Names}",
+                projects.Count, string.Join(", ", projects.Select(p => p.Name)));
         }
-        catch { }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Terminal projects refresh failed");
+        }
     }
 
     // The sub-agent governing the active conversation: the globally active one for a fresh chat,
@@ -326,6 +335,9 @@ public partial class Chat : ICogitationStreamSink
         // unresolved on the orphaned run until its own timeout. Reattaching (AttachToRun) re-derives
         // this fresh from the run's current PendingApproval, so clearing it here loses nothing.
         _pendingApproval = null;
+        // Same stale-gate reasoning as the approval bar: reattaching re-derives this from the
+        // run's current PendingAskUser, so clearing it here loses nothing.
+        _pendingAskUser  = null;
         _awaitingContextApprovalSessionId = null;
         _isStreaming = false;
         _router      = null;

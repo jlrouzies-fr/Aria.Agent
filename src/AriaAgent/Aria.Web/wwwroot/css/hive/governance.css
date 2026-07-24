@@ -108,6 +108,13 @@
 .approval-approve:hover { background: var(--gold-normal, #d4a020); }
 .approval-deny { background: rgba(0,0,0,0.4); color: var(--text-muted, #999); border: 1px solid var(--border-dim, #444); }
 .approval-deny:hover { color: #ff6060; border-color: #8b0000; }
+.approval-input {
+    flex: 1; min-width: 0; padding: 5px 8px;
+    font-size: 10px; font-family: var(--font-mono, monospace);
+    background: rgba(0,0,0,0.5); color: var(--text-bright, #f0d060);
+    border: 1px solid var(--border-dim, #444); outline: none;
+}
+.approval-input:focus { border-color: var(--border-active, #b09040); }
 
 /* ── Hive Toggle Row ─────────────────────────────────────────────────── */
 .hv-toggle-row {

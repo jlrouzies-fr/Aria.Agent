@@ -159,8 +159,9 @@ path already cover it.
       (a) forge a grant, (b) tamper contextId/expiry, (c) inject an acceptable key via a poisoned
       roster, (d) manufacture consent. Extend `ChannelEndpointsTests`-style live checks +
       `ContextGrantScopeTests` with a roster-injection case.
-- [ ] Full suite green (note: the pre-existing `Souls.ProjectsEnabled` schema-drift failures are
-      unrelated and tracked separately).
+- [x] Full suite green — verified 2026-07-22: 414 passed / 4 skipped / 0 failed. The pre-existing
+      `Souls.ProjectsEnabled` schema-drift failures (raw-SQL `Souls` inserts missing the split
+      capability columns) were fixed in the test setup and no longer fail.
 
 ## Cross-references
 - `docs/security/defense-in-depth-plan.md` §3–§5, §9.3 (Layer B design + Phase 1 changelog)

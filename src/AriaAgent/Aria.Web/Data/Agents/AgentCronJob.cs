@@ -36,4 +36,11 @@ public class AgentCronJob
     public string?       ErrorMessage  { get; set; }
 
     public bool          IsSeenByUser  { get; set; } = true;
+
+    /// <summary>
+    /// Explicit opt-in (set at booking): the vigil's headless run keeps bridge/terminal project tools
+    /// instead of having them stripped. The slot's pre-authorised <c>vigil:{id}</c> grant already covers
+    /// the sensitive-op window; the bridge's own gates (ProjectsEnabled, SecurityPolicy paths) still apply.
+    /// </summary>
+    public bool          AllowProjectTools { get; set; }
 }

@@ -38,28 +38,40 @@ public static class ToolClassifier
 
         var path = ExtractPath(args);
 
-        // Scope lock — path outside the turn's allowed roots (only when a scope is defined).
+        // Scope lock — path outside the turn's allowed roots (only when a scope is defined). The hint
+        // points at the "/scope add" node-approval flow — the sanctioned way to widen scope (Wave 5).
         if (path != null && ctx.AllowedScope.Count > 0 && !InScope(path, ctx.AllowedScope)
             && p.Scope != ScopeEnforcement.Off)
         {
+            var hint = $"path outside allowed scope: {path} — the user can authorise this directory for the session with /scope add {path}";
             if (p.Scope == ScopeEnforcement.Block)
-                return Block(name, argsPreview, $"path outside allowed scope: {path}", path);
+                return Block(name, argsPreview, hint, path);
 
             var scopeSeverity = ToolCategories.IsHighStakes(name) && p.SealHighStakes
                 ? ToolSeverity.NeedsSeal
                 : ToolSeverity.NeedsApproval;
-            return new ActionDescriptor(name, argsPreview,
-                $"path outside allowed scope: {path}", path, scopeSeverity);
+            return new ActionDescriptor(name, argsPreview, hint, path, scopeSeverity);
         }
 
         // Mutations — escalate per policy.
         if (ToolCategories.IsMutating(name))
         {
+            if (p.BlockMutations)
+                return Block(name, argsPreview,
+                    "mutations are disabled in Plan mode — present the plan to the user and ask them " +
+                    "to switch out of Plan mode (e.g. /governance coding) to execute it", path);
             if (ToolCategories.IsHighStakes(name) && p.SealHighStakes)
                 return new ActionDescriptor(name, argsPreview, "high-stakes action", path, ToolSeverity.NeedsSeal);
             if (p.ApproveMutations)
                 return new ActionDescriptor(name, argsPreview, "mutating action", path, ToolSeverity.NeedsApproval);
         }
+
+        // Approval-gated tools (e.g. install_software): a human must sign off in every governed
+        // mode — even Balanced/Coding, which let ordinary mutations run freely. Plan blocked them
+        // above via BlockMutations, Paranoid sealed them via HighStakes; only Off reaches past this.
+        if (ToolCategories.RequiresHumanApproval(name))
+            return new ActionDescriptor(name, argsPreview,
+                "installs software on this machine — requires explicit approval", path, ToolSeverity.NeedsApproval);
 
         return Allow(name, argsPreview);
     }

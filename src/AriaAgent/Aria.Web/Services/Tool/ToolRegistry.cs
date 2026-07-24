@@ -89,6 +89,21 @@ public static class ToolRegistry
                 new("Whether the agent can actually <em>see</em> the screenshot depends on the active model's vision support, which is auto-detected the first time you use this tool on a given channel."),
             ]),
 
+        new("http_request", "HTTP Request", "🌐",
+            "Performs HTTP requests from your own machine via the Aria Bridge and returns the raw response (status, headers, body). Useful for API testing against localhost or LAN services the hosted server cannot reach. Redirects are reported, not followed.",
+            "Built-in", [], [
+                new("No configuration required — enable and start a new cogitation. Requires the Aria Bridge."),
+                new("Requests originate from the bridge machine, so they can reach your LAN/localhost services — and carry data out. Classified as a sensitive operation under Layer B (node context grant)."),
+            ]),
+
+        new("read_image", "Image Read", "🖼",
+            "Reads a local image file (png/jpeg/gif/webp, up to 10 MB) from your machine via the Aria Bridge. When the active model supports vision, the image is shown to it directly; otherwise the model only learns the path, format, and size.",
+            "Built-in", [], [
+                new("No configuration required — enable and start a new cogitation. Requires the Aria Bridge."),
+                new("Same trust level as <code>read_file</code>: restricted to the bridge's declared Allowed Paths."),
+                new("Whether the agent can actually <em>see</em> the image depends on the active model's vision support, which is auto-detected."),
+            ]),
+
         new("wargame", "WAR.PLANNER", "⚔️",
             "Gives the agent access to a live strategic situation report of the WAR.PLANNER simulation: faction status, unit positions, resources, buildings, and recent battle history.",
             "Built-in", [], [
