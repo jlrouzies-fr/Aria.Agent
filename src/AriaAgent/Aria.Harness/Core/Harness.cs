@@ -56,6 +56,7 @@ public sealed class Harness : IHarness
 
         var tools            = new List<AITool>();
         var hasTerminalTools = false;
+        var hasMemoryTools   = false;
         (string Name, string Path, string Description, string? NodeId, string? Platform)[] terminalProjects = [];
         var terminalNodePlatforms = new Dictionary<string?, string>();
 
@@ -174,9 +175,10 @@ public sealed class Harness : IHarness
                     if (bridgeUp)
                     {
                         tools.Add(BuiltinBridgeTool("Inscribe",
-                            "Use when you need to commit information, events, or intelligence into memory for future retrieval — such as recording facts about entities encountered, decisions made, or observations witnessed during your crusade.",
-                            """{"type":"object","properties":{"content":{"type":"string","description":"The information to commit to memory — facts, events, intelligence reports, or any data worthy of preservation in the archive"}},"required":["content"]}""",
+                            "Commit a fact, preference, decision, or observation to persistent memory for future sessions. Use proactively — without being asked — whenever the user states a preference or constraint, makes or defers a decision (\"we'll do that later\"), corrects you, or reveals a durable fact about their projects, machines, or accounts. The archive merges duplicates automatically, so inscribe even when unsure the fact is new. Do NOT use for ephemeral task progress, secrets, or small talk.",
+                            """{"type":"object","properties":{"content":{"type":"string","description":"The information to preserve, with enough context to stand alone in a future session (who/what/why). For deferred work, include what was deferred and the reason."}},"required":["content"]}""",
                             llmNodeId));
+                        hasMemoryTools = true;
                         // Recall (Probe/Contemplate): single LLM node, or fan-out across all connected
                         // nodes when RecallScope.AllNodes — memory stores stay node-local either way.
                         const string probeSchema = """{"type":"object","properties":{"query":{"type":"string","description":"The query in natural language describing what intelligence you seek (e.g., 'What are this soul's preferences?', 'What happened in their timeline?')"}},"required":["query"]}""";
@@ -260,11 +262,11 @@ public sealed class Harness : IHarness
 
                     // Bridge-authoritative project list takes precedence; fall back to the legacy
                     // tool-config AllowedPaths only when the host did not supply it.
-                    var namedProjects = options.TerminalProjects is { Count: > 0 }
+                    var allNamedPaths = options.TerminalProjects is { Count: > 0 }
                         ? options.TerminalProjects.Select(p => (p.Name, p.Path, p.Description, p.NodeId, p.Platform)).ToArray()
                         : ParseNamedPaths(cfg.GetValueOrDefault("AllowedPaths", ""));
-                    var namedPaths   = namedProjects;
-                    var blockedCmds  = ParseConfigLines(cfg.GetValueOrDefault("BlockedCommands", ""));
+                    var scopedNamedPaths = allNamedPaths;
+                    var blockedCmds      = ParseConfigLines(cfg.GetValueOrDefault("BlockedCommands", ""));
 
                     // Active-project scope: when the chat has a project selected, restrict the Terminal
                     // tool to just that project so the bridge's path enforcement blocks every other
@@ -279,12 +281,12 @@ public sealed class Harness : IHarness
                             catch { return p; }
                         }
                         var target = Norm(options.ActiveProjectPath);
-                        var scoped = namedPaths.Where(p => Norm(p.Path) == target).ToArray();
-                        if (scoped.Length > 0) namedPaths = scoped;
+                        var scoped = allNamedPaths.Where(p => Norm(p.Path) == target).ToArray();
+                        if (scoped.Length > 0) scopedNamedPaths = scoped;
                     }
 
                     // Group projects by target bridge node. Null/empty nodeId means "use the LLM node".
-                    var projectsByNode = namedPaths
+                    var projectsByNode = scopedNamedPaths
                         .GroupBy(p => string.IsNullOrEmpty(p.NodeId) ? llmNodeId : p.NodeId)
                         .ToList();
 
@@ -350,7 +352,7 @@ public sealed class Harness : IHarness
                     }
 
                     if (hasTerminalTools)
-                        terminalProjects = namedPaths;
+                        terminalProjects = allNamedPaths;
                     break;
                 }
 
@@ -392,7 +394,11 @@ public sealed class Harness : IHarness
 
         var baseInstructions = options.InstructionsOverride ?? AgentDefaults.SystemMessage;
         if (hasTerminalTools)
-            baseInstructions += BuildTerminalAddendum(terminalProjects, terminalNodePlatforms);
+            baseInstructions += BuildTerminalAddendum(terminalProjects, terminalNodePlatforms, options.ActiveProjectPath);
+        // Gated on actual tool registration (not on the user's toggle): the memory tools also vanish
+        // when the bridge is down, and the prompt must never reference absent tools.
+        if (hasMemoryTools)
+            baseInstructions += BuildMemoryAddendum();
 
         // Always wrap every tool in a governance decorator (even when the initial mode is Off) so a
         // later mode change applies to this existing session — the per-turn policy is refreshed in
@@ -565,12 +571,46 @@ public sealed class Harness : IHarness
         }
     }
 
+    // ── Memory addendum ───────────────────────────────────────────────────────
+
+    // Injected only when the memory tools were actually registered this session (see the hasMemoryTools
+    // gate at the assembly site). Gives the model concrete save/recall triggers — the tool descriptions
+    // alone proved too weak, especially for small local models, and the Minimal Action Principle
+    // otherwise suppresses self-initiated Inscribe calls.
+    private static string BuildMemoryAddendum() => """
+
+
+        ## Memory (Noosphere)
+
+        You have persistent memory that survives across sessions. Saving to it is ALWAYS permitted — it is exempt from the Minimal Action Principle and needs no explicit request from the user.
+
+        Inscribe proactively when the user reveals something with value beyond this session:
+        - Preferences, constraints, or standing rules ("I prefer X", "never do Y", "from now on…")
+        - Decisions and deferrals ("let's do Z later", "we'll go with option B") — record what was decided or deferred, and why, so a future session can resume it
+        - Corrections ("no, use W not V") — record the corrected fact
+        - Durable facts about the user's machines, projects, servers, accounts, or environment quirks
+        - Named tools, technologies, or people the user clearly intends to revisit
+
+        Do NOT inscribe: ephemeral task progress, anything already recorded in the project/repo itself, secrets or credentials, and small talk.
+
+        The archive merges duplicates and links entities automatically — never hold back an Inscribe because the fact might already exist. When a fact changes, simply inscribe the new version.
+
+        Probe memory whenever a request may depend on earlier sessions — recurring project or person names, "what did we decide about…", or any task that resumes prior work.
+        """;
+
     // ── Terminal addendum ─────────────────────────────────────────────────────
 
     private static string BuildTerminalAddendum(
         (string Name, string Path, string Description, string? NodeId, string? Platform)[] projects,
-        IReadOnlyDictionary<string?, string> nodePlatforms)
+        IReadOnlyDictionary<string?, string> nodePlatforms,
+        string? activeProjectPath = null)
     {
+        static string Norm(string p)
+        {
+            try { return Path.GetFullPath(p).TrimEnd(Path.DirectorySeparatorChar); }
+            catch { return p; }
+        }
+
         var distinctPlatforms = projects.Select(p => p.Platform).Concat(nodePlatforms.Values)
             .Where(p => !string.IsNullOrEmpty(p)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var mixedPlatforms = distinctPlatforms.Count > 1;
@@ -599,10 +639,22 @@ public sealed class Harness : IHarness
         var projectsSection = projects.Length > 0
             ? "\n\n### Allowed Projects\n" +
               string.Join("\n", projects.Select(ProjectLabel)) +
-              "\n\nYou may only access files and run commands within these paths. Use these exact absolute paths — do not guess or infer other locations." +
+              "\n\nYou may only access files and run commands within these paths. Use these exact absolute paths — do not guess or infer other locations. " +
+              "If the user names a project by its name or path above, use it directly without asking for clarification. " +
+              "The user can switch the active project at any time by typing `/project`." +
               (mixedPlatforms
                   ? " Projects live on DIFFERENT machines: every tool call is executed on the machine that owns the path you pass, so always copy the project's path prefix verbatim (drive letter and separators included) and never rewrite it into another OS's style."
                   : "")
+            : "\n\n### Allowed Projects\nNo terminal projects are currently available. Do not access the filesystem.";
+
+        var otherProjects = activeProjectPath is null
+            ? []
+            : projects.Where(p => !string.Equals(
+                Norm(p.Path), Norm(activeProjectPath), StringComparison.OrdinalIgnoreCase)).ToArray();
+        var otherSection = otherProjects.Length > 0
+            ? "\n\n### Other known projects (not currently active)\n" +
+              string.Join("\n", otherProjects.Select(ProjectLabel)) +
+              "\n\nIf the user asks about one of these, tell them which project is currently active and that they can switch to it with `/project` — do not attempt to read or list files outside the Allowed Projects list."
             : "";
 
         return $"""
@@ -623,7 +675,7 @@ public sealed class Harness : IHarness
         - **edit_file** — replace an exact string in a file (old_string must appear exactly once; widen context if ambiguous)
         - **list_dir** — list directory entries with types and sizes
         - **glob** — find files by pattern (supports ** recursion, e.g. `**/*.cs`, `src/**/*.ts`)
-        - **commands_index** — get build/run/test commands for any language or framework{projectsSection}
+        - **commands_index** — get build/run/test commands for any language or framework{projectsSection}{otherSection}
 
         ### Workflow guidelines
         - **Act minimally**: take only the steps the user explicitly requested. If asked to read one file, read that one file — do not explore directories or read other files unless required.
