@@ -1,0 +1,34 @@
+name: PR Build
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - 'src/AriaAgent/**'
+      - '.github/workflows/pr-build.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        run: |
+          dotnet restore src/AriaAgent/Aria.Web/Aria.Web.csproj
+          dotnet restore src/AriaAgent/Aria.Bridge/Aria.Bridge.csproj
+
+      - name: Build Aria.Web
+        run: dotnet build src/AriaAgent/Aria.Web/Aria.Web.csproj --no-restore --configuration Release
+
+      - name: Build Aria.Bridge
+        run: dotnet build src/AriaAgent/Aria.Bridge/Aria.Bridge.csproj --no-restore --configuration Release

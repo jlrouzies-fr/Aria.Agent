@@ -37,6 +37,7 @@ public partial class Chat : ICogitationStreamSink
     [Inject] private TerminalClient             TerminalClient       { get; set; } = null!;
     [Inject] private TerminalPtyService         TerminalPtyService   { get; set; } = null!;
     [Inject] private UserToolService             ToolService          { get; set; } = null!;
+    [Inject] private ILogger<Chat>                _log                 { get; set; } = null!;
 
     [Parameter] public int? CogitationId { get; set; }
 
@@ -174,8 +175,13 @@ public partial class Chat : ICogitationStreamSink
         {
             var projects = await TerminalClient.GetAllProjectsAsync(userId);
             SessionState.SetProjects(projects);
+            _log.LogInformation("Terminal projects refreshed: {Count} project(s) — {Names}",
+                projects.Count, string.Join(", ", projects.Select(p => p.Name)));
         }
-        catch { }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Terminal projects refresh failed");
+        }
     }
 
     // The sub-agent governing the active conversation: the globally active one for a fresh chat,

@@ -641,6 +641,7 @@ public sealed class Harness : IHarness
               string.Join("\n", projects.Select(ProjectLabel)) +
               "\n\nYou may only access files and run commands within these paths. Use these exact absolute paths — do not guess or infer other locations. " +
               "If the user names a project by its name or path above, use it directly without asking for clarification. " +
+              "Project names may be partial, lowercase, or abbreviated — match them case-insensitively and by prefix/substring (e.g. 'spectra' → 'Spectra.MLX'). " +
               "The user can switch the active project at any time by typing `/project`." +
               (mixedPlatforms
                   ? " Projects live on DIFFERENT machines: every tool call is executed on the machine that owns the path you pass, so always copy the project's path prefix verbatim (drive letter and separators included) and never rewrite it into another OS's style."

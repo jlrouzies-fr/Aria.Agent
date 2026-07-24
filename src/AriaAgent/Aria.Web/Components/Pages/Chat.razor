@@ -1124,16 +1124,23 @@
                 <div class="ref-picker">
                     <div class="ref-picker-header">// SELECT PROJECT — the # picker searches here</div>
                     <div class="ref-picker-body">
-                        @{ var projects = SessionState.Projects; }
-                        @for (var i = 0; i < projects.Count; i++)
+                        @for (var i = 0; i < _projectPickerOptions.Count; i++)
                         {
-                            var idx  = i;
-                            var proj = projects[i];
+                            var idx = i;
+                            var opt = _projectPickerOptions[i];
                             <div class="ref-row @(idx == _pickerSel ? "sel" : "")"
                                  @onmouseenter="() => _pickerSel = idx"
                                  @onclick="() => AcceptPickerAsync(idx)">
-                                <span class="ref-row-name">▣ @proj.Name</span>
-                                <span class="ref-row-path">@proj.Path</span>
+                                @if (string.IsNullOrWhiteSpace(opt.Path))
+                                {
+                                    <span class="ref-row-name">▢ (no active project)</span>
+                                    <span class="ref-row-path">clear project scope</span>
+                                }
+                                else
+                                {
+                                    <span class="ref-row-name">▣ @opt.Name</span>
+                                    <span class="ref-row-path">@opt.Path</span>
+                                }
                             </div>
                         }
                     </div>
