@@ -28,7 +28,7 @@ public static class TodoTools
     public static AITool Create(Action<IReadOnlyList<TodoItem>> onUpdate)
     {
         return AIFunctionFactory.Create(
-            ([Description("The COMPLETE ordered manifest of directives. Always resend every directive each call, mutating only the 'status' fields — never send a partial list.")] TodoItem[] directives) =>
+            ([Description("The COMPLETE ordered manifest of directives. Always resend every directive each call with its full 'text', mutating only the 'status' fields — never send a partial list or status-only entries.")] TodoItem[] directives) =>
             {
                 var items = directives ?? [];
                 onUpdate(items);
@@ -40,6 +40,9 @@ public static class TodoTools
                 "Post or update your task manifest: an ordered checklist of directives shown to the user. "
                 + "Use it for any multi-step task — declare the directives up front, then call this again to mark "
                 + "each 'in_progress' as you begin it and 'completed' as you finish, keeping at most one 'in_progress'. "
-                + "Always send the entire manifest every call. Do not use it for trivial single-step requests.");
+                + "Always send the entire manifest every call, with the full 'text' of every directive. "
+                + "Each call REPLACES the whole manifest: when the user moves on to a new, separate task, send only "
+                + "the new task's directives — never carry directives over from a previous task. "
+                + "Do not use it for trivial single-step requests.");
     }
 }

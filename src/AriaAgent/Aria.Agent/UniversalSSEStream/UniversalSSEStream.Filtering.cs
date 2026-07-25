@@ -8,6 +8,18 @@ public partial class UniversalSSEStream : Stream
 {
     // ── Content tag filtering ─────────────────────────────────────────────────
 
+    // Earliest index of any of the given tag variants (case-insensitive), or -1.
+    private static int IndexOfAny(string content, string[] variants)
+    {
+        var best = -1;
+        foreach (var variant in variants)
+        {
+            var idx = content.IndexOf(variant, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0 && (best < 0 || idx < best)) best = idx;
+        }
+        return best;
+    }
+
     private string FilterContent(string content)
     {
         // Human-forced Functionary override: delimiter-less name\n{args}. Handled entirely by its own
@@ -37,8 +49,17 @@ public partial class UniversalSSEStream : Stream
         // but at least capture anything in THIS chunk that precedes </think>.
         if (!_thinkEverClosed)
         {
-            int closeIdx = content.IndexOf("</think>",  StringComparison.OrdinalIgnoreCase);
-            int openIdx  = content.IndexOf("<think>",   StringComparison.OrdinalIgnoreCase);
+            int closeIdx = -1, closeLen = 0, openIdx = -1;
+            foreach (var variant in ThinkCloseVariants)
+            {
+                var idx = content.IndexOf(variant, StringComparison.OrdinalIgnoreCase);
+                if (idx >= 0 && (closeIdx < 0 || idx < closeIdx)) { closeIdx = idx; closeLen = variant.Length; }
+            }
+            foreach (var variant in ThinkOpenVariants)
+            {
+                var idx = content.IndexOf(variant, StringComparison.OrdinalIgnoreCase);
+                if (idx >= 0 && (openIdx < 0 || idx < openIdx)) openIdx = idx;
+            }
             if (closeIdx >= 0 && (openIdx < 0 || closeIdx < openIdx))
             {
                 var thinkPart = content[..closeIdx];
@@ -46,19 +67,19 @@ public partial class UniversalSSEStream : Stream
                 _thinkEverClosed = true;
                 _log?.WriteLine($"[dynamic </think>] retroactive flush, {_thinkBuf.Length}ch captured from this chunk");
                 FlushThinkBuf();
-                return FilterContent(content[(closeIdx + 8)..]);
+                return FilterContent(content[(closeIdx + closeLen)..]);
             }
         }
 
         // Only strip orphaned </think> tags — stripping unconditionally breaks valid
         // <think>...</think> blocks that arrive in a single content chunk.
-        int thinkOpenIdx  = content.IndexOf("<think>",  StringComparison.OrdinalIgnoreCase);
-        int thinkCloseIdx = content.IndexOf("</think>", StringComparison.OrdinalIgnoreCase);
+        int thinkOpenIdx  = IndexOfAny(content, ThinkOpenVariants);
+        int thinkCloseIdx = IndexOfAny(content, ThinkCloseVariants);
         bool hasOrphanedCloseThink = thinkCloseIdx >= 0 && (thinkOpenIdx < 0 || thinkCloseIdx < thinkOpenIdx);
 
         var cleaned = content;
         if (hasOrphanedCloseThink)
-            cleaned = Regex.Replace(cleaned, @"</think>", "", RegexOptions.IgnoreCase);
+            cleaned = Regex.Replace(cleaned, @"</think(?:ing)?>", "", RegexOptions.IgnoreCase);
 
         // Check Mistral [TOOL_CALLS] prefix first
         var trimmed = cleaned.TrimStart();
@@ -82,12 +103,17 @@ public partial class UniversalSSEStream : Stream
             return FilterGlmContent(cleaned);
         }
 
-        // Find earliest think-open tag (either <think> or <|channel>thought)
+        // Find earliest think-open tag (<think>, its <thinking> alias, or <|channel>thought)
         int thinkAt = -1;
         string thinkOpen = "<think>", thinkClose = "</think>";
-        int tAt  = cleaned.IndexOf("<think>",          StringComparison.OrdinalIgnoreCase);
+        int tAt  = IndexOfAny(cleaned, ThinkOpenVariants);
         int chAt = cleaned.IndexOf("<|channel>thought", StringComparison.OrdinalIgnoreCase);
-        if (tAt >= 0 && (chAt < 0 || tAt <= chAt)) { thinkAt = tAt;  thinkOpen = "<think>";          thinkClose = "</think>"; }
+        if (tAt >= 0 && (chAt < 0 || tAt <= chAt))
+        {
+            thinkAt = tAt;
+            thinkOpen  = cleaned[tAt..].StartsWith("<thinking>", StringComparison.OrdinalIgnoreCase) ? "<thinking>" : "<think>";
+            thinkClose = thinkOpen == "<thinking>" ? "</thinking>" : "</think>";
+        }
         else if (chAt >= 0)                          { thinkAt = chAt; thinkOpen = "<|channel>thought"; thinkClose = "<channel|>"; }
 
         // Find earliest tool-call pattern

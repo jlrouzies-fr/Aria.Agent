@@ -243,6 +243,11 @@ public partial class Chat
 
         _messages.Add(new MessageEntry("user", displayText) { IsSoul = true });
 
+        // A new directive starts a fresh task context: drop the previous manifest — the agent
+        // re-posts one if this task needs it, instead of appending to a stale completed list.
+        _currentManifest.Clear();
+        _manifestCollapsed = false;
+
         bool isNewCogitation = !_cogitationId.HasValue;
         int? newCogitationFolderId = null;
         if (isNewCogitation)

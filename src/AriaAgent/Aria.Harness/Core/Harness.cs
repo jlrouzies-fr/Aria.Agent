@@ -986,7 +986,9 @@ public sealed class Harness : IHarness
                     {
                         var text = contentEl.GetString() ?? "";
                         if (text.Contains("<think>",              StringComparison.OrdinalIgnoreCase)) sawOpenThink  = true;
+                        if (text.Contains("<thinking>",           StringComparison.OrdinalIgnoreCase)) sawOpenThink  = true;
                         if (text.Contains("</think>",             StringComparison.OrdinalIgnoreCase)) sawCloseThink = true;
+                        if (text.Contains("</thinking>",          StringComparison.OrdinalIgnoreCase)) sawCloseThink = true;
                         if (text.Contains("<|channel|>analysis",   StringComparison.OrdinalIgnoreCase)) sawHarmony    = true;
                         if (text.Contains("<|channel|>commentary", StringComparison.OrdinalIgnoreCase)) sawHarmony    = true;
                         if (text.Contains("<|channel|>final",      StringComparison.OrdinalIgnoreCase)) sawHarmony    = true;

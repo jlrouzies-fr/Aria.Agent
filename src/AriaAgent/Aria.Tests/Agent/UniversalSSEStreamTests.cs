@@ -174,6 +174,88 @@ public class UniversalSSEStreamTests
         Assert.DoesNotContain("<think>", output);
     }
 
+    // Regression: some models (e.g. Qwen3.x via LM Studio) close their think block with the
+    // long-form </thinking> tag. The parser only matched </think>, so the close was missed and
+    // the entire reply — literal </thinking> tag included — was swallowed into the thinking
+    // buffer; the unresolved-thinking retry then regurgitated the same text as content,
+    // doubling the whole output.
+    [Fact]
+    public async Task StartsInThinkMode_LongFormCloseTag_EmitsContentAfterClose()
+    {
+        var reasoning = new List<string>();
+        var inner = CreateSseStream(
+            ContentDelta("step 1"),
+            ContentDelta(" step 2"),
+            ContentDelta("</thinking>"),
+            ContentDelta("The answer is 42."),
+            FinishStop(),
+            "data: [DONE]");
+
+        var stream = new UniversalSSEStream(inner, startsInThinkMode: true)
+        {
+            StreamThinkingLive = true,
+            OnReasoningContent = r => reasoning.Add(r)
+        };
+
+        var output = await ReadAllTextAsync(stream);
+
+        Assert.Equal(["step 1", " step 2"], reasoning);
+        Assert.Contains("The answer is 42.", output);
+        Assert.DoesNotContain("</thinking>", output);
+        Assert.False(stream.EndedWithUnresolvedThinking);
+    }
+
+    // Same long-form close, but split across SSE chunks ("</think" + "ing>"): the held-back
+    // partial close tail must be reassembled and still recognized.
+    [Fact]
+    public async Task StartsInThinkMode_LongFormCloseTag_SplitAcrossChunks()
+    {
+        var reasoning = new List<string>();
+        var inner = CreateSseStream(
+            ContentDelta("step 1</think"),
+            ContentDelta("ing>The answer is 42."),
+            FinishStop(),
+            "data: [DONE]");
+
+        var stream = new UniversalSSEStream(inner, startsInThinkMode: true)
+        {
+            StreamThinkingLive = true,
+            OnReasoningContent = r => reasoning.Add(r)
+        };
+
+        var output = await ReadAllTextAsync(stream);
+
+        Assert.Equal(["step 1"], reasoning);
+        Assert.Contains("The answer is 42.", output);
+        Assert.DoesNotContain("</thinking>", output);
+        Assert.False(stream.EndedWithUnresolvedThinking);
+    }
+
+    [Fact]
+    public async Task ThinkTags_LongFormPair_StripsFromContent()
+    {
+        var reasoning = new List<string>();
+        var inner = CreateSseStream(
+            ContentDelta("<thinking>step 1"),
+            ContentDelta(" step 2"),
+            ContentDelta("</thinking>The answer is 42."),
+            FinishStop(),
+            "data: [DONE]");
+
+        var stream = new UniversalSSEStream(inner)
+        {
+            StreamThinkingLive = true,
+            OnReasoningContent = r => reasoning.Add(r)
+        };
+
+        var output = await ReadAllTextAsync(stream);
+
+        Assert.Equal(["step 1", " step 2"], reasoning);
+        Assert.Contains("The answer is 42.", output);
+        Assert.DoesNotContain("<thinking>", output);
+        Assert.DoesNotContain("</thinking>", output);
+    }
+
     [Fact]
     public async Task StartsInThinkMode_NoCloseTag_Stop_DiscardsMonologueAndSetsFlag()
     {

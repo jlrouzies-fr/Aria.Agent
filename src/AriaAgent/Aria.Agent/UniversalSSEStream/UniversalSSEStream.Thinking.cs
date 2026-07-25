@@ -35,23 +35,29 @@ public partial class UniversalSSEStream : Stream
     // initializer order is not guaranteed — defer the read until first use.
     private static string[]? _splitableOpenTags;
     private static string[] SplitableOpenTags =>
-        _splitableOpenTags ??= ["<|channel>thought", .. ToolPatterns.Select(p => p.Open)];
+        _splitableOpenTags ??= ["<think>", "<thinking>", "<|channel>thought", .. ToolPatterns.Select(p => p.Open)];
+
+    // Some models (e.g. Qwen3.x via LM Studio) emit the long-form <thinking>…</thinking>
+    // pair instead of <think>…</think>. Both are accepted wherever a think open/close is
+    // matched; a missed close tag swallows the whole reply into the thinking buffer.
+    private static readonly string[] ThinkOpenVariants  = ["<think>", "<thinking>"];
+    private static readonly string[] ThinkCloseVariants = ["</think>", "</thinking>"];
     // ── Think filtering ───────────────────────────────────────────────────────
 
     private string FilterInsideThink(string content)
     {
-        int nested = content.IndexOf(_activeThinkOpen,  StringComparison.OrdinalIgnoreCase);
-        int end    = content.IndexOf(_activeThinkClose, StringComparison.OrdinalIgnoreCase);
+        int nested = FindThinkOpen(content, out int nestedLen);
+        int end    = FindThinkClose(content, out int closeLen);
 
         if (nested >= 0 && (end < 0 || nested < end))
         {
             AppendThink(content[..nested]);
-            return FilterInsideThink(content[(nested + _activeThinkOpen.Length)..]);
+            return FilterInsideThink(content[(nested + nestedLen)..]);
         }
         if (end < 0)
         {
             // No close tag yet — check whether we're sitting on a partial close-tag prefix.
-            var (toAppend, closeTail) = StripPartialCloseTagTail(content, _activeThinkClose);
+            var (toAppend, closeTail) = StripPartialThinkCloseTail(content);
             AppendThink(toAppend);
             _partialCloseTagTail = closeTail;
             return "";
@@ -61,7 +67,60 @@ public partial class UniversalSSEStream : Stream
         _log?.WriteLine($"[{_activeThinkClose}] flushing {_thinkBuf.Length}ch");
         _inThink = false; _thinkEverClosed = true;
         FlushThinkBuf();
-        return FilterContent(content[(end + _activeThinkClose.Length)..]);
+        return FilterContent(content[(end + closeLen)..]);
+    }
+
+    // Earliest active think-open tag, accepting the <thinking> alias for <think> pairs.
+    private int FindThinkOpen(string content, out int openLen)
+    {
+        openLen = 0;
+        if (!ThinkOpenVariants.Contains(_activeThinkOpen))
+        {
+            var idx = content.IndexOf(_activeThinkOpen, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0) openLen = _activeThinkOpen.Length;
+            return idx;
+        }
+        var best = -1;
+        foreach (var variant in ThinkOpenVariants)
+        {
+            var idx = content.IndexOf(variant, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0 && (best < 0 || idx < best)) { best = idx; openLen = variant.Length; }
+        }
+        return best;
+    }
+
+    // Earliest active think-close tag, accepting the </thinking> alias for </think> pairs.
+    private int FindThinkClose(string content, out int closeLen)
+    {
+        closeLen = 0;
+        if (!ThinkCloseVariants.Contains(_activeThinkClose))
+        {
+            var idx = content.IndexOf(_activeThinkClose, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0) closeLen = _activeThinkClose.Length;
+            return idx;
+        }
+        var best = -1;
+        foreach (var variant in ThinkCloseVariants)
+        {
+            var idx = content.IndexOf(variant, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0 && (best < 0 || idx < best)) { best = idx; closeLen = variant.Length; }
+        }
+        return best;
+    }
+
+    // Hold back a trailing partial prefix of the active close tag (or any of its aliases),
+    // so a close tag split across SSE chunks is reassembled on the next chunk.
+    private (string main, string tail) StripPartialThinkCloseTail(string content)
+    {
+        if (!ThinkCloseVariants.Contains(_activeThinkClose))
+            return StripPartialCloseTagTail(content, _activeThinkClose);
+
+        foreach (var variant in ThinkCloseVariants)
+        {
+            var (main, tail) = StripPartialCloseTagTail(content, variant);
+            if (tail.Length > 0) return (main, tail);
+        }
+        return (content, "");
     }
     // Check whether content ends with a partial prefix of any known splitable open tag
     // (think or tool-call). Returns (contentWithoutTail, tail) so the tail can be
