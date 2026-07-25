@@ -23,13 +23,19 @@ public partial class UniversalSSEStream : Stream
     // knows which closing tag to look for and how long it is.
     private string _activeThinkOpen  = "<think>";
     private string _activeThinkClose = "</think>";
-    // Partial-tag tail buffers: some models emit think tags split across SSE chunks
-    // (e.g. Gemma 12b sends "<|channel>" in one chunk and "thought" in the next).
+    // Partial-tag tail buffers: some models emit tags split across SSE chunks
+    // (e.g. Gemma 12b sends "<|channel>" in one chunk and "thought" in the next;
+    // token-per-delta servers split "<tool_call>" mid-tag the same way).
     // We hold back any trailing partial prefix and prepend it to the following chunk.
     private string _partialOpenTagTail  = "";
     private string _partialCloseTagTail = "";
-    // Think-open tags that may arrive split (longer than typical single-token tags).
-    private static readonly string[] SplitableThinkOpens = ["<|channel>thought"];
+    // Open tags that may arrive split: think openers plus every tool-call opener,
+    // so a split tool-call tag never leaks to the user as raw markup.
+    // Lazy: ToolPatterns lives in another partial-class file, so static field
+    // initializer order is not guaranteed — defer the read until first use.
+    private static string[]? _splitableOpenTags;
+    private static string[] SplitableOpenTags =>
+        _splitableOpenTags ??= ["<|channel>thought", .. ToolPatterns.Select(p => p.Open)];
     // ── Think filtering ───────────────────────────────────────────────────────
 
     private string FilterInsideThink(string content)
@@ -57,11 +63,12 @@ public partial class UniversalSSEStream : Stream
         FlushThinkBuf();
         return FilterContent(content[(end + _activeThinkClose.Length)..]);
     }
-    // Check whether content ends with a partial prefix of any known multi-chunk think-open tag.
-    // Returns (contentWithoutTail, tail) so the tail can be prepended to the next chunk.
+    // Check whether content ends with a partial prefix of any known splitable open tag
+    // (think or tool-call). Returns (contentWithoutTail, tail) so the tail can be
+    // prepended to the next chunk.
     private static (string main, string tail) StripPartialOpenTagTail(string content)
     {
-        foreach (var openTag in SplitableThinkOpens)
+        foreach (var openTag in SplitableOpenTags)
         {
             for (int len = Math.Min(openTag.Length - 1, content.Length); len >= 1; len--)
             {

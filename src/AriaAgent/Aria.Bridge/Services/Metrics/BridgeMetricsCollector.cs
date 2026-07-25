@@ -1,11 +1,13 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Aria.Bridge.Services.Logging;
 using Aria.Shared;
+using FILETIME = System.Runtime.InteropServices.ComTypes.FILETIME;
 
 namespace Aria.Bridge.Services.Metrics;
 
@@ -13,7 +15,9 @@ namespace Aria.Bridge.Services.Metrics;
 /// Collects live performance metrics for the local bridge process.
 /// CPU and RAM are measured directly; macOS GPU/utilization is attempted via
 /// system_profiler/ioreg/powermetrics and gracefully falls back if root or
-/// hardware support is unavailable.
+/// hardware support is unavailable. On Windows, system CPU comes from
+/// GetSystemTimes and GPU name/utilization/power from nvidia-smi (with a
+/// Win32_VideoController name-only fallback); anything unavailable stays null.
 /// </summary>
 public sealed class BridgeMetricsCollector
 {
@@ -30,6 +34,20 @@ public sealed class BridgeMetricsCollector
     private DateTimeOffset _macSysCacheAt;
     private double? _macSystemCpu;
     private (double UsedMb, double TotalMb)? _macSystemMemory;
+
+    // Cache the expensive Windows nvidia-smi probe.
+    private DateTimeOffset _winGpuCacheAt;
+    private string? _winGpuName;
+    private double? _winGpuUtil;
+    private double? _winGpuPowerMw;
+    private bool _nvidiaSmiUnavailable;
+    private bool _winGpuNameProbed;
+
+    // Previous GetSystemTimes sample for Windows system CPU %.
+    private bool _winSystemTimesValid;
+    private ulong _winPrevIdleTicks;
+    private ulong _winPrevKernelTicks;
+    private ulong _winPrevUserTicks;
 
     private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(5);
 
@@ -115,6 +133,35 @@ public sealed class BridgeMetricsCollector
                 {
                     bandwidthSource = "sudo not granted — GPU power unavailable";
                 }
+            }
+            catch (Exception ex)
+            {
+                error = string.IsNullOrEmpty(error) ? $"GPU: {ex.Message}" : $"{error}; GPU: {ex.Message}";
+            }
+        }
+        else if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                // System CPU from GetSystemTimes deltas (no subprocess).
+                systemCpuPercent = GetWindowsSystemCpuPercent();
+            }
+            catch (Exception ex)
+            {
+                error = string.IsNullOrEmpty(error) ? $"SYS: {ex.Message}" : $"{error}; SYS: {ex.Message}";
+            }
+
+            try
+            {
+                // GPU name/utilization/power come from nvidia-smi; memory
+                // bandwidth has no OS-level API on Windows and stays null.
+                await RefreshWindowsGpuAsync(ct);
+                gpuName = _winGpuName;
+                gpuUtilization = _winGpuUtil;
+                gpuPowerMw = _winGpuPowerMw;
+                bandwidthSource = !_nvidiaSmiUnavailable
+                    ? "nvidia-smi active; memory bandwidth not exposed"
+                    : "unavailable on this platform";
             }
             catch (Exception ex)
             {
@@ -340,6 +387,123 @@ public sealed class BridgeMetricsCollector
         catch { }
         return null;
     }
+
+    private async Task RefreshWindowsGpuAsync(CancellationToken ct)
+    {
+        if (DateTimeOffset.UtcNow - _winGpuCacheAt < CacheTtl)
+            return;
+
+        _winGpuCacheAt = DateTimeOffset.UtcNow;
+
+        if (!_nvidiaSmiUnavailable)
+        {
+            var gpu = await GetWindowsNvidiaSmiAsync(ct);
+            if (gpu is { } smi)
+            {
+                _winGpuName = smi.Name;
+                _winGpuUtil = smi.UtilizationPercent;
+                _winGpuPowerMw = smi.PowerMw;
+                return;
+            }
+
+            // Don't spawn a failing process every tick.
+            _nvidiaSmiUnavailable = true;
+            _winGpuUtil = null;
+            _winGpuPowerMw = null;
+        }
+
+        // Name-only fallback, probed once.
+        if (!_winGpuNameProbed)
+        {
+            _winGpuNameProbed = true;
+            _winGpuName = await GetWindowsGpuNameAsync(ct);
+        }
+    }
+
+    private static async Task<(string Name, double? UtilizationPercent, double? PowerMw)?> GetWindowsNvidiaSmiAsync(CancellationToken ct)
+    {
+        string? output;
+        try
+        {
+            output = await RunCommandAsync("nvidia-smi",
+                ["--query-gpu=name,utilization.gpu,power.draw", "--format=csv,noheader,nounits"], ct);
+        }
+        catch
+        {
+            return null; // nvidia-smi not on PATH.
+        }
+
+        var line = output?.Split('\n').FirstOrDefault(l => !string.IsNullOrWhiteSpace(l));
+        if (line == null)
+            return null;
+
+        // e.g. "NVIDIA GeForce RTX 4090, 12, 85.43" (power.draw is watts).
+        var parts = line.Split(',');
+        if (parts.Length < 3 || string.IsNullOrWhiteSpace(parts[0]))
+            return null;
+
+        double? util = double.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var u)
+            ? Math.Clamp(u, 0, 100)
+            : null;
+        double? powerMw = double.TryParse(parts[2].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var w)
+            ? w * 1000.0
+            : null;
+
+        return (parts[0].Trim(), util, powerMw);
+    }
+
+    private static async Task<string?> GetWindowsGpuNameAsync(CancellationToken ct)
+    {
+        try
+        {
+            var output = await RunCommandAsync("powershell",
+                ["-NoProfile", "-Command", "(Get-CimInstance Win32_VideoController | Select-Object -First 1).Name"], ct);
+            return output?.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private double? GetWindowsSystemCpuPercent()
+    {
+        if (!GetSystemTimes(out var idle, out var kernel, out var user))
+            return null;
+
+        var idleTicks = ToTicks(idle);
+        var kernelTicks = ToTicks(kernel);
+        var userTicks = ToTicks(user);
+
+        lock (_lock)
+        {
+            if (!_winSystemTimesValid)
+            {
+                _winSystemTimesValid = true;
+                (_winPrevIdleTicks, _winPrevKernelTicks, _winPrevUserTicks) = (idleTicks, kernelTicks, userTicks);
+                return null; // Need two samples to compute a delta.
+            }
+
+            var idleDelta = idleTicks - _winPrevIdleTicks;
+            var kernelDelta = kernelTicks - _winPrevKernelTicks;
+            var userDelta = userTicks - _winPrevUserTicks;
+
+            (_winPrevIdleTicks, _winPrevKernelTicks, _winPrevUserTicks) = (idleTicks, kernelTicks, userTicks);
+
+            // Kernel time already includes idle time.
+            var total = kernelDelta + userDelta;
+            if (total == 0)
+                return null;
+
+            return Math.Clamp(100.0 * (1.0 - (double)idleDelta / total), 0, 100);
+        }
+    }
+
+    private static ulong ToTicks(FILETIME ft) =>
+        ((ulong)(uint)ft.dwHighDateTime << 32) | (uint)ft.dwLowDateTime;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetSystemTimes(out FILETIME idleTime, out FILETIME kernelTime, out FILETIME userTime);
 
     private static async Task<string?> RunCommandAsync(string fileName, string[] args, CancellationToken ct)
     {

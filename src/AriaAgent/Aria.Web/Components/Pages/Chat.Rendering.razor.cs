@@ -425,13 +425,31 @@ public partial class Chat
     private void OnTodoUpdate(IReadOnlyList<Aria.Tools.TodoItem> todos) =>
         _ = InvokeAsync(() =>
         {
-            _currentManifest = todos.Select(t => new Aria.Tools.TodoItem
-            {
-                Text   = t.Text ?? "",
-                Status = (t.Status ?? "pending").Trim().ToLowerInvariant().Replace('-', '_')
-            }).ToList();
+            _currentManifest = NormalizeTodos(todos);
             StateHasChanged();
         });
+
+    // Normalize incoming manifest items so CSS classes and glyph matching agree on snake_case
+    // statuses, and drop directives with no visible text (the agent sometimes emits a leading
+    // empty entry that renders as a blank checkbox line).
+    private static List<Aria.Tools.TodoItem> NormalizeTodos(IEnumerable<Aria.Tools.TodoItem> todos) =>
+        todos
+            .Select(t => new Aria.Tools.TodoItem
+            {
+                Text   = (t.Text ?? "").Trim(),
+                Status = (t.Status ?? "pending").Trim().ToLowerInvariant().Replace('-', '_')
+            })
+            .Where(t => !string.IsNullOrEmpty(t.Text))
+            .ToList();
+
+    private static bool TodoListsEqual(IReadOnlyList<Aria.Tools.TodoItem> a, IReadOnlyList<Aria.Tools.TodoItem> b)
+    {
+        if (a.Count != b.Count) return false;
+        for (var i = 0; i < a.Count; i++)
+            if (a[i].Text != b[i].Text || a[i].Status != b[i].Status)
+                return false;
+        return true;
+    }
 
     // Streaming render coalescing. A verbose reasoner (deepseek-r1 emits thousands of reasoning
     // tokens fast) was frozen mid-stream not by render cost but because EVERY token did its own
@@ -465,7 +483,13 @@ public partial class Chat
         {
             _pendingRunUpdate = null;
             SyncMirrorFromRun(_streamingMsg, run);
-            lock (run.Sync) _currentManifest = run.Manifest.ToList();
+            // Only replace the manifest list when the contents actually changed. Replacing it
+            // on every throttled flush restarts the CSS pulse animation on the in-progress item
+            // and can make the checklist appear to blink or jump.
+            List<Aria.Tools.TodoItem> freshManifest;
+            lock (run.Sync) freshManifest = NormalizeTodos(run.Manifest);
+            if (!TodoListsEqual(_currentManifest, freshManifest))
+                _currentManifest = freshManifest;
             _statusOverride = run.StatusText;
             if (run.Status == CogitationRunStatus.AwaitingContextApproval)
                 _awaitingContextApprovalSessionId = run.ContextApprovalSessionId;

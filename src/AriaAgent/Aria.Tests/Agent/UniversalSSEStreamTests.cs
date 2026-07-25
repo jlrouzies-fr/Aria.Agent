@@ -263,6 +263,87 @@ public class UniversalSSEStreamTests
     }
 
     [Fact]
+    public async Task ToolCallTag_SplitOpenTag_NoMarkupLeaks()
+    {
+        // llama.cpp streams token-per-delta: "<tool_call>" can be split mid-tag.
+        // The partial tail must be held back, re-attached, and the whole block rewritten.
+        var inner = CreateSseStream(
+            ContentDelta("<to"),
+            ContentDelta("ol_call><function=bash_exec><parameter=command>curl -sI http://localhost</parameter></function></tool_call>"),
+            FinishStop(),
+            "data: [DONE]");
+
+        var stream = new UniversalSSEStream(inner);
+        var lines = await ReadAllLinesAsync(stream);
+
+        var toolLine = lines.FirstOrDefault(l => l.Contains("\"tool_calls\""));
+        Assert.NotNull(toolLine);
+        Assert.Contains("\"name\":\"bash_exec\"", toolLine);
+        Assert.DoesNotContain("<tool_call>", string.Join("\n", lines));
+        Assert.DoesNotContain("<function=", string.Join("\n", lines));
+    }
+
+    [Fact]
+    public async Task ToolCallTag_SplitOpenTagAfterProse_KeepsProseNoMarkupLeaks()
+    {
+        // Same split, but with prose preceding the tool call in the same chunk —
+        // the prose must stay visible while the markup is consumed.
+        var inner = CreateSseStream(
+            ContentDelta("Good, server is up. Now let me verify:\n\n<to"),
+            ContentDelta("ol_call><function=bash_exec><parameter=command>curl -sI http://localhost</parameter></function></tool_call>"),
+            FinishStop(),
+            "data: [DONE]");
+
+        var stream = new UniversalSSEStream(inner);
+        var lines = await ReadAllLinesAsync(stream);
+        var output = string.Join("\n", lines);
+
+        Assert.Contains("Good, server is up. Now let me verify:", output);
+        var toolLine = lines.FirstOrDefault(l => l.Contains("\"tool_calls\""));
+        Assert.NotNull(toolLine);
+        Assert.Contains("\"name\":\"bash_exec\"", toolLine);
+        Assert.DoesNotContain("<tool_call>", output);
+        Assert.DoesNotContain("<function=", output);
+    }
+
+    [Fact]
+    public async Task ToolCallTag_PartialOpenTagTailAtDone_FlushedAsContent()
+    {
+        // Stream ends while only a partial open tag was held back: it is not a tool
+        // call after all — emit the tail as content instead of dropping it.
+        var inner = CreateSseStream(
+            ContentDelta("Let me show a literal tag: <to"),
+            FinishStop(),
+            "data: [DONE]");
+
+        var stream = new UniversalSSEStream(inner);
+        var output = await ReadAllTextAsync(stream);
+
+        Assert.Contains("Let me show a literal tag:", output);
+        Assert.Contains("\\u003Cto", output); // "<to" JSON-escaped by System.Text.Json
+        Assert.DoesNotContain("\"tool_calls\"", output);
+    }
+
+    [Fact]
+    public async Task ToolCallTag_TruncatedAtDone_BestEffortFlush()
+    {
+        // Close tag never arrives (stream truncated mid tool call): flush the buffer
+        // through the same parse path instead of silently dropping the tool call.
+        var inner = CreateSseStream(
+            ContentDelta("<tool_call>{\"name\":\"get_time\",\"arguments\":{}}"),
+            FinishStop(),
+            "data: [DONE]");
+
+        var stream = new UniversalSSEStream(inner);
+        var lines = await ReadAllLinesAsync(stream);
+
+        var toolLine = lines.FirstOrDefault(l => l.Contains("\"tool_calls\""));
+        Assert.NotNull(toolLine);
+        Assert.Contains("\"name\":\"get_time\"", toolLine);
+        Assert.DoesNotContain("<tool_call>", string.Join("\n", lines));
+    }
+
+    [Fact]
     public async Task MistralToolCalls_RewritesToNativeToolCall()
     {
         var inner = CreateSseStream(
