@@ -17,8 +17,9 @@
 #
 # Environment overrides:
 #   ARIA_DEBUG_SOUL_ID   - Aria.Web user id to join the fake nodes to.
-#                          If unset, the script tries to read it from the primary
-#                          vault at ~/.config/aria-bridge/aria-bridge.db using sqlite3.
+#                          If unset, the script tries to read it from the web DB
+#                          (src/AriaAgent/Aria.Web/aria.db) first, then falls back
+#                          to the primary bridge vault.
 #   ARIA_DEBUG_LM_KEY    - API key for the local LM channel.
 #   ARIA_DEBUG_LM_URL    - Local LM base URL (default http://localhost:1234).
 #   ARIA_SERVER_URL      - Aria.Web URL (default http://localhost:5129).
@@ -78,13 +79,29 @@ discover_soul_id() {
         return
     fi
 
-    local vault="$HOME/.config/aria-bridge/aria-bridge.db"
-    if [[ ! -f "$vault" ]]; then
-        echo "ERROR: primary vault not found at $vault and ARIA_DEBUG_SOUL_ID is unset." >&2
-        exit 1
-    fi
     if ! command -v sqlite3 >/dev/null 2>&1; then
         echo "ERROR: sqlite3 not found and ARIA_DEBUG_SOUL_ID is unset." >&2
+        exit 1
+    fi
+
+    # Prefer the web DB of the server we're enrolling into; only fall back to the primary bridge vault.
+    local web_db="$ROOT/src/AriaAgent/Aria.Web/aria.db"
+    if [[ -f "$web_db" ]]; then
+        soul_id="$(sqlite3 "$web_db" "SELECT Id FROM Users LIMIT 1;" 2>/dev/null || true)"
+        if [[ -n "$soul_id" ]]; then
+            echo "$soul_id"
+            return
+        fi
+    fi
+
+    local vault
+    case "$(uname -s)" in
+        Darwin) vault="$HOME/Library/Application Support/aria-bridge/aria-bridge.db" ;;
+        *)      vault="$HOME/.config/aria-bridge/aria-bridge.db" ;;
+    esac
+
+    if [[ ! -f "$vault" ]]; then
+        echo "ERROR: primary vault not found at $vault and ARIA_DEBUG_SOUL_ID is unset." >&2
         exit 1
     fi
 
