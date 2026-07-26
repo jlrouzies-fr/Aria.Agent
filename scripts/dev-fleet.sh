@@ -247,8 +247,22 @@ seed_lm_channel() {
 
     echo "[dev-fleet] Seeding local LM channel for $label..."
 
+    # If LM Studio is already running and a key is provided, fetch its real model list.
+    local models='["local-model"]'
+    if [[ -n "$LM_KEY" ]]; then
+        local lm_models
+        lm_models="$(curl -fsS -H "Authorization: Bearer $LM_KEY" "$LM_URL/v1/models" 2>/dev/null \
+            | python3 -c 'import sys,json; d=json.load(sys.stdin); print(json.dumps([m["id"] for m in d.get("data",[])]))' 2>/dev/null || true)"
+        if [[ -n "$lm_models" ]]; then
+            models="$lm_models"
+            echo "[dev-fleet] Fetched $(echo "$models" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))') models from LM Studio."
+        else
+            echo "[dev-fleet] LM Studio not reachable or returned no models; using placeholder model."
+        fi
+    fi
+
     local channel_payload
-    channel_payload="$(python3 -c 'import json,sys; print(json.dumps({"url":sys.argv[1],"models":["local-model"],"isBridged":True}))' "$LM_URL")"
+    channel_payload="$(python3 -c 'import json,sys; print(json.dumps({"url":sys.argv[1],"models":json.loads(sys.argv[2]),"isBridged":True}))' "$LM_URL" "$models")"
 
     curl -fsS -X PUT "http://localhost:$port/channels/$url_encoded" \
         -H 'Content-Type: application/json' \
