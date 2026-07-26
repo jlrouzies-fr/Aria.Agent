@@ -388,9 +388,17 @@ public sealed class DirectTunnel : IHostedService
 
         try
         {
+            // The server historically hardcodes localhost:5741 for self-referential bridge endpoints
+            // (e.g. /llm/detect-format). Rewrite to this bridge's actual base URL so dev-fleet nodes on
+            // 5742+ still resolve to themselves.
+            var proxyUrl = req.Url ?? "";
+            const string legacyBridgeBase = "http://localhost:5741";
+            if (proxyUrl.StartsWith(legacyBridgeBase, StringComparison.OrdinalIgnoreCase))
+                proxyUrl = BridgeLocalEndpoints.BaseUrl + proxyUrl.Substring(legacyBridgeBase.Length);
+
             var proxyBody = JsonSerializer.Serialize(new
             {
-                url        = req.Url,
+                url        = proxyUrl,
                 body       = req.Body,
                 keyRef     = req.KeyRef,
                 apiKey     = req.ApiKey,

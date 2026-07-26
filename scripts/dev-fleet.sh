@@ -8,7 +8,7 @@
 #
 # Defaults:
 #   --nodes 2
-#   --lm-url  http://localhost:1234   (LM Studio)
+#   --lm-url  http://localhost:1234/v1   (LM Studio OpenAI-compatible base)
 #   --server-url http://localhost:5129
 #
 # Each instance runs on its own port/data dir with a fake debug profile:
@@ -44,7 +44,7 @@ NODES=2
 RESET=0
 STOP=0
 LM_KEY="${ARIA_DEBUG_LM_KEY:-}"
-LM_URL="${ARIA_DEBUG_LM_URL:-http://localhost:1234}"
+LM_URL="${ARIA_DEBUG_LM_URL:-http://localhost:1234/v1}"
 SERVER_URL="${ARIA_SERVER_URL:-http://localhost:5129}"
 
 usage() {
