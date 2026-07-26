@@ -55,6 +55,23 @@ public sealed class GovernedTool : AIFunction
 
         var verdict = ToolClassifier.Classify(_ctx, _inner.Name, dict, preview);
 
+        // Fleet routing gate: the merged multi-node dispatcher resolved this call to a bridge
+        // OTHER than the session's default node. With the user's fleet-approval mode on, the
+        // routing decision itself needs a human sign-off — the agent chose that machine from
+        // fleet_status assumptions the user may want to veto.
+        if (verdict.Severity == ToolSeverity.Allowed &&
+            _ctx.Policy.Mode != GovernanceMode.Off &&
+            _ctx.Policy.ApproveCrossNodeCalls &&
+            _inner is PathRoutedTerminalTool routed &&
+            routed.ResolveTargetNodeId(dict) is { } targetNode &&
+            !string.Equals(targetNode, routed.DefaultNodeId, StringComparison.Ordinal))
+        {
+            verdict = new ActionDescriptor(_inner.Name, preview,
+                $"fleet routing — this call will execute on a different bridge ({routed.DescribeNode(targetNode)}) " +
+                "than this session's default node; approve the cross-machine decision",
+                null, ToolSeverity.NeedsApproval);
+        }
+
         switch (verdict.Severity)
         {
             case ToolSeverity.Blocked:

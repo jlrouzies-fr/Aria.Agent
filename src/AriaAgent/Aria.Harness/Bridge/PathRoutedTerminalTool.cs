@@ -15,7 +15,7 @@ namespace Aria.Harness.Bridge;
 public sealed class PathRoutedTerminalTool : AIFunction
 {
     /// <summary>One node's implementation of the tool plus the project paths that select it.</summary>
-    public sealed record Candidate(AIFunction Tool, string[] PathPrefixes);
+    public sealed record Candidate(AIFunction Tool, string[] PathPrefixes, string? NodeId);
 
     // Argument keys that can carry an absolute path, by convention of the builtin terminal tools.
     private static readonly string[] PathArgKeys = ["path", "working_dir", "base_dir", "pattern"];
@@ -25,11 +25,16 @@ public sealed class PathRoutedTerminalTool : AIFunction
     private readonly JsonElement _jsonSchema;
     private readonly IReadOnlyList<Candidate> _candidates;
     private readonly int _defaultIndex;
+    private readonly IReadOnlyDictionary<string, string>? _nodeLabels;
 
-    public PathRoutedTerminalTool(IReadOnlyList<Candidate> candidates, int defaultIndex)
+    public PathRoutedTerminalTool(
+        IReadOnlyList<Candidate> candidates,
+        int defaultIndex,
+        IReadOnlyDictionary<string, string>? nodeLabels = null)
     {
         _candidates   = candidates;
         _defaultIndex = defaultIndex >= 0 && defaultIndex < candidates.Count ? defaultIndex : 0;
+        _nodeLabels   = nodeLabels;
         var template  = candidates[0].Tool;
         _name         = template.Name;
         _description  = template.Description;
@@ -40,21 +45,44 @@ public sealed class PathRoutedTerminalTool : AIFunction
     public override string Description => _description;
     public override JsonElement JsonSchema => _jsonSchema;
 
-    protected override async ValueTask<object?> InvokeCoreAsync(
-        AIFunctionArguments arguments, CancellationToken cancellationToken)
+    /// <summary>Node id a path-less call would run on (the session's default node group).</summary>
+    public string? DefaultNodeId => _candidates[_defaultIndex].NodeId;
+
+    /// <summary>
+    /// The node id THIS call would be routed to, given the governance view of the arguments.
+    /// Governance uses it to gate cross-node (fleet) routing before the call runs.
+    /// </summary>
+    public string? ResolveTargetNodeId(IReadOnlyDictionary<string, JsonElement> args)
     {
-        var target = Resolve(arguments);
-        return await target.InvokeAsync(arguments, cancellationToken);
+        var paths = PathArgKeys
+            .Select(k => args.TryGetValue(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => Normalize(s!))
+            .ToList();
+        return ResolveCandidate(paths).NodeId;
     }
 
-    private AIFunction Resolve(AIFunctionArguments arguments)
+    /// <summary>Display name for a node: its registry label when known, else a short id slice.</summary>
+    public string DescribeNode(string nodeId) =>
+        _nodeLabels != null && _nodeLabels.TryGetValue(nodeId, out var label) && !string.IsNullOrWhiteSpace(label)
+            ? label
+            : nodeId.Length > 8 ? nodeId[..8] : nodeId;
+
+    protected override async ValueTask<object?> InvokeCoreAsync(
+        AIFunctionArguments arguments, CancellationToken cancellationToken)
     {
         var paths = PathArgKeys
             .Select(k => arguments.TryGetValue(k, out var v) ? AsString(v) : null)
             .Where(s => !string.IsNullOrWhiteSpace(s))
             .Select(s => Normalize(s!))
             .ToList();
-        if (paths.Count == 0) return _candidates[_defaultIndex].Tool;
+        var target = ResolveCandidate(paths);
+        return await target.Tool.InvokeAsync(arguments, cancellationToken);
+    }
+
+    private Candidate ResolveCandidate(List<string> paths)
+    {
+        if (paths.Count == 0) return _candidates[_defaultIndex];
 
         Candidate? best = null;
         var bestLen = -1;
@@ -69,7 +97,7 @@ public sealed class PathRoutedTerminalTool : AIFunction
                 bestLen = np.Length;
             }
         }
-        return (best ?? _candidates[_defaultIndex]).Tool;
+        return best ?? _candidates[_defaultIndex];
     }
 
     private static string? AsString(object? value) => value switch

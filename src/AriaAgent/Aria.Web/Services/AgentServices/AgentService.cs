@@ -128,7 +128,10 @@ public sealed class AgentService
         RecallScope recallScope = RecallScope.AllNodes,
         ISubAgentSpawner? subAgentSpawner = null,
         Func<string, string[]?, CancellationToken, Task<string?>>? onAskUser = null,
-        Func<ContextStatusSnapshot>? contextStatusProvider = null)
+        Func<ContextStatusSnapshot>? contextStatusProvider = null,
+        bool fleetApprovalRequired = false,
+        Func<CancellationToken, Task<string>>? fleetStatusProvider = null,
+        IReadOnlyDictionary<string, string>? nodeLabels = null)
     {
         var context = new HarnessContext { UserId = userId, BridgeUserId = bridgeUserId ?? userId, SessionId = sessionId };
         var options = new HarnessOptions
@@ -147,10 +150,12 @@ public sealed class AgentService
             OnToolStart        = onToolStart,
             OnToolComplete     = onToolComplete,
             OnTodoUpdate       = onTodoUpdate,
-            Governance         = GovernancePolicy.FromMode(governanceMode),
+            Governance         = GovernancePolicy.FromMode(governanceMode) with { ApproveCrossNodeCalls = fleetApprovalRequired },
             OnApprovalRequested = onApprovalRequested,
             OnAskUser          = onAskUser,
             ContextStatusProvider = contextStatusProvider,
+            FleetStatusProvider = fleetStatusProvider,
+            NodeLabels         = nodeLabels,
             ActiveProjectPath  = activeProjectPath,
             RecallScope        = recallScope,
             SubAgentSpawner    = subAgentSpawner,
@@ -177,10 +182,12 @@ public sealed class AgentService
         IReadOnlyList<string>? turnScopePaths = null,
         GovernanceMode? governanceMode = null,
         int? budgetToolCalls = null,
-        int? budgetFileReads = null)
+        int? budgetFileReads = null,
+        bool fleetApprovalRequired = false)
     {
         var turnPolicy = governanceMode.HasValue
-            ? GovernancePolicy.FromMode(governanceMode.Value).WithBudgetOverrides(budgetToolCalls, budgetFileReads)
+            ? GovernancePolicy.FromMode(governanceMode.Value)
+                .WithBudgetOverrides(budgetToolCalls, budgetFileReads) with { ApproveCrossNodeCalls = fleetApprovalRequired }
             : null;
         var stream = _harness.StreamAsync(userMessage, agent, session, new HarnessContext { CancellationToken = ct }, turnScopePaths, turnPolicy, ct, onUsage);
         await using var enumerator = stream.GetAsyncEnumerator(ct);

@@ -140,6 +140,7 @@ public partial class NavMenu
             SessionState.Governance = await ToolService.GetGovernanceModeAsync(userId);
             (SessionState.AutoMemory, SessionState.AutoMemoryInterval) = await ToolService.GetAutoMemorySettingsAsync(userId);
             SessionState.RecallScope = await ToolService.GetRecallScopeAsync(userId);
+            SessionState.FleetApprovalRequired = await ToolService.GetFleetApprovalRequiredAsync(userId);
             await SyncTerminalAnchorsAsync(userId);
             StateHasChanged();
         });

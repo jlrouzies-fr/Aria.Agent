@@ -113,6 +113,14 @@ public partial class NavMenu
         StateHasChanged();
     }
 
+    internal async Task SetFleetApprovalRequiredAsync(bool required)
+    {
+        if (SessionState.CurrentUser == null) return;
+        SessionState.FleetApprovalRequired = required;
+        await ToolService.SaveFleetApprovalRequiredAsync(SessionState.CurrentUser.Id, required);
+        StateHasChanged();
+    }
+
     internal bool _memGovHelpOpen;
     internal void OpenMemGovHelp()  { _memGovHelpOpen = true;  StateHasChanged(); }
     internal void CloseMemGovHelp() { _memGovHelpOpen = false; StateHasChanged(); }

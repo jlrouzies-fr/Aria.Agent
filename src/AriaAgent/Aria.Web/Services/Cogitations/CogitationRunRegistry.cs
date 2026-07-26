@@ -177,7 +177,8 @@ public sealed class CogitationRunRegistry(
                 outgoing, run.Agent, run.Session, linked.Token,
                 onUsage: run.SetUsage,
                 turnScopePaths: req.TurnScopePaths, governanceMode: req.GovernanceMode,
-                budgetToolCalls: req.BudgetToolCalls, budgetFileReads: req.BudgetFileReads))
+                budgetToolCalls: req.BudgetToolCalls, budgetFileReads: req.BudgetFileReads,
+                fleetApprovalRequired: req.FleetApprovalRequired))
             {
                 run.AppendContent(token);
             }

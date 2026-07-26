@@ -142,6 +142,11 @@ public class UserSessionState
     /// node-local, so a multi-node soul must fan out to reach memory on another machine).</summary>
     public RecallScope RecallScope { get; set; } = RecallScope.AllNodes;
 
+    /// <summary>Whether a tool call routed to a bridge other than the session's default node requires
+    /// explicit user approval (the agent picks a machine from fleet_status assumptions — the user signs
+    /// off the routing decision). Persisted per user via <see cref="UserToolService"/>; defaults to ON.</summary>
+    public bool FleetApprovalRequired { get; set; } = true;
+
     public bool IsToolEnabled(string id) =>
         _toolEnabled.TryGetValue(id, out var e) && e;
 

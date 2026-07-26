@@ -28,4 +28,5 @@ public sealed record CogitationRunRequest(
     string?                SessionId = null,
     bool                   IsContextRetry = false,
     int?                   BudgetToolCalls = null,
-    int?                   BudgetFileReads = null);
+    int?                   BudgetFileReads = null,
+    bool                   FleetApprovalRequired = false);

@@ -432,7 +432,8 @@ public partial class Chat
             AutoMemoryInterval: SessionState.AutoMemoryInterval,
             SessionId:          SessionState.SessionToken,
             BudgetToolCalls:    SessionState.GovernanceBudgetToolCalls,
-            BudgetFileReads:    SessionState.GovernanceBudgetFileReads));
+            BudgetFileReads:    SessionState.GovernanceBudgetFileReads,
+            FleetApprovalRequired: SessionState.FleetApprovalRequired));
 
         if (run == null)
         {
