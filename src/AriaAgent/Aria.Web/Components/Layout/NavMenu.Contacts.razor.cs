@@ -313,6 +313,13 @@ public partial class NavMenu
             Nav.NavigateTo("/wargame");
     }
 
+    internal void OpenFleet()
+    {
+        ClosePanel();
+        if (!Nav.Uri.Contains("/fleet"))
+            Nav.NavigateTo("/fleet");
+    }
+
     internal async Task DeleteHiveCollectiveAsync(int id)
     {
         await CollectiveService.DeleteAsync(id);

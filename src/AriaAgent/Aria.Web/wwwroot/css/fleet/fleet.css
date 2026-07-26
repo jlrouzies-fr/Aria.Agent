@@ -1,0 +1,460 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   // FLEET — machine fleet dashboard  (fl- namespace)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Shell layout ── */
+.fl-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg-base, #1a1a1a);
+    color: var(--text-normal, #aaa);
+    font-family: inherit;
+    overflow: hidden;
+}
+/* When rendered as a page inside .main-content */
+.main-content > .fl-shell {
+    flex: 1;
+    min-height: 0;
+}
+
+/* ── Header ── */
+.fl-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 18px;
+    border-bottom: 1px solid var(--border-glow, #8b0000);
+    background: rgba(0,0,0,0.3);
+    flex-shrink: 0;
+    gap: 12px;
+}
+.fl-header-left   { display: flex; align-items: center; gap: 12px; }
+.fl-header-center { flex: 1; text-align: center; }
+.fl-header-right  { display: flex; align-items: center; gap: 8px; }
+
+.fl-title {
+    font-size: 13px;
+    letter-spacing: 4px;
+    color: var(--text-bright, #f0d060);
+    text-shadow: var(--glow-sm, 0 0 6px rgba(240,208,96,0.4));
+}
+.fl-count-badge {
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    color: var(--text-muted, #888);
+}
+
+/* ── Buttons ── */
+.fl-btn {
+    background: none;
+    border: 1px solid var(--border-dim, #2a2a2a);
+    color: var(--text-muted, #888);
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: color .15s, border-color .15s;
+}
+.fl-btn:hover:not(:disabled) {
+    color: var(--text-bright, #f0d060);
+    border-color: var(--border-glow, #8b0000);
+}
+.fl-btn:disabled { opacity: 0.5; cursor: default; }
+.fl-btn-copy {
+    width: 100%;
+    margin-top: 14px;
+    border-color: var(--gold-normal, #9b7920);
+    color: var(--gold-bright, #d4a020);
+}
+.fl-btn-copy:hover:not(:disabled) {
+    border-color: var(--gold-bright, #d4a020);
+    background: rgba(212,160,32,0.10);
+}
+
+/* ── Flow canvas ── */
+.fl-canvas-wrap {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+    background: var(--bg-base, #1a1a1a);
+    cursor: grab;
+}
+.fl-canvas-wrap:active { cursor: grabbing; }
+.fl-canvas-inner {
+    position: absolute;
+    top: 0; left: 0;
+    transform-origin: 0 0;
+    will-change: transform;
+}
+
+.fl-edges-svg {
+    position: absolute;
+    top: 0; left: 0;
+    pointer-events: none;
+    overflow: visible;
+}
+
+.fl-edge { transition: stroke .3s; }
+.fl-edge-active {
+    animation: fl-flow 1.2s linear infinite;
+    stroke-dasharray: 8 4;
+}
+@keyframes fl-flow {
+    from { stroke-dashoffset: 0; }
+    to   { stroke-dashoffset: -36; }
+}
+
+.fl-canvas-empty {
+    position: absolute;
+    /* Caption beneath the core glyph, same placement rule as the Hive empty state. */
+    top: 62%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--text-dead, #555);
+}
+.fl-canvas-empty-sub {
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    color: var(--text-dead, #555);
+    opacity: 0.8;
+    margin-top: 6px;
+}
+
+/* ── ARIA CORE (center glyph) ── */
+.fl-core-node {
+    position: absolute;
+    width: 170px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 14px 10px;
+    background: var(--bg-panel, #222);
+    border: 1px solid var(--border-glow, #8b0000);
+    box-shadow: 0 0 12px rgba(0,0,0,0.5), 0 0 6px var(--border-glow, #8b0000);
+    user-select: none;
+    animation: fl-core-pulse 2.4s ease-in-out infinite;
+}
+@keyframes fl-core-pulse {
+    0%, 100% { box-shadow: 0 0 12px rgba(0,0,0,0.5), 0 0 6px var(--border-glow); }
+    50%       { box-shadow: 0 0 18px rgba(0,0,0,0.5), 0 0 18px var(--border-glow); }
+}
+.fl-core-glyph {
+    font-size: 26px;
+    color: var(--border-glow, #8b0000);
+    text-shadow: 0 0 10px var(--border-glow);
+    line-height: 1;
+    margin-bottom: 6px;
+}
+.fl-core-label {
+    font-size: 10px;
+    letter-spacing: 2.5px;
+    color: var(--text-bright, #f0d060);
+}
+.fl-core-sub {
+    font-size: 8px;
+    letter-spacing: 1.5px;
+    color: var(--text-dead, #555);
+    margin-top: 3px;
+}
+
+/* ── Fleet node cards ── */
+.fl-node {
+    position: absolute;
+    width: 210px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 10px;
+    background: var(--bg-panel, #222);
+    border: 1px solid var(--border-dim, #2a2a2a);
+    cursor: pointer;
+    user-select: none;
+    transition: box-shadow .2s, border-color .2s, opacity .2s;
+}
+.fl-node:hover {
+    border-color: var(--border-glow, #8b0000);
+    box-shadow: 0 0 10px rgba(0,0,0,0.6), 0 0 6px var(--border-glow, #8b0000);
+}
+.fl-node-selected {
+    border-color: var(--gold-bright, #d4a020);
+    box-shadow: 0 0 10px rgba(0,0,0,0.6), 0 0 8px var(--gold-normal, #9b7920);
+}
+.fl-node-dead {
+    opacity: 0.45;
+    filter: grayscale(0.5);
+}
+
+.fl-node-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.fl-node-icon {
+    font-size: 22px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+.fl-node-titles { min-width: 0; }
+.fl-node-name {
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    color: var(--text-bright, #f0d060);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.fl-node-sub {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 8px;
+    letter-spacing: 1px;
+    color: var(--text-muted, #888);
+    margin-top: 2px;
+}
+.fl-os-badge {
+    font-size: 7px;
+    letter-spacing: 0.5px;
+    padding: 0 4px;
+    border-radius: 2px;
+    color: var(--gold-bright, #d4a020);
+    border: 1px solid var(--gold-normal, #9b7920);
+    background: rgba(212,160,32,0.10);
+}
+
+.fl-node-nosignal {
+    font-size: 8px;
+    letter-spacing: 1.5px;
+    color: var(--text-dead, #555);
+    text-align: center;
+    padding: 6px 0;
+    animation: fl-pulse-dim 2s ease-in-out infinite;
+}
+@keyframes fl-pulse-dim {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
+}
+
+/* ── Gauges ── */
+.fl-gauge { display: flex; flex-direction: column; gap: 2px; }
+.fl-gauge-head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 7.5px;
+    letter-spacing: 1px;
+    color: var(--text-muted, #888);
+}
+.fl-gauge-track {
+    height: 4px;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid var(--border-dim, #2a2a2a);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.fl-gauge-fill {
+    height: 100%;
+    transition: width .5s ease;
+}
+.fl-fill-cpu  { background: var(--gold-bright, #d4a020); box-shadow: 0 0 4px var(--gold-bright, #d4a020); }
+.fl-fill-ram  { background: #7ab8d0; box-shadow: 0 0 4px #7ab8d0; }
+.fl-fill-vram { background: #b080d0; box-shadow: 0 0 4px #b080d0; }
+.fl-fill-gpu  { background: #6fbf6f; box-shadow: 0 0 4px #6fbf6f; }
+
+/* ── Model chips ── */
+.fl-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin-top: 2px;
+}
+.fl-chip {
+    font-family: var(--font-mono, monospace);
+    font-size: 7px;
+    letter-spacing: 0.3px;
+    line-height: 1.3;
+    padding: 1px 5px;
+    border-radius: 2px;
+    color: #c9b48a;
+    border: 1px solid rgba(190,160,90,0.35);
+    background: rgba(190,160,90,0.10);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.fl-chip-more {
+    color: var(--text-bright, #f0d060);
+    border-color: var(--gold-normal, #9b7920);
+}
+
+/* ── Zoom bar — fixed to the viewport, left edge, outside .fl-canvas-inner ── */
+.fl-zoom-bar {
+    position: absolute;
+    top: 50%;
+    left: 16px;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    z-index: 5;
+    user-select: none;
+}
+.fl-zoom-btn {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-panel, #222);
+    border: 1px solid var(--border-glow, #8b0000);
+    border-radius: 3px;
+    color: var(--text-bright, #f0d060);
+    font-family: var(--font-mono, monospace);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.fl-zoom-btn:hover { background: rgba(139,0,0,0.25); }
+.fl-zoom-track {
+    position: relative;
+    width: 6px;
+    height: 140px;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid var(--border-dim, #2a2a2a);
+    border-radius: 3px;
+    cursor: pointer;
+}
+.fl-zoom-fill {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: var(--border-glow, #8b0000);
+    border-radius: 3px;
+}
+.fl-zoom-thumb {
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    width: 12px;
+    height: 12px;
+    background: var(--text-bright, #f0d060);
+    border-radius: 50%;
+    transform: translate(-50%, 50%);
+    box-shadow: 0 0 6px var(--border-glow, #8b0000);
+    cursor: grab;
+}
+.fl-zoom-pct {
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    color: var(--text-dead, #777);
+    font-family: var(--font-mono, monospace);
+}
+
+/* ── Node drawer ── */
+.fl-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 699;
+}
+.fl-drawer {
+    position: fixed;
+    top: 0; right: 0;
+    width: 420px;
+    max-width: 90vw;
+    height: 100%;
+    background: var(--bg-panel, #222);
+    border-left: 1px solid var(--border-glow, #8b0000);
+    z-index: 700;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.fl-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-dim, #2a2a2a);
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--text-bright, #f0d060);
+    background: rgba(0,0,0,0.2);
+    flex-shrink: 0;
+}
+.fl-drawer-close {
+    background: none;
+    border: 1px solid var(--border-dim, #2a2a2a);
+    color: var(--text-muted, #888);
+    font-family: var(--font-mono, monospace);
+    font-size: 9px;
+    letter-spacing: 1px;
+    padding: 3px 8px;
+    cursor: pointer;
+}
+.fl-drawer-close:hover {
+    color: var(--text-bright, #f0d060);
+    border-color: var(--border-glow, #8b0000);
+}
+.fl-drawer-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+}
+.fl-drawer-label {
+    font-size: 8px;
+    letter-spacing: 2px;
+    color: var(--text-dead, #555);
+    margin: 14px 0 6px;
+}
+.fl-drawer-label:first-child { margin-top: 0; }
+
+.fl-kv {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 10px;
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.fl-kv > span:first-child {
+    letter-spacing: 1px;
+    color: var(--text-dead, #555);
+    flex-shrink: 0;
+}
+.fl-kv > span:last-child {
+    color: var(--text-normal, #aaa);
+    text-align: right;
+    word-break: break-word;
+}
+
+.fl-empty {
+    font-size: 10px;
+    color: var(--text-dead, #555);
+    padding: 6px 0;
+}
+
+.fl-channel-name {
+    font-size: 9.5px;
+    letter-spacing: 1.5px;
+    color: #9fb8d0;
+    margin: 10px 0 4px;
+}
+.fl-channel-count { color: var(--text-dead, #555); }
+.fl-model-table {
+    border: 1px solid var(--border-dim, #2a2a2a);
+    background: rgba(0,0,0,0.15);
+}
+.fl-model-row {
+    font-size: 10px;
+    color: var(--text-normal, #aaa);
+    padding: 3px 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    word-break: break-word;
+}
+.fl-model-row:last-child { border-bottom: none; }
