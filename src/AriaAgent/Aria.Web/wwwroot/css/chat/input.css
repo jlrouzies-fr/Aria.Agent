@@ -109,6 +109,51 @@
 .chat-input:disabled { opacity: 0.4; cursor: not-allowed; }
 .chat-input.input-queued { border-color: var(--gold-dim); color: var(--gold-bright); }
 
+/* ── Queued message block (pinned above the composer, same family as the directive manifest) ── */
+.queue-block {
+    border: 1px solid var(--border-normal);
+    border-left: 2px solid var(--gold-dim);
+    background: var(--bg-surface);
+    margin: 0 0 6px 0;
+    padding: 6px 10px 8px;
+    font-family: var(--font-mono);
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.35);
+}
+.queue-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 5px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border-dim);
+    cursor: pointer;
+    user-select: none;
+}
+.queue-title { color: var(--gold-normal); letter-spacing: 2px; font-size: 10px; }
+.queue-header:hover .queue-title { color: var(--gold-bright); }
+.queue-hint { color: var(--text-dead); font-size: 9px; letter-spacing: 1px; margin-left: auto; }
+.queue-cancel {
+    background: none;
+    border: none;
+    color: var(--text-dead);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    cursor: pointer;
+    padding: 0 2px;
+}
+.queue-cancel:hover { color: #e07070; }
+.queue-text {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-normal);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 96px;
+    overflow-y: auto;
+    cursor: pointer;
+}
+.queue-text:hover { color: var(--gold-bright); }
+
 .transmit-btn {
     background: var(--bg-surface);
     border: 1px solid var(--border-active);

@@ -700,9 +700,7 @@ public partial class Chat
         // the input and doing nothing effectively "cancels" the queue.
         if (e.Key == "ArrowUp" && string.IsNullOrEmpty(_input) && !string.IsNullOrEmpty(_queuedInput))
         {
-            _input       = _queuedInput;
-            _queuedInput = "";
-            StateHasChanged();
+            RecallQueued();
             return;
         }
 
@@ -726,6 +724,23 @@ public partial class Chat
         {
             await SendAsync();
         }
+    }
+
+    // Pulls the queued message back into the composer for editing — same gesture as ArrowUp on an
+    // empty input. Pressing Ctrl+Enter afterwards re-queues (while streaming) or sends it.
+    private void RecallQueued()
+    {
+        if (string.IsNullOrEmpty(_queuedInput)) return;
+        _input       = _queuedInput;
+        _queuedInput = "";
+        StateHasChanged();
+    }
+
+    // Discards the queued message without sending it (the ✕ on the queue block).
+    private void CancelQueued()
+    {
+        _queuedInput = "";
+        StateHasChanged();
     }
 
     // User declined the "/compact" confirmation — just close the modal, nothing was touched yet.

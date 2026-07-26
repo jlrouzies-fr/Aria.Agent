@@ -1213,10 +1213,24 @@
                 </div>
             }
 
+        @if (!string.IsNullOrEmpty(_queuedInput))
+        {
+            @* Queued message pinned above the composer (same visual family as the directive
+               manifest). Click the block (or press ↑ on an empty input) to recall it for editing. *@
+            <div class="queue-block">
+                <div class="queue-header" @onclick="RecallQueued" data-tip="Recall into the composer (↑)">
+                    <span class="queue-title">⧉ QUEUE</span>
+                    <span class="queue-hint">CLICK / ↑ TO EDIT</span>
+                    <button class="queue-cancel" @onclick="CancelQueued" @onclick:stopPropagation="true" data-tip="Discard queued message">✕</button>
+                </div>
+                <div class="queue-text" @onclick="RecallQueued">@_queuedInput</div>
+            </div>
+        }
+
         <div class="input-area">
             <DebouncedTextArea id="chatInput"
                                class="@("chat-input " + (!string.IsNullOrEmpty(_queuedInput) ? "input-queued" : ""))"
-                               placeholder="@(!string.IsNullOrEmpty(_queuedInput) ? $"// Queued (↑ to edit): {(_queuedInput.Length > 34 ? _queuedInput[..34] + "…" : _queuedInput)}" : (_isStreaming ? "// Press Ctrl+Enter to queue next message…" : "// Transmit directive to Aria..."))"
+                               placeholder="@(_isStreaming ? "// Press Ctrl+Enter to queue next message…" : "// Transmit directive to Aria...")"
                                rows="1"
                                disabled="@(_agent == null || _cogitationOffline)"
                                Value="@_input"
