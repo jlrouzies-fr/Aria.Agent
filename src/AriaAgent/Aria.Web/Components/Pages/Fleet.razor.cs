@@ -24,12 +24,12 @@ public partial class Fleet
     // NodeHalfH is generous because card height varies with gauges/chips; edges anchor at the
     // top center of each card so they always meet the border cleanly.
     public  const double CoreCX     = 2000;
-    public  const double CoreCY     = 480;
+    public  const double CoreCY     = 460;
     public  const double CoreHalfW  = 85;
-    public  const double CoreHalfH  = 75;     // tighter core card so edges appear to stem from the glyph
+    public  const double CoreHalfH  = 45;     // card bottom sits just under "2 NODES" so edges feel attached
     public  const double NodeHalfW  = 105;
     public  const double NodeHalfH  = 130;
-    public  const double NodeRowY   = 880;    // top edge of the node card row, closer to core
+    public  const double NodeRowY   = 570;    // node row snug beneath the core
     public  const double NodeGap    = 70;     // horizontal gap between node cards
     private const int    MaxChips   = 6;
 

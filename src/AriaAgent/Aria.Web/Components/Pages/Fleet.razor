@@ -31,14 +31,17 @@
             <svg class="fl-edges-svg" xmlns="http://www.w3.org/2000/svg" width="4000" height="3000">
                 @for (var i = 0; i < _nodes.Count; i++)
                 {
-                    var node    = _nodes[i];
+                    var node     = _nodes[i];
                     var (nx, ny) = NodePosition(i, _nodes.Count);
-                    var fromX   = CoreCX;
-                    var fromY   = CoreCY + CoreHalfH;
-                    var toX     = nx + NodeHalfW;
-                    var toY     = ny;
-                    var pathD   = $"M{fromX},{fromY} L{toX},{toY}";
-                    var live    = node.Metrics != null;
+                    var nodeCx   = nx + NodeHalfW;
+                    // Anchor edges to the nearest bottom corner of the core card so the tree looks
+                    // attached to the core rather than converging on a single point below it.
+                    var fromX    = nodeCx < CoreCX ? CoreCX - CoreHalfW : (nodeCx > CoreCX ? CoreCX + CoreHalfW : CoreCX);
+                    var fromY    = CoreCY + CoreHalfH;
+                    var toX      = nodeCx;
+                    var toY      = ny;
+                    var pathD    = $"M{fromX},{fromY} L{toX},{toY}";
+                    var live     = node.Metrics != null;
 
                     <path d="@pathD" fill="none"
                           class="fl-edge @(live ? "fl-edge-active" : "")"
