@@ -20,16 +20,21 @@ public partial class Fleet
     private readonly CancellationTokenSource _pollCts = new();
 
     // ── Canvas geometry (world units, matches the 4000×3000 SVG) ─────────────
-    // Cards are 210px wide; heights vary with gauges/chips, so NodeHalfH is slightly generous:
-    // the border point then lands on or just outside the true edge, never inside the card.
+    // Vertical lineage tree: ARIA CORE sits at the top, fleet node cards form a row below it.
+    // NodeHalfH is generous because card height varies with gauges/chips; edges anchor at the
+    // top center of each card so they always meet the border cleanly.
     public  const double CoreCX     = 2000;
-    public  const double CoreCY     = 1500;
+    public  const double CoreCY     = 480;
     public  const double CoreHalfW  = 85;
-    public  const double CoreHalfH  = 95;
+    public  const double CoreHalfH  = 75;     // tighter core card so edges appear to stem from the glyph
     public  const double NodeHalfW  = 105;
     public  const double NodeHalfH  = 130;
-    public  const double RingRadius = 640;
+    public  const double NodeRowY   = 880;    // top edge of the node card row, closer to core
+    public  const double NodeGap    = 70;     // horizontal gap between node cards
     private const int    MaxChips   = 6;
+
+    /// <summary>Vertical center of the whole tree, used to position the initial viewport.</summary>
+    public static double ViewCenterY => (CoreCY + CoreHalfH + NodeRowY) / 2;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -46,7 +51,7 @@ public partial class Fleet
         _canvasJsInit = true;
         try
         {
-            await JS.InvokeVoidAsync("ariaInterop.initFleetCanvas", ".fl-canvas-wrap", CoreCX, CoreCY);
+            await JS.InvokeVoidAsync("ariaInterop.initFleetCanvas", ".fl-canvas-wrap", CoreCX, ViewCenterY);
         }
         catch (Exception ex)
         {
@@ -120,12 +125,14 @@ public partial class Fleet
     // ── Geometry ──────────────────────────────────────────────────────────────
 
     /// <summary>Card top-left for node <paramref name="index"/> of <paramref name="count"/>,
-    /// arranged on a ring around ARIA CORE (first node straight up, then clockwise).</summary>
+    /// arranged in a horizontal row beneath ARIA CORE, centered on the canvas.</summary>
     public static (double Left, double Top) NodePosition(int index, int count)
     {
-        var angle = -Math.PI / 2 + 2 * Math.PI * index / count;
-        return (CoreCX + RingRadius * Math.Cos(angle) - NodeHalfW,
-                CoreCY + RingRadius * Math.Sin(angle) - NodeHalfH);
+        if (count <= 0) return (CoreCX - NodeHalfW, NodeRowY);
+        var cardW = NodeHalfW * 2;
+        var totalW = count * cardW + (count - 1) * NodeGap;
+        var startX = CoreCX - totalW / 2;
+        return (startX + index * (cardW + NodeGap), NodeRowY);
     }
 
     // Point where the ray from a rectangle's centre toward (tx,ty) crosses the rectangle border —

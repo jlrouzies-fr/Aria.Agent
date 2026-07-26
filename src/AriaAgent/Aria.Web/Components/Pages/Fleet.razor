@@ -27,19 +27,18 @@
     <div class="fl-canvas-wrap">
         <div class="fl-canvas-inner">
 
-            @* SVG links — core→node border points, cubic-bezier paths, animated telemetry dots *@
+            @* SVG links — straight vertical lines from core bottom to each node card top, animated telemetry dots *@
             <svg class="fl-edges-svg" xmlns="http://www.w3.org/2000/svg" width="4000" height="3000">
                 @for (var i = 0; i < _nodes.Count; i++)
                 {
-                    var node           = _nodes[i];
-                    var (nx, ny)       = NodePosition(i, _nodes.Count);
-                    var nodeCx         = nx + NodeHalfW;
-                    var nodeCy         = ny + NodeHalfH;
-                    var (fromX, fromY) = BorderPoint(CoreCX, CoreCY, CoreHalfW, CoreHalfH, nodeCx, nodeCy);
-                    var (toX,   toY)   = BorderPoint(nodeCx, nodeCy, NodeHalfW, NodeHalfH, CoreCX, CoreCY);
-                    var midY           = (fromY + toY) / 2;
-                    var pathD          = $"M{fromX},{fromY} C{fromX},{midY} {toX},{midY} {toX},{toY}";
-                    var live           = node.Metrics != null;
+                    var node    = _nodes[i];
+                    var (nx, ny) = NodePosition(i, _nodes.Count);
+                    var fromX   = CoreCX;
+                    var fromY   = CoreCY + CoreHalfH;
+                    var toX     = nx + NodeHalfW;
+                    var toY     = ny;
+                    var pathD   = $"M{fromX},{fromY} L{toX},{toY}";
+                    var live    = node.Metrics != null;
 
                     <path d="@pathD" fill="none"
                           class="fl-edge @(live ? "fl-edge-active" : "")"
