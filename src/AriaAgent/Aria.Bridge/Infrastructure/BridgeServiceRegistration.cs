@@ -42,6 +42,9 @@ public static class BridgeServiceRegistration
         builder.Services.AddSingleton<BridgeMetricsCollector>();
         builder.Services.AddHostedService<BridgeMetricsHostedService>();
 
+        // Static hardware inventory (CPU model/cores, total RAM, GPU, form factor) for the fleet view.
+        builder.Services.AddSingleton<HardwareInventory>();
+
         // Privileged macOS telemetry source (sudo powermetrics) — started on demand.
         builder.Services.AddSingleton<PowermetricsTelemetrySource>();
 

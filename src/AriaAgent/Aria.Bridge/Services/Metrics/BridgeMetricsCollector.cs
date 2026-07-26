@@ -40,6 +40,8 @@ public sealed class BridgeMetricsCollector
     private string? _winGpuName;
     private double? _winGpuUtil;
     private double? _winGpuPowerMw;
+    private double? _winGpuMemTotalMb;
+    private double? _winGpuMemFreeMb;
     private bool _nvidiaSmiUnavailable;
     private bool _winGpuNameProbed;
 
@@ -72,6 +74,8 @@ public sealed class BridgeMetricsCollector
         string? gpuName = null;
         double? gpuUtilization = null;
         double? gpuPowerMw = null;
+        double? gpuMemoryTotalMb = null;
+        double? gpuMemoryFreeMb = null;
         double? memoryBandwidthGbps = null;
         string? bandwidthSource = null;
 
@@ -153,12 +157,14 @@ public sealed class BridgeMetricsCollector
 
             try
             {
-                // GPU name/utilization/power come from nvidia-smi; memory
+                // GPU name/utilization/power/VRAM come from nvidia-smi; memory
                 // bandwidth has no OS-level API on Windows and stays null.
                 await RefreshWindowsGpuAsync(ct);
                 gpuName = _winGpuName;
                 gpuUtilization = _winGpuUtil;
                 gpuPowerMw = _winGpuPowerMw;
+                gpuMemoryTotalMb = _winGpuMemTotalMb;
+                gpuMemoryFreeMb = _winGpuMemFreeMb;
                 bandwidthSource = !_nvidiaSmiUnavailable
                     ? "nvidia-smi active; memory bandwidth not exposed"
                     : "unavailable on this platform";
@@ -181,6 +187,14 @@ public sealed class BridgeMetricsCollector
             sysTotalMb = gcInfo.TotalAvailableMemoryBytes > 0 ? gcInfo.TotalAvailableMemoryBytes / (1024.0 * 1024.0) : null;
         }
 
+        // Apple silicon: the GPU shares unified memory with the CPU, so VRAM total/free mirror
+        // the system RAM figures. Discrete-GPU Macs, Windows and Linux report their own (or null).
+        if (OperatingSystem.IsMacOS() && RuntimeInformation.OSArchitecture == Architecture.Arm64)
+        {
+            gpuMemoryTotalMb = sysTotalMb;
+            gpuMemoryFreeMb  = sysTotalMb is { } t && sysUsedMb is { } u ? t - u : null;
+        }
+
         return new BridgeMetrics(
             Timestamp: DateTimeOffset.UtcNow,
             Uptime: DateTimeOffset.UtcNow - BridgeLogger.StartedAt,
@@ -193,6 +207,8 @@ public sealed class BridgeMetricsCollector
             GpuName: gpuName,
             GpuUtilizationPercent: gpuUtilization,
             GpuPowerMw: gpuPowerMw,
+            GpuMemoryTotalMb: gpuMemoryTotalMb,
+            GpuMemoryFreeMb: gpuMemoryFreeMb,
             MemoryBandwidthGbps: memoryBandwidthGbps,
             Platform: platform,
             BandwidthSource: bandwidthSource,
@@ -403,6 +419,8 @@ public sealed class BridgeMetricsCollector
                 _winGpuName = smi.Name;
                 _winGpuUtil = smi.UtilizationPercent;
                 _winGpuPowerMw = smi.PowerMw;
+                _winGpuMemTotalMb = smi.MemTotalMb;
+                _winGpuMemFreeMb = smi.MemFreeMb;
                 return;
             }
 
@@ -410,23 +428,26 @@ public sealed class BridgeMetricsCollector
             _nvidiaSmiUnavailable = true;
             _winGpuUtil = null;
             _winGpuPowerMw = null;
+            _winGpuMemFreeMb = null;
         }
 
-        // Name-only fallback, probed once.
+        // Name + total-VRAM fallback (no live free figure without nvidia-smi), probed once.
         if (!_winGpuNameProbed)
         {
             _winGpuNameProbed = true;
-            _winGpuName = await GetWindowsGpuNameAsync(ct);
+            var fallback = await GetWindowsGpuFallbackAsync(ct);
+            _winGpuName = fallback.Name;
+            _winGpuMemTotalMb = fallback.VramTotalMb;
         }
     }
 
-    private static async Task<(string Name, double? UtilizationPercent, double? PowerMw)?> GetWindowsNvidiaSmiAsync(CancellationToken ct)
+    private static async Task<(string Name, double? UtilizationPercent, double? PowerMw, double? MemTotalMb, double? MemFreeMb)?> GetWindowsNvidiaSmiAsync(CancellationToken ct)
     {
         string? output;
         try
         {
             output = await RunCommandAsync("nvidia-smi",
-                ["--query-gpu=name,utilization.gpu,power.draw", "--format=csv,noheader,nounits"], ct);
+                ["--query-gpu=name,utilization.gpu,power.draw,memory.total,memory.free", "--format=csv,noheader,nounits"], ct);
         }
         catch
         {
@@ -437,7 +458,7 @@ public sealed class BridgeMetricsCollector
         if (line == null)
             return null;
 
-        // e.g. "NVIDIA GeForce RTX 4090, 12, 85.43" (power.draw is watts).
+        // e.g. "NVIDIA GeForce RTX 4090, 12, 85.43, 24564, 23100" (power.draw is watts, memory is MiB).
         var parts = line.Split(',');
         if (parts.Length < 3 || string.IsNullOrWhiteSpace(parts[0]))
             return null;
@@ -448,21 +469,36 @@ public sealed class BridgeMetricsCollector
         double? powerMw = double.TryParse(parts[2].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var w)
             ? w * 1000.0
             : null;
+        double? memTotalMb = parts.Length > 3 && double.TryParse(parts[3].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var mt)
+            ? mt
+            : null;
+        double? memFreeMb = parts.Length > 4 && double.TryParse(parts[4].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var mf)
+            ? mf
+            : null;
 
-        return (parts[0].Trim(), util, powerMw);
+        return (parts[0].Trim(), util, powerMw, memTotalMb, memFreeMb);
     }
 
-    private static async Task<string?> GetWindowsGpuNameAsync(CancellationToken ct)
+    private static async Task<(string? Name, double? VramTotalMb)> GetWindowsGpuFallbackAsync(CancellationToken ct)
     {
         try
         {
             var output = await RunCommandAsync("powershell",
-                ["-NoProfile", "-Command", "(Get-CimInstance Win32_VideoController | Select-Object -First 1).Name"], ct);
-            return output?.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
+                ["-NoProfile", "-Command", "$g = Get-CimInstance Win32_VideoController | Select-Object -First 1; \"$($g.Name)|$($g.AdapterRAM)\""], ct);
+            var line = output?.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
+            if (line == null)
+                return (null, null);
+
+            var parts = line.Split('|');
+            var name = parts[0].Length > 0 ? parts[0] : null;
+            double? vramMb = parts.Length > 1 && long.TryParse(parts[1], out var ram) && ram > 0
+                ? ram / (1024.0 * 1024.0)
+                : null;
+            return (name, vramMb);
         }
         catch
         {
-            return null;
+            return (null, null);
         }
     }
 
@@ -505,7 +541,7 @@ public sealed class BridgeMetricsCollector
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool GetSystemTimes(out FILETIME idleTime, out FILETIME kernelTime, out FILETIME userTime);
 
-    private static async Task<string?> RunCommandAsync(string fileName, string[] args, CancellationToken ct)
+    internal static async Task<string?> RunCommandAsync(string fileName, string[] args, CancellationToken ct)
     {
         var psi = new ProcessStartInfo(fileName)
         {
