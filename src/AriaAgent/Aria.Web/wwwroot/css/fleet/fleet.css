@@ -143,12 +143,13 @@
     0%, 100% { box-shadow: 0 0 12px rgba(0,0,0,0.5), 0 0 6px var(--border-glow); }
     50%       { box-shadow: 0 0 18px rgba(0,0,0,0.5), 0 0 18px var(--border-glow); }
 }
-.fl-core-glyph {
-    font-size: 26px;
-    color: var(--border-glow, #8b0000);
-    text-shadow: 0 0 10px var(--border-glow);
-    line-height: 1;
-    margin-bottom: 6px;
+.fl-core-avatar {
+    width: 90px;
+    height: auto;
+    border-radius: 4px;
+    object-fit: cover;
+    margin-bottom: 8px;
+    box-shadow: 0 0 8px rgba(0,0,0,0.5);
 }
 .fl-core-label {
     font-size: 10px;

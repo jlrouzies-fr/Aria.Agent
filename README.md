@@ -381,3 +381,5 @@ A contacts registry and soul-to-soul **exchange** rites are partially built into
 ---
 
 <sub>Imperial iconography and Warhammer 40K references are the property of Games Workshop. This is an unofficial, non-commercial fan-flavoured hobby project — not endorsed by or affiliated with Games Workshop in any way. All artwork in this repository is original AI-generated fan art.</sub>
+
+<sub>Pixel art generated with [Perchance AI Pixel Art Generator](https://perchance.org/ai-pixel-art-generator)</sub>

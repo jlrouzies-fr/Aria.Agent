@@ -26,7 +26,7 @@ public partial class Fleet
     public  const double CoreCX     = 2000;
     public  const double CoreCY     = 460;
     public  const double CoreHalfW  = 85;
-    public  const double CoreHalfH  = 45;     // card bottom sits just under "2 NODES" so edges feel attached
+    public  const double CoreHalfH  = 60;     // room for the avatar image plus label/sub text
     public  const double NodeHalfW  = 105;
     public  const double NodeHalfH  = 130;
     public  const double NodeRowY   = 570;    // node row snug beneath the core
