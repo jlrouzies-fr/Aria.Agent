@@ -119,6 +119,16 @@ public record SecurityPolicy(
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
 
+        // Bridge-owned background-job logs live in the system temp dir (outside any project scope)
+        // by design — reading them back with read_file must not trip the allowed-paths gate.
+        try
+        {
+            var bgRoot = Path.GetFullPath(BridgePaths.BackgroundLogDir.TrimEnd('/', '\\'));
+            if (full.Equals(bgRoot, cmp) || full.StartsWith(bgRoot + Path.DirectorySeparatorChar, cmp))
+                return;
+        }
+        catch { /* malformed temp root — fall through to normal enforcement */ }
+
         var allowed = AllowedPaths.Any(p =>
         {
             try
