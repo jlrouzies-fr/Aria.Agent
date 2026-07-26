@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Aria.Bridge.Infrastructure;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -110,5 +111,21 @@ public class LocalOriginMiddlewareTests
         msg.Headers.Add("Origin", "http://example.com");
         var r = await client.SendAsync(msg);
         Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("localhost:5742", "http://localhost:5742", true)]
+    [InlineData("127.0.0.1:5742", "http://127.0.0.1:5742", true)]
+    [InlineData("localhost:5741", "http://localhost:5741", false)]
+    [InlineData("localhost:5742", "http://localhost:5741", false)]
+    public void IsLocalOrigin_DerivesFromInjectedPort(string host, string origin, bool expectedAllowed)
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers.Host = host;
+        httpContext.Request.Headers.Origin = origin;
+
+        var allowed = LocalRequestGuard.IsLocalOrigin(httpContext.Request, "http://localhost:5742", 5742);
+
+        Assert.Equal(expectedAllowed, allowed);
     }
 }

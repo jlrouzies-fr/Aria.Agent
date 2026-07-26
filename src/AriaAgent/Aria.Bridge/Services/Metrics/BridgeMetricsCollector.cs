@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using Aria.Bridge.Infrastructure;
 using Aria.Bridge.Services.Logging;
 using Aria.Shared;
 using FILETIME = System.Runtime.InteropServices.ComTypes.FILETIME;
@@ -193,6 +194,14 @@ public sealed class BridgeMetricsCollector
         {
             gpuMemoryTotalMb = sysTotalMb;
             gpuMemoryFreeMb  = sysTotalMb is { } t && sysUsedMb is { } u ? t - u : null;
+        }
+
+        // Debug profile can fake GPU name/VRAM for fleet testing on GPU-less dev machines.
+        if (DebugBridgeProfileLoader.Current is { } profile)
+        {
+            if (profile.GpuName != null) gpuName = profile.GpuName;
+            if (profile.GpuVramTotalMb.HasValue) gpuMemoryTotalMb = profile.GpuVramTotalMb.Value;
+            if (profile.GpuVramFreeMb.HasValue) gpuMemoryFreeMb = profile.GpuVramFreeMb.Value;
         }
 
         return new BridgeMetrics(

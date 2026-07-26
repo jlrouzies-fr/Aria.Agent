@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using Aria.Bridge.Infrastructure;
 
 namespace Aria.Bridge.Services.Metrics;
 
@@ -42,7 +43,7 @@ public sealed class HardwareInventory(BridgeMetricsCollector metrics)
     {
         var m = metrics.GetLatest() ?? await metrics.GetMetricsAsync(ct);
 
-        return new Snapshot(
+        var snapshot = new Snapshot(
             Hostname: Environment.MachineName,
             Os: RuntimeInformation.OSDescription,
             Arch: RuntimeInformation.OSArchitecture.ToString(),
@@ -52,6 +53,28 @@ public sealed class HardwareInventory(BridgeMetricsCollector metrics)
             GpuName: m.GpuName,
             GpuVramTotalMb: m.GpuMemoryTotalMb,
             FormFactor: await GetFormFactorAsync(ct));
+
+        return ApplyOverrides(snapshot, DebugBridgeProfileLoader.Current);
+    }
+
+    /// <summary>
+    /// Applies the debug profile to a hardware snapshot, replacing only the fields the profile
+    /// explicitly provides. Pure function — safe to unit test.
+    /// </summary>
+    internal static Snapshot ApplyOverrides(Snapshot snapshot, DebugBridgeProfile? profile)
+    {
+        if (profile is null) return snapshot;
+
+        return snapshot with
+        {
+            Hostname    = profile.Hostname    ?? snapshot.Hostname,
+            CpuModel    = profile.CpuModel    ?? snapshot.CpuModel,
+            CpuCores    = profile.CpuCores    ?? snapshot.CpuCores,
+            TotalRamMb  = profile.TotalRamMb  ?? snapshot.TotalRamMb,
+            GpuName     = profile.GpuName     ?? snapshot.GpuName,
+            GpuVramTotalMb = profile.GpuVramTotalMb ?? snapshot.GpuVramTotalMb,
+            FormFactor  = profile.FormFactor  ?? snapshot.FormFactor,
+        };
     }
 
     private static async Task<string?> GetCpuModelAsync(CancellationToken ct)

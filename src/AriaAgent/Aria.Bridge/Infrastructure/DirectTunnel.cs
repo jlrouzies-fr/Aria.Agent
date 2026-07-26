@@ -168,10 +168,12 @@ public sealed class DirectTunnel : IHostedService
         // their own enrolled node keypair.
         var nodePriv = soul.NodePrivateKeyBase64 ?? soul.PrivateKeyBase64!;
         var nodePub  = soul.NodePublicKeyBase64  ?? soul.PublicKeyBase64!;
-        var nodeLabel = soul.NodeLabel ?? Environment.MachineName;
-        var platform = OperatingSystem.IsWindows() ? "Windows"
-                     : OperatingSystem.IsMacOS()   ? "macOS"
-                     : OperatingSystem.IsLinux()   ? "Linux" : "Unknown";
+        var profile  = DebugBridgeProfileLoader.Current;
+        var nodeLabel = profile?.Label ?? soul.NodeLabel ?? Environment.MachineName;
+        var platform = profile?.Platform
+            ?? (OperatingSystem.IsWindows() ? "Windows"
+              : OperatingSystem.IsMacOS()   ? "macOS"
+              : OperatingSystem.IsLinux()   ? "Linux" : "Unknown");
 
         // Challenge-response: server issues a nonce, bridge signs with its NODE private key
         var nonceB64 = await hub.InvokeAsync<string>("GetDaemonChallenge",
@@ -395,7 +397,7 @@ public sealed class DirectTunnel : IHostedService
                 requireKey = req.RequireKey
             });
 
-            using var httpReq = new HttpRequestMessage(HttpMethod.Post, "http://localhost:5741/llm/proxy")
+            using var httpReq = new HttpRequestMessage(HttpMethod.Post, $"{BridgeLocalEndpoints.BaseUrl}/llm/proxy")
             {
                 Content = new StringContent(proxyBody, Encoding.UTF8, "application/json")
             };
@@ -536,7 +538,7 @@ public sealed class DirectTunnel : IHostedService
         }
 
         // Enforcing + no grant → refuse and surface the local approval page for this session.
-        var approveUrl = "http://localhost:5741/context/approve"
+        var approveUrl = $"{BridgeLocalEndpoints.BaseUrl}/context/approve"
             + (string.IsNullOrEmpty(sessionId) ? "" : $"?session={Uri.EscapeDataString(sessionId)}");
         // Only auto-open the page for legacy/soul-wide (no session) callers — e.g. the Console client.
         // For a session-scoped (Web) request the browser drives the reactive in-chat ceremony, which
@@ -602,7 +604,7 @@ public sealed class DirectTunnel : IHostedService
                 _        => HttpMethod.Get
             };
 
-            var httpReq = new HttpRequestMessage(method, "http://localhost:5741" + req.Path);
+            var httpReq = new HttpRequestMessage(method, $"{BridgeLocalEndpoints.BaseUrl}{req.Path}");
             if (!string.IsNullOrEmpty(req.Body))
                 httpReq.Content = new StringContent(req.Body, Encoding.UTF8, "application/json");
 
