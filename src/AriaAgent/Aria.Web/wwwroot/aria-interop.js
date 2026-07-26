@@ -71,18 +71,24 @@ window.ariaInterop = {
         return navigator.clipboard.writeText(text || '');
     },
 
+    // Ports the browser will probe for a local bridge. 5741 is the default; 5742+ are used by
+    // scripts/dev-fleet.sh for the local multi-bridge debug mode.
+    _bridgePorts: [5741, 5742, 5743, 5744, 5745],
+
     // Poll the local bridge's /health endpoint from the browser. The bridge runs on the user's
-    // own machine (localhost:5741), so only the browser can reach it reliably in this local-first
-    // architecture. Returns { ok: true, version: string } or { ok: false, error: string }.
+    // own machine (localhost), so only the browser can reach it reliably in this local-first
+    // architecture. Returns { ok: true, version: string, port: number } or { ok: false, error: string }.
     getLocalBridgeVersion: async function () {
-        try {
-            const resp = await fetch('http://localhost:5741/health', { method: 'GET' });
-            if (!resp.ok) return { ok: false, error: resp.statusText };
-            const data = await resp.json();
-            return { ok: true, version: data.version || 'unknown' };
-        } catch (e) {
-            return { ok: false, error: e.message };
+        for (var i = 0; i < ariaInterop._bridgePorts.length; i++) {
+            var port = ariaInterop._bridgePorts[i];
+            try {
+                var resp = await fetch('http://localhost:' + port + '/health', { method: 'GET' });
+                if (!resp.ok) continue;
+                var data = await resp.json();
+                return { ok: true, version: data.version || 'unknown', port: port };
+            } catch (e) { /* try next port */ }
         }
+        return { ok: false, error: 'No local bridge found on ports ' + ariaInterop._bridgePorts.join(', ') };
     },
 
     // Layer A device trust: ask the server to have THIS soul's node sign a trust-device grant for
@@ -122,7 +128,8 @@ window.ariaInterop = {
     },
 
     // Shared loopback fetch to /node/attest. Called for both user-bound attestation and
-    // bridge-discovered soul selection (one bridge = one soul).
+    // bridge-discovered soul selection (one bridge = one soul). Probes the standard bridge port
+    // range so dev-fleet debug nodes on 5742+ can unlock the browser too.
     _attestViaLocalBridge: async function (payload, label) {
         if (!window.isSecureContext) {
             console.error('[aria] ' + label + ': page is NOT a secure context (' + location.origin +
@@ -130,21 +137,26 @@ window.ariaInterop = {
                 'or open it via http://localhost. Attestation skipped → UI stays locked.');
             return null;
         }
-        try {
-            const resp = await fetch('http://localhost:5741/node/attest', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ payloadBase64: btoa(payload) })
-            });
-            if (!resp.ok) {
-                console.error('[aria] ' + label + ': bridge responded ' + resp.status + ' ' + resp.statusText);
-                return null;
+        for (var i = 0; i < ariaInterop._bridgePorts.length; i++) {
+            var port = ariaInterop._bridgePorts[i];
+            try {
+                var resp = await fetch('http://localhost:' + port + '/node/attest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ payloadBase64: btoa(payload) })
+                });
+                if (!resp.ok) {
+                    console.warn('[aria] ' + label + ': bridge on :' + port + ' responded ' + resp.status);
+                    continue;
+                }
+                console.log('[aria] ' + label + ': attested via localhost:' + port);
+                return await resp.text();
+            } catch (e) {
+                console.warn('[aria] ' + label + ': localhost:' + port + ' unreachable');
             }
-            return await resp.text();
-        } catch (e) {
-            console.error('[aria] ' + label + ': fetch to http://localhost:5741/node/attest failed:', e);
-            return null;
         }
+        console.error('[aria] ' + label + ': no local bridge found on ports ' + ariaInterop._bridgePorts.join(', '));
+        return null;
     },
 
     attestViaLocalBridge: async function (payload) {
