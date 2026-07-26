@@ -21,7 +21,7 @@
 #                          (src/AriaAgent/Aria.Web/aria.db) first, then falls back
 #                          to the primary bridge vault.
 #   ARIA_DEBUG_LM_KEY    - API key for the local LM channel.
-#   ARIA_DEBUG_LM_URL    - Local LM base URL (default http://localhost:1234).
+#   ARIA_DEBUG_LM_URL    - Local LM OpenAI-compatible base URL (default http://localhost:1234/v1).
 #   ARIA_SERVER_URL      - Aria.Web URL (default http://localhost:5129).
 #
 # The script auto-joins every node via /soul/join and then pre-enrolls it through
@@ -251,7 +251,7 @@ seed_lm_channel() {
     local models='["local-model"]'
     if [[ -n "$LM_KEY" ]]; then
         local lm_models
-        lm_models="$(curl -fsS -H "Authorization: Bearer $LM_KEY" "$LM_URL/v1/models" 2>/dev/null \
+        lm_models="$(curl -fsS -H "Authorization: Bearer $LM_KEY" "$LM_URL/models" 2>/dev/null \
             | python3 -c 'import sys,json; d=json.load(sys.stdin); print(json.dumps([m["id"] for m in d.get("data",[])]))' 2>/dev/null || true)"
         if [[ -n "$lm_models" ]]; then
             models="$lm_models"
