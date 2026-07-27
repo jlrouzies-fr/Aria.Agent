@@ -71,18 +71,24 @@ window.ariaInterop = {
         return navigator.clipboard.writeText(text || '');
     },
 
+    // Ports the browser will probe for a local bridge. 5741 is the default; 5742+ are used by
+    // scripts/dev-fleet.sh for the local multi-bridge debug mode.
+    _bridgePorts: [5741, 5742, 5743, 5744, 5745],
+
     // Poll the local bridge's /health endpoint from the browser. The bridge runs on the user's
-    // own machine (localhost:5741), so only the browser can reach it reliably in this local-first
-    // architecture. Returns { ok: true, version: string } or { ok: false, error: string }.
+    // own machine (localhost), so only the browser can reach it reliably in this local-first
+    // architecture. Returns { ok: true, version: string, port: number } or { ok: false, error: string }.
     getLocalBridgeVersion: async function () {
-        try {
-            const resp = await fetch('http://localhost:5741/health', { method: 'GET' });
-            if (!resp.ok) return { ok: false, error: resp.statusText };
-            const data = await resp.json();
-            return { ok: true, version: data.version || 'unknown' };
-        } catch (e) {
-            return { ok: false, error: e.message };
+        for (var i = 0; i < ariaInterop._bridgePorts.length; i++) {
+            var port = ariaInterop._bridgePorts[i];
+            try {
+                var resp = await fetch('http://localhost:' + port + '/health', { method: 'GET' });
+                if (!resp.ok) continue;
+                var data = await resp.json();
+                return { ok: true, version: data.version || 'unknown', port: port };
+            } catch (e) { /* try next port */ }
         }
+        return { ok: false, error: 'No local bridge found on ports ' + ariaInterop._bridgePorts.join(', ') };
     },
 
     // Layer A device trust: ask the server to have THIS soul's node sign a trust-device grant for
@@ -122,7 +128,8 @@ window.ariaInterop = {
     },
 
     // Shared loopback fetch to /node/attest. Called for both user-bound attestation and
-    // bridge-discovered soul selection (one bridge = one soul).
+    // bridge-discovered soul selection (one bridge = one soul). Probes the standard bridge port
+    // range so dev-fleet debug nodes on 5742+ can unlock the browser too.
     _attestViaLocalBridge: async function (payload, label) {
         if (!window.isSecureContext) {
             console.error('[aria] ' + label + ': page is NOT a secure context (' + location.origin +
@@ -130,21 +137,26 @@ window.ariaInterop = {
                 'or open it via http://localhost. Attestation skipped → UI stays locked.');
             return null;
         }
-        try {
-            const resp = await fetch('http://localhost:5741/node/attest', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ payloadBase64: btoa(payload) })
-            });
-            if (!resp.ok) {
-                console.error('[aria] ' + label + ': bridge responded ' + resp.status + ' ' + resp.statusText);
-                return null;
+        for (var i = 0; i < ariaInterop._bridgePorts.length; i++) {
+            var port = ariaInterop._bridgePorts[i];
+            try {
+                var resp = await fetch('http://localhost:' + port + '/node/attest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ payloadBase64: btoa(payload) })
+                });
+                if (!resp.ok) {
+                    console.warn('[aria] ' + label + ': bridge on :' + port + ' responded ' + resp.status);
+                    continue;
+                }
+                console.log('[aria] ' + label + ': attested via localhost:' + port);
+                return await resp.text();
+            } catch (e) {
+                console.warn('[aria] ' + label + ': localhost:' + port + ' unreachable');
             }
-            return await resp.text();
-        } catch (e) {
-            console.error('[aria] ' + label + ': fetch to http://localhost:5741/node/attest failed:', e);
-            return null;
         }
+        console.error('[aria] ' + label + ': no local bridge found on ports ' + ariaInterop._bridgePorts.join(', '));
+        return null;
     },
 
     attestViaLocalBridge: async function (payload) {
@@ -1099,6 +1111,121 @@ window.ariaInterop.initHiveCanvas = function (canvasEl) {
     if (zoomBar) {
         var btnIn  = zoomBar.querySelector('.hv-zoom-btn-in');
         var btnOut = zoomBar.querySelector('.hv-zoom-btn-out');
+        if (btnIn)  btnIn.addEventListener('click',  function () { setZoomCentered(zoom * 1.2); });
+        if (btnOut) btnOut.addEventListener('click', function () { setZoomCentered(zoom * 0.8); });
+    }
+};
+
+// ── Fleet canvas pan + zoom ───────────────────────────────────────────────────
+// Same mechanics as initMemoryCanvas, on the fl- namespace — kept as a separate
+// function (rather than a shared/parameterized one) so neither page risks the other's regressions.
+window.ariaInterop.initFleetCanvas = function (canvasEl, centerX, centerY) {
+    if (typeof canvasEl === 'string') canvasEl = document.querySelector(canvasEl);
+    if (!canvasEl || !(canvasEl instanceof HTMLElement) || !canvasEl.classList.contains('fl-canvas-wrap') || canvasEl._fleetInit) return;
+    canvasEl._fleetInit = true;
+
+    var panX = 0, panY = 0, zoom = 1;
+    var dragging = false, startX = 0, startY = 0, startPX = 0, startPY = 0;
+    var ZMIN = 0.15, ZMAX = 4;
+
+    var inner = canvasEl.querySelector('.fl-canvas-inner');
+    if (!inner) return;
+
+    var zoomBar   = canvasEl.querySelector('.fl-zoom-bar');
+    var zoomTrack = zoomBar ? zoomBar.querySelector('.fl-zoom-track') : null;
+    var zoomFill  = zoomBar ? zoomBar.querySelector('.fl-zoom-fill')  : null;
+    var zoomThumb = zoomBar ? zoomBar.querySelector('.fl-zoom-thumb') : null;
+    var zoomPct   = zoomBar ? zoomBar.querySelector('.fl-zoom-pct')   : null;
+
+    function updateZoomUI() {
+        if (!zoomFill) return;
+        var t = (zoom - ZMIN) / (ZMAX - ZMIN);
+        var pct = Math.max(0, Math.min(1, t)) * 100;
+        zoomFill.style.height = pct + '%';
+        if (zoomThumb) zoomThumb.style.bottom = pct + '%';
+        if (zoomPct) zoomPct.textContent = Math.round(zoom * 100) + '%';
+    }
+
+    function apply() {
+        inner.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + zoom + ')';
+        updateZoomUI();
+    }
+    // Center the initial view on ARIA CORE — the ring of node cards is laid out around
+    // this world-space point server-side (Fleet.razor.cs passes it in).
+    var rect = canvasEl.getBoundingClientRect();
+    var cx = typeof centerX === 'number' ? centerX : 2000;
+    var cy = typeof centerY === 'number' ? centerY : 1500;
+    panX = rect.width / 2 - cx;
+    panY = rect.height / 2 - cy;
+    apply();
+
+    // Zoom toward the center of the current viewport — keep whatever world point is
+    // centered on screen still centered after.
+    function setZoomCentered(newZ) {
+        newZ = Math.max(ZMIN, Math.min(ZMAX, newZ));
+        var r = canvasEl.getBoundingClientRect();
+        var vcx = r.width / 2, vcy = r.height / 2;
+        panX = vcx - (vcx - panX) * (newZ / zoom);
+        panY = vcy - (vcy - panY) * (newZ / zoom);
+        zoom = newZ;
+        apply();
+    }
+
+    canvasEl.addEventListener('mousedown', function (e) {
+        if (e.button !== 0) return;
+        if (e.target.closest('.fl-node') || e.target.closest('.fl-core-node') || e.target.closest('.fl-zoom-bar')) return;
+        dragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPX = panX; startPY = panY;
+        canvasEl.style.cursor = 'grabbing';
+        e.preventDefault();
+    });
+
+    window.addEventListener('mousemove', function (e) {
+        if (!dragging) return;
+        panX = startPX + (e.clientX - startX);
+        panY = startPY + (e.clientY - startY);
+        apply();
+    });
+
+    window.addEventListener('mouseup', function () {
+        if (dragging) { dragging = false; canvasEl.style.cursor = 'grab'; }
+    });
+
+    canvasEl.addEventListener('wheel', function (e) {
+        e.preventDefault();
+        var factor = e.deltaY < 0 ? 1.12 : 0.88;
+        var newZ = Math.max(ZMIN, Math.min(ZMAX, zoom * factor));
+        var r = canvasEl.getBoundingClientRect();
+        var cx = e.clientX - r.left, cy = e.clientY - r.top;
+        panX = cx - (cx - panX) * (newZ / zoom);
+        panY = cy - (cy - panY) * (newZ / zoom);
+        zoom = newZ;
+        apply();
+    }, { passive: false });
+
+    if (zoomTrack) {
+        var thumbDragging = false;
+        function trackToZoom(clientY) {
+            var r = zoomTrack.getBoundingClientRect();
+            var t = 1 - Math.max(0, Math.min(1, (clientY - r.top) / r.height));
+            return ZMIN + t * (ZMAX - ZMIN);
+        }
+        zoomTrack.addEventListener('mousedown', function (e) {
+            thumbDragging = true;
+            setZoomCentered(trackToZoom(e.clientY));
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        window.addEventListener('mousemove', function (e) {
+            if (!thumbDragging) return;
+            setZoomCentered(trackToZoom(e.clientY));
+        });
+        window.addEventListener('mouseup', function () { thumbDragging = false; });
+    }
+    if (zoomBar) {
+        var btnIn  = zoomBar.querySelector('.fl-zoom-btn-in');
+        var btnOut = zoomBar.querySelector('.fl-zoom-btn-out');
         if (btnIn)  btnIn.addEventListener('click',  function () { setZoomCentered(zoom * 1.2); });
         if (btnOut) btnOut.addEventListener('click', function () { setZoomCentered(zoom * 0.8); });
     }

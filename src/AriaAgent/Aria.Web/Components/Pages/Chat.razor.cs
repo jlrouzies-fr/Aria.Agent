@@ -37,6 +37,7 @@ public partial class Chat : ICogitationStreamSink
     [Inject] private TerminalClient             TerminalClient       { get; set; } = null!;
     [Inject] private TerminalPtyService         TerminalPtyService   { get; set; } = null!;
     [Inject] private UserToolService             ToolService          { get; set; } = null!;
+    [Inject] private Aria.Web.Services.Fleet.FleetRegistry Fleet       { get; set; } = null!;
     [Inject] private ILogger<Chat>                _log                 { get; set; } = null!;
 
     [Parameter] public int? CogitationId { get; set; }

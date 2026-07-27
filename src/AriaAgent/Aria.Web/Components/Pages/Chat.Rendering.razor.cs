@@ -425,13 +425,45 @@ public partial class Chat
     private void OnTodoUpdate(IReadOnlyList<Aria.Tools.TodoItem> todos) =>
         _ = InvokeAsync(() =>
         {
-            _currentManifest = todos.Select(t => new Aria.Tools.TodoItem
-            {
-                Text   = t.Text ?? "",
-                Status = (t.Status ?? "pending").Trim().ToLowerInvariant().Replace('-', '_')
-            }).ToList();
+            _currentManifest = NormalizeTodos(todos, _currentManifest);
+            UpdateManifestCollapse();
             StateHasChanged();
         });
+
+    // Normalize incoming manifest items so CSS classes and glyph matching agree on snake_case
+    // statuses, and drop directives with no visible text (the agent sometimes emits a leading
+    // empty entry that renders as a blank checkbox line). Small models also send status-only
+    // updates — entries whose text is blank inherit the previous manifest's text by position.
+    private static List<Aria.Tools.TodoItem> NormalizeTodos(IEnumerable<Aria.Tools.TodoItem> todos, IReadOnlyList<Aria.Tools.TodoItem>? previous = null)
+    {
+        var list = todos.ToList();
+        return list
+            .Select((t, i) => new Aria.Tools.TodoItem
+            {
+                Text   = !string.IsNullOrWhiteSpace(t.Text) ? t.Text.Trim()
+                         : (previous != null && i < previous.Count ? previous[i].Text : ""),
+                Status = (t.Status ?? "pending").Trim().ToLowerInvariant().Replace('-', '_')
+            })
+            .Where(t => !string.IsNullOrEmpty(t.Text))
+            .ToList();
+    }
+
+    // Collapse the checklist once every directive is complete. Never auto-expands here — a new
+    // user directive resets the collapse state in SendAsync, so a manual mid-task collapse sticks.
+    private void UpdateManifestCollapse()
+    {
+        if (_currentManifest.Count > 0 && _currentManifest.All(t => t.Status == "completed"))
+            _manifestCollapsed = true;
+    }
+
+    private static bool TodoListsEqual(IReadOnlyList<Aria.Tools.TodoItem> a, IReadOnlyList<Aria.Tools.TodoItem> b)
+    {
+        if (a.Count != b.Count) return false;
+        for (var i = 0; i < a.Count; i++)
+            if (a[i].Text != b[i].Text || a[i].Status != b[i].Status)
+                return false;
+        return true;
+    }
 
     // Streaming render coalescing. A verbose reasoner (deepseek-r1 emits thousands of reasoning
     // tokens fast) was frozen mid-stream not by render cost but because EVERY token did its own
@@ -465,7 +497,16 @@ public partial class Chat
         {
             _pendingRunUpdate = null;
             SyncMirrorFromRun(_streamingMsg, run);
-            lock (run.Sync) _currentManifest = run.Manifest.ToList();
+            // Only replace the manifest list when the contents actually changed. Replacing it
+            // on every throttled flush restarts the CSS pulse animation on the in-progress item
+            // and can make the checklist appear to blink or jump.
+            List<Aria.Tools.TodoItem> freshManifest;
+            lock (run.Sync) freshManifest = NormalizeTodos(run.Manifest, _currentManifest);
+            if (!TodoListsEqual(_currentManifest, freshManifest))
+            {
+                _currentManifest = freshManifest;
+                UpdateManifestCollapse();
+            }
             _statusOverride = run.StatusText;
             if (run.Status == CogitationRunStatus.AwaitingContextApproval)
                 _awaitingContextApprovalSessionId = run.ContextApprovalSessionId;

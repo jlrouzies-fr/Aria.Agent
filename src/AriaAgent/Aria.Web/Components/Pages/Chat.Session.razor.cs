@@ -10,6 +10,21 @@ namespace Aria.Web.Components.Pages;
 
 public partial class Chat
 {
+    // Fleet wiring shared by every session-creation call below: the fleet_status snapshot provider
+    // (user resolved lazily — the tool can fire long after creation) and node labels for the
+    // cross-node governance approval reason ("run on WINDOWS-RTX2" instead of a key thumbprint).
+    private Task<string> FleetStatusSnapshot(CancellationToken ct) =>
+        Fleet.GetStatusJsonAsync(BridgeUserId() ?? "", ct);
+
+    private IReadOnlyDictionary<string, string> FleetNodeLabels()
+    {
+        var userId = BridgeUserId();
+        if (userId == null) return new Dictionary<string, string>();
+        return BridgeRegistry.GetNodes(userId)
+            .Where(n => !string.IsNullOrWhiteSpace(n.Label))
+            .ToDictionary(n => n.NodeId, n => n.Label);
+    }
+
     // Cheap new-chat path: keep the already-built agent (tools/MCP/persona intact) and just
     // spin a fresh thread. No connectivity check, no format probe, no bridge tool reload — so
     // none of the init bar flashes. Falls back to a full InitAgentAsync if the reuse faults.
@@ -216,6 +231,9 @@ public partial class Chat
                 terminalProjects: SessionState.Projects,
                 sessionId: SessionState.SessionToken,
                 recallScope: SessionState.RecallScope,
+                fleetApprovalRequired: SessionState.FleetApprovalRequired,
+                fleetStatusProvider: FleetStatusSnapshot,
+                nodeLabels: FleetNodeLabels(),
                 // Interactive chat sessions may delegate: spawn_agent/agent_result run a persona
                 // headlessly under this session's grant + governance. Depth 0 — children get none.
                 subAgentSpawner: SpawnService.ForSession(
@@ -549,6 +567,9 @@ public partial class Chat
                 terminalProjects: SessionState.Projects,
                 sessionId: SessionState.SessionToken,
                 recallScope: SessionState.RecallScope,
+                fleetApprovalRequired: SessionState.FleetApprovalRequired,
+                fleetStatusProvider: FleetStatusSnapshot,
+                nodeLabels: FleetNodeLabels(),
                 // Interactive chat sessions may delegate: spawn_agent/agent_result run a persona
                 // headlessly under this session's grant + governance. Depth 0 — children get none.
                 subAgentSpawner: SpawnService.ForSession(
@@ -670,6 +691,9 @@ public partial class Chat
                 terminalProjects: SessionState.Projects,
                 sessionId: SessionState.SessionToken,
                 recallScope: SessionState.RecallScope,
+                fleetApprovalRequired: SessionState.FleetApprovalRequired,
+                fleetStatusProvider: FleetStatusSnapshot,
+                nodeLabels: FleetNodeLabels(),
                 // Interactive chat sessions may delegate: spawn_agent/agent_result run a persona
                 // headlessly under this session's grant + governance. Depth 0 — children get none.
                 subAgentSpawner: SpawnService.ForSession(
@@ -761,6 +785,9 @@ public partial class Chat
                 terminalProjects: SessionState.Projects,
                 sessionId: SessionState.SessionToken,
                 recallScope: SessionState.RecallScope,
+                fleetApprovalRequired: SessionState.FleetApprovalRequired,
+                fleetStatusProvider: FleetStatusSnapshot,
+                nodeLabels: FleetNodeLabels(),
                 // Interactive chat sessions may delegate: spawn_agent/agent_result run a persona
                 // headlessly under this session's grant + governance. Depth 0 — children get none.
                 subAgentSpawner: SpawnService.ForSession(

@@ -178,6 +178,30 @@ public partial class UniversalSSEStream : Stream
             if (_inHarmony)
                 FlushHarmonyChannel();
 
+            // Tool call truncated at end-of-stream (close tag never arrived): emit what we
+            // have through the same parse path the close tag would have used — best-effort,
+            // exactly like the Mistral/Harmony flushes above.
+            if (_inToolCall && _toolCallBuffer.Length > 0)
+            {
+                _log?.WriteLine($"[DONE in-tool-call] flushing {_toolCallBuffer.Length}ch partial tool call");
+                _inToolCall = false; _activeToolClose = null;
+                if (_activeToolFmt == ToolCallFormat.KimiK2)
+                    EmitKimiToolCalls(_toolCallBuffer.ToString());
+                else
+                    EmitParsedToolCall();
+            }
+
+            // A held-back partial open-tag tail that never completed a tag is plain text
+            // (think-tag tails were already dropped here) — emit it as content so the
+            // reply isn't silently truncated.
+            if (_partialOpenTagTail.Length > 0)
+            {
+                _log?.WriteLine($"[DONE partial-open-tag tail] emitting {_partialOpenTagTail.Length}ch as content");
+                var escapedTail = JsonSerializer.Serialize(_partialOpenTagTail);
+                Enqueue($"data: {{\"choices\":[{{\"index\":0,\"delta\":{{\"content\":{escapedTail}}},\"finish_reason\":null}}]}}\n\n");
+                _partialOpenTagTail = "";
+            }
+
             // Functionary override: short prose that never reached a newline/'{' is still held in the
             // sniff buffer (it never matched a tool name). Surface it as content so the reply isn't lost.
             if (ForcedToolFormat == ToolCallFormat.Functionary && !_fnInArgs && !_fnPlain && _fnSniff.Length > 0)
@@ -310,7 +334,8 @@ public partial class UniversalSSEStream : Stream
 
                 // Re-attach any partial open-tag tail held from the previous chunk, then check
                 // whether the combined content itself ends with a new partial prefix. This handles
-                // think tags like <|channel>thought that arrive split across SSE chunks.
+                // think tags (<|channel>thought) and tool-call tags (<tool_call> etc.) that arrive
+                // split across SSE chunks.
                 if (_partialOpenTagTail.Length > 0) { raw = _partialOpenTagTail + raw; _partialOpenTagTail = ""; }
                 if (!_inThink && !_inToolCall && !_inMistralToolCalls)
                     (raw, _partialOpenTagTail) = StripPartialOpenTagTail(raw);

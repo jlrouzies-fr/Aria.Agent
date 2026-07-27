@@ -23,6 +23,6 @@ components:
 
 ## Notes
 
-- Development is now in **copilot mode** across the Web stack. As work shifted from the original `Aria.Console` terminal towards the Blazor web UI (`Aria.Web`), **Kimi Code** took over design, implementation, documentation, testing, review, and deployment assistance for `Aria.Web`, `Aria.Bridge`, `Aria.Harness`, and the surrounding components.
+- Development is now in **copilot mode** across the Web stack. As work shifted from the original `Aria.Console` terminal towards the Blazor web UI (`Aria.Web`),**Claude Code** and **Kimi Code** took over design, implementation, documentation, testing, review, and deployment assistance for `Aria.Web`, `Aria.Bridge`, `Aria.Harness`, and the surrounding components.
 - `Aria.Console` remains **assisted**: it was originally authored by the human maintainer and is not driven in copilot mode.
-- Architectural decisions, feature choices, and overall direction remain a collaborative conversation between the human author and Kimi Code.
+- Architectural decisions, feature choices, and overall direction remain a collaborative conversation between the human author and Claude / Kimi Code.

@@ -48,6 +48,25 @@
         }
     </div>
 
+    <div class="tool-category gov-category" style="margin-top:10px"><span>FLEET ROUTING</span></div>
+    <div class="gov-block">
+        <div class="gov-selector">
+            @{ var fleetApprovalOn = Menu.SessionState.FleetApprovalRequired; }
+            <button class="gov-chip @(fleetApprovalOn ? "gov-chip--active" : "")"
+                    title="Cross-machine calls need your approval"
+                    @onclick="() => Menu.SetFleetApprovalRequiredAsync(true)">APPROVE</button>
+            <button class="gov-chip @(!fleetApprovalOn ? "gov-chip--active" : "")"
+                    title="Cross-machine calls run freely"
+                    @onclick="() => Menu.SetFleetApprovalRequiredAsync(false)">FREE</button>
+        </div>
+        <div class="gov-blurb">
+            <span class="gov-blurb-icon">🖧</span>
+            <span>@(fleetApprovalOn
+                ? "A tool call the agent routes to a DIFFERENT bridge than this session's node pauses for your authorisation — you sign off the machine it picked from fleet_status assumptions."
+                : "The agent may execute on any connected bridge without asking. Its routing is based on fleet_status assumptions — re-enable APPROVE if you'd rather sign those off.")</span>
+        </div>
+    </div>
+
     <div class="tool-category">VOX INPUT</div>
     <div class="tool-row">
         <span class="tool-icon" style="font-size:11px">🎙</span>

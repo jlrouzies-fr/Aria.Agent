@@ -207,9 +207,13 @@ public sealed class CogitationRun : ICogitationStreamSink
 
     public void TodoUpdate(IReadOnlyList<TodoItem> todos)
     {
-        Manifest = todos.Select(t => new TodoItem
+        // Small models sometimes send status-only entries (no text) when updating; carry the
+        // previous directive text forward by position so the checklist doesn't go blank.
+        var previous = Manifest;
+        Manifest = todos.Select((t, i) => new TodoItem
         {
-            Text   = t.Text ?? "",
+            Text   = !string.IsNullOrWhiteSpace(t.Text) ? t.Text
+                     : i < previous.Count ? previous[i].Text : "",
             Status = (t.Status ?? "pending").Trim().ToLowerInvariant().Replace('-', '_')
         }).ToList();
         Updated?.Invoke();

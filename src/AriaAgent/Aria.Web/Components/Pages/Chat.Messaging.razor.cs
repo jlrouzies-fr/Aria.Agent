@@ -243,6 +243,11 @@ public partial class Chat
 
         _messages.Add(new MessageEntry("user", displayText) { IsSoul = true });
 
+        // A new directive starts a fresh task context: drop the previous manifest — the agent
+        // re-posts one if this task needs it, instead of appending to a stale completed list.
+        _currentManifest.Clear();
+        _manifestCollapsed = false;
+
         bool isNewCogitation = !_cogitationId.HasValue;
         int? newCogitationFolderId = null;
         if (isNewCogitation)
@@ -427,7 +432,8 @@ public partial class Chat
             AutoMemoryInterval: SessionState.AutoMemoryInterval,
             SessionId:          SessionState.SessionToken,
             BudgetToolCalls:    SessionState.GovernanceBudgetToolCalls,
-            BudgetFileReads:    SessionState.GovernanceBudgetFileReads));
+            BudgetFileReads:    SessionState.GovernanceBudgetFileReads,
+            FleetApprovalRequired: SessionState.FleetApprovalRequired));
 
         if (run == null)
         {
@@ -695,9 +701,7 @@ public partial class Chat
         // the input and doing nothing effectively "cancels" the queue.
         if (e.Key == "ArrowUp" && string.IsNullOrEmpty(_input) && !string.IsNullOrEmpty(_queuedInput))
         {
-            _input       = _queuedInput;
-            _queuedInput = "";
-            StateHasChanged();
+            RecallQueued();
             return;
         }
 
@@ -721,6 +725,23 @@ public partial class Chat
         {
             await SendAsync();
         }
+    }
+
+    // Pulls the queued message back into the composer for editing — same gesture as ArrowUp on an
+    // empty input. Pressing Ctrl+Enter afterwards re-queues (while streaming) or sends it.
+    private void RecallQueued()
+    {
+        if (string.IsNullOrEmpty(_queuedInput)) return;
+        _input       = _queuedInput;
+        _queuedInput = "";
+        StateHasChanged();
+    }
+
+    // Discards the queued message without sending it (the ✕ on the queue block).
+    private void CancelQueued()
+    {
+        _queuedInput = "";
+        StateHasChanged();
     }
 
     // User declined the "/compact" confirmation — just close the modal, nothing was touched yet.

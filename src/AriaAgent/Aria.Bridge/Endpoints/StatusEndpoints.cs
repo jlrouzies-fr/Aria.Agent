@@ -41,6 +41,11 @@ public static class StatusEndpoints
                 : Results.Ok(await collector.GetMetricsAsync(ct));
         });
 
+        // Static hardware inventory (hostname, OS, arch, CPU, RAM, GPU, form factor) — cached on
+        // first request. Feeds the server's fleet aggregation; read-only.
+        app.MapGet("/hardware", async (HardwareInventory inventory, CancellationToken ct) =>
+            Results.Ok(await inventory.GetAsync(ct)));
+
         // Privileged telemetry control (macOS sudo powermetrics).
         app.MapPost("/metrics/sudo", (PowermetricsTelemetrySource source, SudoRequest req) =>
         {

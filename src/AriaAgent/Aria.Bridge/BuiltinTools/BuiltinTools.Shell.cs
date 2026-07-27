@@ -197,8 +197,7 @@ public static partial class BuiltinTools
         // On POSIX the registered pid is the shell wrapper; SIGTERM may not reach grandchildren,
         // which is the same honest limit background:true already has. On Windows we keep the
         // cmd.exe pid and process_kill uses Kill(entireProcessTree:true), so cleanup is reliable.
-        var logDir = Path.Combine(workDir, ".aria-bg");
-        Directory.CreateDirectory(logDir);
+        var logDir = EnsureBackgroundLogDir();
         var logPath = Path.Combine(logDir, $"bg-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.log");
         var exitPath = logPath + ".exit";
 
@@ -236,6 +235,24 @@ public static partial class BuiltinTools
         return (partialOut, partialErr, -1, true, pid, logPath);
     }
 
+    // Creates the shared background-log dir and best-effort prunes dead weight: the job registry
+    // is in-memory, so after a bridge restart no tool can ever read an old log again — and
+    // Windows never cleans %TEMP% on its own. Anything older than a week is unreachable clutter.
+    private static string EnsureBackgroundLogDir()
+    {
+        var dir = BridgePaths.BackgroundLogDir;
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var cutoff = DateTime.UtcNow.AddDays(-7);
+            foreach (var f in Directory.EnumerateFiles(dir, "bg-*.log*"))
+                if (File.GetLastWriteTimeUtc(f) < cutoff)
+                    File.Delete(f);
+        }
+        catch { /* pruning is best-effort — never fail a tool call over cleanup */ }
+        return dir;
+    }
+
     // Runs the command detached from the tool call: output goes to a log file (never to the pipe
     // the tool would otherwise block reading from), and the tool returns as soon as the launcher
     // has forked it — not when the command itself exits. Fixes the classic "model backgrounds a
@@ -245,11 +262,12 @@ public static partial class BuiltinTools
     // backgrounded ever touches that pipe.
     private static async Task<ToolCallResponse> BashExecBackgroundAsync(string command, string workDir)
     {
-        // Under workDir (not the system temp dir): the model's follow-up read_file on log_file must
-        // land inside the turn's AllowedPaths scope, which is rooted at the project — a path under
-        // /tmp is outside that scope and would trip the governance approval gate for no reason.
-        var logDir = Path.Combine(workDir, ".aria-bg");
-        Directory.CreateDirectory(logDir);
+        // Logs live under the system temp dir (BridgePaths.BackgroundLogDir), not the project:
+        // .aria-bg folders were cluttering every project tree, and the job registry is in-memory
+        // anyway so a previous run's logs were unreachable orphans. SecurityPolicy.EnforcePath
+        // exempts that dir, so the model's follow-up read_file on log_file still passes the
+        // allowed-paths gate without any project-scope widening.
+        var logDir  = EnsureBackgroundLogDir();
         var logPath = Path.Combine(logDir, $"bg-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.log");
 
         // Exit-code sidecar (POSIX only): the detached subshell records the command's exit code

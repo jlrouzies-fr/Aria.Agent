@@ -683,3 +683,5 @@ CLAUDE.md
 .claude
 .claude/worktrees/*
 fly.toml
+
+**/.local-logs/**

@@ -89,6 +89,11 @@ public sealed class Harness : IHarness
         if (options.ContextStatusProvider != null)
             tools.Add(ContextStatusTools.Create(options.ContextStatusProvider));
 
+        // Fleet overview — always-on when the host wires a fleet snapshot provider (Web's
+        // FleetRegistry). Read-only; the cross-node EXECUTION gate is separate (governance).
+        if (options.FleetStatusProvider != null)
+            tools.Add(FleetStatusTools.Create(options.FleetStatusProvider));
+
         // Chat capabilities index — always-on, in-process, Web-only-when-wired (Console never
         // sets this, so the tool is simply absent there).
         if (!string.IsNullOrWhiteSpace(options.ChatCapabilitiesText))
@@ -344,10 +349,10 @@ public sealed class Harness : IHarness
                                 var fn = nodeGroups[i].Tools.OfType<AIFunction>().FirstOrDefault(t => t.Name == name);
                                 if (fn == null) continue;
                                 if (i == defaultIdx) defCandidate = candidates.Count;
-                                candidates.Add(new PathRoutedTerminalTool.Candidate(fn, nodeGroups[i].Paths));
+                                candidates.Add(new PathRoutedTerminalTool.Candidate(fn, nodeGroups[i].Paths, nodeGroups[i].NodeId));
                             }
                             if (candidates.Count > 0)
-                                tools.Add(new PathRoutedTerminalTool(candidates, defCandidate));
+                                tools.Add(new PathRoutedTerminalTool(candidates, defCandidate, options.NodeLabels));
                         }
                     }
 
@@ -986,7 +991,9 @@ public sealed class Harness : IHarness
                     {
                         var text = contentEl.GetString() ?? "";
                         if (text.Contains("<think>",              StringComparison.OrdinalIgnoreCase)) sawOpenThink  = true;
+                        if (text.Contains("<thinking>",           StringComparison.OrdinalIgnoreCase)) sawOpenThink  = true;
                         if (text.Contains("</think>",             StringComparison.OrdinalIgnoreCase)) sawCloseThink = true;
+                        if (text.Contains("</thinking>",          StringComparison.OrdinalIgnoreCase)) sawCloseThink = true;
                         if (text.Contains("<|channel|>analysis",   StringComparison.OrdinalIgnoreCase)) sawHarmony    = true;
                         if (text.Contains("<|channel|>commentary", StringComparison.OrdinalIgnoreCase)) sawHarmony    = true;
                         if (text.Contains("<|channel|>final",      StringComparison.OrdinalIgnoreCase)) sawHarmony    = true;

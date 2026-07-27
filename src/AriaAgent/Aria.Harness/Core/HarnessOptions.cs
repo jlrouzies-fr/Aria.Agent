@@ -96,6 +96,19 @@ public sealed class HarnessOptions
     public Func<ContextStatusSnapshot>? ContextStatusProvider { get; set; }
 
     /// <summary>
+    /// When set, the always-on <c>fleet_status</c> tool is registered: the agent can inspect the
+    /// machine fleet (per bridge — hardware, live load, available models) before deciding where to
+    /// run work. The host supplies a JSON snapshot provider (Web wires it from the FleetRegistry).
+    /// </summary>
+    public Func<CancellationToken, Task<string>>? FleetStatusProvider { get; set; }
+
+    /// <summary>
+    /// Display labels for bridge node ids, keyed by node id. Used by the fleet routing gate to
+    /// render human-readable approval reasons ("run on WINDOWS-RTX2" instead of a key thumbprint).
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? NodeLabels { get; set; }
+
+    /// <summary>
     /// Plain-text index of the host UI's "/" commands and "#" references. When set, the
     /// always-on <c>list_chat_capabilities</c> tool is registered so the agent can answer
     /// "how do I do X" questions about the interface. Web-only — Console leaves this null.

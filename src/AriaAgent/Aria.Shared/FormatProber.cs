@@ -98,7 +98,9 @@ public static class FormatProber
                     {
                         var t = c.GetString() ?? "";
                         if (t.Contains("<think>",                 StringComparison.OrdinalIgnoreCase)) sawOpenThink      = true;
+                        if (t.Contains("<thinking>",              StringComparison.OrdinalIgnoreCase)) sawOpenThink      = true;
                         if (t.Contains("</think>",                StringComparison.OrdinalIgnoreCase)) sawCloseThink     = true;
+                        if (t.Contains("</thinking>",             StringComparison.OrdinalIgnoreCase)) sawCloseThink     = true;
                         if (t.Contains("<|channel>thought",       StringComparison.OrdinalIgnoreCase)) sawChannelThought = true;
                         if (t.Contains("<|channel|>analysis",     StringComparison.OrdinalIgnoreCase)) sawHarmony        = true;
                         if (t.Contains("<|channel|>commentary",   StringComparison.OrdinalIgnoreCase)) sawHarmony        = true;

@@ -1,0 +1,88 @@
+@using Aria.Web.Services.Fleet
+
+@if (Node != null)
+{
+    <div class="fl-drawer-backdrop" @onclick="() => OnClose.InvokeAsync()"></div>
+    <div class="fl-drawer" @onclick:stopPropagation="true">
+        <div class="fl-drawer-header">
+            <span>// NODE: @Node.Label.ToUpperInvariant()</span>
+            <button class="fl-drawer-close" @onclick="() => OnClose.InvokeAsync()">✕ CLOSE</button>
+        </div>
+        <div class="fl-drawer-body">
+
+            <div class="fl-drawer-label">// HARDWARE</div>
+            @if (Node.Hardware != null)
+            {
+                var hw = Node.Hardware;
+                <div class="fl-kv"><span>HOSTNAME</span><span>@hw.Hostname</span></div>
+                <div class="fl-kv"><span>OS</span><span>@hw.Os</span></div>
+                <div class="fl-kv"><span>ARCH</span><span>@hw.Arch</span></div>
+                <div class="fl-kv"><span>FORM FACTOR</span><span>@Fleet.FormFactorGlyph(Node) @hw.FormFactor.ToUpperInvariant()</span></div>
+                <div class="fl-kv"><span>CPU</span><span>@(hw.CpuModel ?? "—")</span></div>
+                <div class="fl-kv"><span>CORES</span><span>@(hw.CpuCores > 0 ? hw.CpuCores.ToString() : "—")</span></div>
+                <div class="fl-kv"><span>TOTAL RAM</span><span>@Fleet.FmtMb(hw.TotalRamMb)</span></div>
+                <div class="fl-kv"><span>GPU</span><span>@(hw.GpuName ?? "—")</span></div>
+                <div class="fl-kv"><span>VRAM</span><span>@Fleet.FmtMb(hw.GpuVramTotalMb)</span></div>
+            }
+            else
+            {
+                <div class="fl-empty">No hardware inventory reported yet.</div>
+            }
+
+            <div class="fl-drawer-label">// LIVE METRICS</div>
+            @if (Node.Metrics != null)
+            {
+                var m = Node.Metrics;
+                <div class="fl-kv"><span>SYSTEM CPU</span><span>@Fleet.Pct(m.SystemCpuPercent)</span></div>
+                <div class="fl-kv"><span>BRIDGE CPU</span><span>@Fleet.Pct(m.CpuPercent)</span></div>
+                <div class="fl-kv"><span>RAM USED</span><span>@Fleet.FmtMb(m.SystemMemoryUsedMb) / @Fleet.FmtMb(m.SystemMemoryTotalMb)</span></div>
+                <div class="fl-kv"><span>PROCESS MEM</span><span>@Fleet.FmtMb(m.ProcessMemoryMb)</span></div>
+                <div class="fl-kv"><span>MANAGED HEAP</span><span>@Fleet.FmtMb(m.ManagedHeapMb)</span></div>
+                <div class="fl-kv"><span>GPU</span><span>@(m.GpuName ?? "—")</span></div>
+                <div class="fl-kv"><span>GPU UTIL</span><span>@Fleet.Pct(m.GpuUtilizationPercent)</span></div>
+                <div class="fl-kv"><span>VRAM USED</span><span>@Fleet.FmtMb(Fleet.VramUsedMb(Node)) / @Fleet.FmtMb(m.GpuMemoryTotalMb)</span></div>
+                <div class="fl-kv"><span>GPU POWER</span><span>@Fleet.FmtWatts(m.GpuPowerMw)</span></div>
+                <div class="fl-kv"><span>UPTIME</span><span>@Fleet.FmtUptime(m.Uptime)</span></div>
+                <div class="fl-kv"><span>PLATFORM</span><span>@m.Platform</span></div>
+            }
+            else
+            {
+                <div class="fl-empty">No telemetry — the node is not reporting.</div>
+            }
+
+            <div class="fl-drawer-label">// MODELS</div>
+            @if (Node.Channels.Count == 0)
+            {
+                <div class="fl-empty">No model channels on this node.</div>
+            }
+            @foreach (var ch in Node.Channels)
+            {
+                <div class="fl-channel-name">⌁ @ch.Name.ToUpperInvariant() <span class="fl-channel-count">(@ch.Models.Count)</span></div>
+                <div class="fl-model-table">
+                    @foreach (var model in ch.Models)
+                    {
+                        <div class="fl-model-row">◈ @model</div>
+                    }
+                </div>
+            }
+
+            <button class="fl-btn fl-btn-copy" disabled="@Copied" @onclick="() => OnCopyJson.InvokeAsync()">
+                @(Copied ? "✓ COPIED" : "⧉ COPY FLEET JSON")
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public FleetNode? Node { get; set; }
+
+    [Parameter]
+    public bool Copied { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback OnClose { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback OnCopyJson { get; set; }
+}

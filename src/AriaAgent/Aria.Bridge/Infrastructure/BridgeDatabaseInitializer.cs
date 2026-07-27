@@ -14,8 +14,7 @@ public static class BridgeDatabaseInitializer
 
     private static string ResolveDbPath()
     {
-        var dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "aria-bridge");
+        var dir = BridgeDataDir.Resolve();
         var newPath    = Path.Combine(dir, "aria-bridge.db");
         var legacyPath = Path.Combine(AppContext.BaseDirectory, "aria-bridge.db");
 
@@ -24,7 +23,8 @@ public static class BridgeDatabaseInitializer
             Directory.CreateDirectory(dir);
 
             // One-time migration: adopt a vault created by an older version next to the exe.
-            if (!File.Exists(newPath) && File.Exists(legacyPath))
+            // Skipped when the data dir is explicitly overridden (fresh isolated vault by design).
+            if (BridgeDataDir.Override is null && !File.Exists(newPath) && File.Exists(legacyPath))
             {
                 File.Copy(legacyPath, newPath);
                 foreach (var suffix in new[] { "-wal", "-shm" })   // SQLite side files, if present
@@ -575,10 +575,10 @@ public static class BridgeDatabaseInitializer
     }
 
     private static readonly string EncryptionMigrationMarkerPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "aria-bridge", ".vault-encryption-migrated");
+        BridgeDataDir.Resolve(), ".vault-encryption-migrated");
 
     private static readonly string LlmKeyEncryptionMigrationMarkerPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "aria-bridge", ".llm-keys-encryption-migrated");
+        BridgeDataDir.Resolve(), ".llm-keys-encryption-migrated");
 
     private static async Task MigrateEncryptedColumnsAsync(WebApplication app)
     {

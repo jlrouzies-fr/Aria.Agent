@@ -90,6 +90,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<UserToolService>();
         services.AddSingleton<BridgeMcpClient>();
         services.AddSingleton<UserLocalSourceService>();
+        // Fleet aggregation: per-bridge hardware/load/models for the fleet_status tool + /fleet page.
+        services.AddSingleton<Aria.Web.Services.Fleet.FleetRegistry>();
         services.AddScoped<CogitationService>();
         services.AddScoped<CogitationFolderService>();
         services.AddScoped<VoxService>();

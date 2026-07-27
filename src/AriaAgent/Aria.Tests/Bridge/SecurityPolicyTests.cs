@@ -114,4 +114,29 @@ public class SecurityPolicyTests
         Assert.Throws<TerminalSecurityException>(() =>
             policy.EnforcePath("/etc"));
     }
+
+    [Fact]
+    public void EnforcePath_BackgroundLogDir_ExemptFromAllowedPaths()
+    {
+        // Background-job logs live in the system temp dir, outside any project scope; reading
+        // them back (follow-up read_file on a log_file path) must not trip the gate.
+        var policy = SecurityPolicy.FromNodeAndRequest(
+            nodeAllowedPaths: ["/home/user/project"],
+            requestAllowedPaths: null);
+
+        policy.EnforcePath(Path.Combine(BridgePaths.BackgroundLogDir, "bg-20260726-120000-abc123.log"));
+        policy.EnforcePath(Path.Combine(BridgePaths.BackgroundLogDir, "bg-20260726-120000-abc123.log.exit"));
+    }
+
+    [Fact]
+    public void EnforcePath_BackgroundLogDirSibling_NotExempt()
+    {
+        var policy = SecurityPolicy.FromNodeAndRequest(
+            nodeAllowedPaths: ["/home/user/project"],
+            requestAllowedPaths: null);
+
+        // Only the exact log dir is exempt — a lookalike sibling is not.
+        Assert.Throws<TerminalSecurityException>(() =>
+            policy.EnforcePath(Path.Combine(Path.GetTempPath(), "aria-bg-evil", "x.log")));
+    }
 }

@@ -134,6 +134,36 @@ public class UserToolService(IDbContextFactory<AppDbContext> dbFactory, BridgeSy
         ToolsChanged?.Invoke(userId);
     }
 
+    // ── Fleet routing approval (cross-node tool calls need a human sign-off) ─────────────────
+    private const string FleetApprovalToolId = "__fleetapproval__";
+
+    /// <summary>Whether a tool call routed to a bridge other than the session's default node
+    /// requires explicit user approval. Default ON (safe): the agent picks a machine from
+    /// fleet_status assumptions — the user should sign off until they explicitly relax it.</summary>
+    public async Task<bool> GetFleetApprovalRequiredAsync(string userId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var rec = await db.UserToolConfigs
+            .FirstOrDefaultAsync(c => c.UserId == userId && c.ToolId == FleetApprovalToolId);
+        return rec?.ConfigJson is null || !bool.TryParse(rec.ConfigJson, out var v) || v;
+    }
+
+    public async Task SaveFleetApprovalRequiredAsync(string userId, bool required)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var rec = await db.UserToolConfigs
+            .FirstOrDefaultAsync(c => c.UserId == userId && c.ToolId == FleetApprovalToolId);
+        if (rec == null)
+        {
+            rec = new UserToolConfig { UserId = userId, ToolId = FleetApprovalToolId, Enabled = true };
+            db.UserToolConfigs.Add(rec);
+        }
+        rec.ConfigJson = required.ToString();
+        await db.SaveChangesAsync();
+        _ = sync?.PushSnapshotAsync(userId);
+        ToolsChanged?.Invoke(userId);
+    }
+
     // ── Recall scope (single-node vs cross-node memory recall) ────────────────────────────────
     private const string RecallScopeToolId = "__recallscope__";
 

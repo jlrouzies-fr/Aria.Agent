@@ -45,6 +45,15 @@ public sealed record GovernancePolicy(
         _                       => FromMode(GovernanceMode.Balanced)
     };
 
+    /// <summary>
+    /// Fleet routing gate: when true (and the mode is not Off), a tool call that the multi-node
+    /// dispatcher resolves to a bridge OTHER than the session's default node escalates to an
+    /// approval, so the user signs off the agent's cross-machine decision (which the agent made
+    /// from fleet_status assumptions). Not part of the FromMode presets — hosts layer it on top
+    /// of the user's mode via <c>with</c>. Enforced by GovernedTool.
+    /// </summary>
+    public bool ApproveCrossNodeCalls { get; init; }
+
     /// <summary>Per-session budget overrides layered on top of the mode's defaults — a null leaves
     /// the mode's own limit in place. Session-scoped only; never persisted.</summary>
     public GovernancePolicy WithBudgetOverrides(int? maxToolCalls, int? maxFileReads) =>

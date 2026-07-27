@@ -12,6 +12,7 @@ public sealed class GrantReplicationService(ModelBridgeRegistry registry, ILogge
     public async Task<int> ReplicateAsync(string userId)
     {
         var pushes = 0;
+        var totalImported = 0;
         try
         {
             var nodes = registry.GetNodes(userId).ToList();
@@ -29,18 +30,41 @@ public sealed class GrantReplicationService(ModelBridgeRegistry registry, ILogge
                 foreach (var target in nodes.Where(x => x.NodeId != src))
                 {
                     var resp = await registry.SendLocalRestAsync(userId, "POST", "/context/grants/import", body, target.NodeId);
-                    if (resp is { StatusCode: 200 }) pushes++;
+                    if (resp is { StatusCode: 200, Body: var importBody })
+                    {
+                        pushes++;
+                        // A 200 only means the endpoint accepted the payload — the bridge drops
+                        // grants whose signatures it cannot verify (missing sibling trust), so the
+                        // {imported: n} body is the truth. imported:0 is exactly the failure mode
+                        // that used to be invisible here.
+                        var imported = ParseImportedCount(importBody);
+                        totalImported += imported;
+                        if (imported == 0)
+                            log.LogWarning("[GrantSync] node {Node} accepted the push but imported 0 grants " +
+                                "(signature verification failed — sibling trust missing?)", target.NodeId);
+                    }
                     else log.LogInformation("[GrantSync] import into node {Node} failed (status {Status})",
                         target.NodeId, resp?.StatusCode.ToString() ?? "offline/old-bridge");
                 }
 
-            log.LogInformation("[GrantSync] replication for {UserId}: {Exports} exports, {Pushes} imports ok",
-                userId, exports.Count, pushes);
+            log.LogInformation("[GrantSync] replication for {UserId}: {Exports} exports, {Pushes} pushes ok, {Imported} grants imported",
+                userId, exports.Count, pushes, totalImported);
         }
         catch (Exception ex)
         {
             log.LogWarning(ex, "[GrantSync] replication failed for {UserId}", userId);
         }
         return pushes;
+    }
+
+    private static int ParseImportedCount(string? body)
+    {
+        if (string.IsNullOrEmpty(body)) return 0;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            return doc.RootElement.TryGetProperty("imported", out var n) && n.TryGetInt32(out var v) ? v : 0;
+        }
+        catch { return 0; }
     }
 }

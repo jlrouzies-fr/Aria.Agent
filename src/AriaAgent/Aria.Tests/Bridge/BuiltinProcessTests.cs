@@ -92,7 +92,7 @@ public class BuiltinProcessTests : IDisposable
             var job = Assert.Single(doc.RootElement.EnumerateArray(), j => j.GetProperty("pid").GetInt32() == pid);
             Assert.Equal("sleep 30", job.GetProperty("command").GetString());
             Assert.Equal("running", job.GetProperty("status").GetString());
-            Assert.Contains(".aria-bg", job.GetProperty("log_file").GetString());
+            Assert.Contains("aria-bg", job.GetProperty("log_file").GetString());
         }
         finally
         {
@@ -144,7 +144,7 @@ public class BuiltinProcessTests : IDisposable
             using var doc2 = JsonDocument.Parse(r2.Text);
             Assert.Equal("running", doc2.RootElement.GetProperty("status").GetString());
             Assert.Contains("hello-from-bg", doc2.RootElement.GetProperty("output").GetString());
-            Assert.Contains(".aria-bg", doc2.RootElement.GetProperty("log_file").GetString());
+            Assert.Contains("aria-bg", doc2.RootElement.GetProperty("log_file").GetString());
         }
         finally
         {
@@ -202,7 +202,7 @@ public class BuiltinProcessTests : IDisposable
         Assert.True(doc.RootElement.GetProperty("converted_to_background").GetBoolean());
 
         var pid = doc.RootElement.GetProperty("pid").GetInt32();
-        Assert.Contains(".aria-bg", doc.RootElement.GetProperty("log_file").GetString());
+        Assert.Contains("aria-bg", doc.RootElement.GetProperty("log_file").GetString());
         Assert.Contains($"exceeded the 1s timeout", doc.RootElement.GetProperty("note").GetString());
 
         try
@@ -228,7 +228,7 @@ public class BuiltinProcessTests : IDisposable
         Assert.False(r.IsError, r.Text);
         using var doc = JsonDocument.Parse(r.Text);
         var pid = doc.RootElement.GetProperty("pid").GetInt32();
-        Assert.Contains(".aria-bg", doc.RootElement.GetProperty("log_file").GetString());
+        Assert.Contains("aria-bg", doc.RootElement.GetProperty("log_file").GetString());
         Assert.Contains("wait_for", doc.RootElement.GetProperty("note").GetString());
 
         try

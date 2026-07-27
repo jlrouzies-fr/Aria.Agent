@@ -1,7 +1,9 @@
 #if DEBUG
 using System.Text;
 using Aria.Agent;
+using Aria.Harness.Core;
 using Aria.Harness.Formats;
+using Aria.Harness.Models;
 using Aria.Web.Data;
 using Aria.Web.Services;
 using Microsoft.EntityFrameworkCore;
@@ -93,7 +95,7 @@ public static class ChatDebugApiEndpoints
         });
 
         // ── Send test message, capture thinking + content ─────────────────────
-        grp.MapPost("/send", async (string source, string model, string? message, AgentService svc, CancellationToken ct, string? userId) =>
+        grp.MapPost("/send", async (string source, string model, string? message, AgentService svc, IHarnessRuntime runtime, CancellationToken ct, string? userId) =>
         {
             var testMessage = message ?? "Briefly think through: what is the capital of France? Then answer.";
 
@@ -108,9 +110,24 @@ public static class ChatDebugApiEndpoints
             var thinkingSb  = new StringBuilder();
             var contentSb   = new StringBuilder();
 
+            HttpMessageHandler innerHandler;
+            if (srcObj.IsBridged)
+            {
+                var ctx = new HarnessContext { UserId = userId, BridgeUserId = userId };
+                innerHandler = new BridgeHttpHandler(
+                    runtime, ctx,
+                    keyRef: srcObj.ChannelName ?? srcObj.Name,
+                    requireKey: srcObj.IsPublicProvider,
+                    nodeId: srcObj.BridgeNodeId);
+            }
+            else
+            {
+                innerHandler = new HttpClientHandler();
+            }
+
             var handler = new UniversalReasoningHandler
             {
-                InnerHandler       = new HttpClientHandler(),
+                InnerHandler       = innerHandler,
                 OnReasoningContent = t => thinkingSb.Append(t),
                 StartsInThinkMode  = format == ThinkingFormat.StartsInThinkMode
             };

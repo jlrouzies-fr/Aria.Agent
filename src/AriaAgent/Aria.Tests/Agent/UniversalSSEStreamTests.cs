@@ -174,6 +174,88 @@ public class UniversalSSEStreamTests
         Assert.DoesNotContain("<think>", output);
     }
 
+    // Regression: some models (e.g. Qwen3.x via LM Studio) close their think block with the
+    // long-form </thinking> tag. The parser only matched </think>, so the close was missed and
+    // the entire reply — literal </thinking> tag included — was swallowed into the thinking
+    // buffer; the unresolved-thinking retry then regurgitated the same text as content,
+    // doubling the whole output.
+    [Fact]
+    public async Task StartsInThinkMode_LongFormCloseTag_EmitsContentAfterClose()
+    {
+        var reasoning = new List<string>();
+        var inner = CreateSseStream(
+            ContentDelta("step 1"),
+            ContentDelta(" step 2"),
+            ContentDelta("</thinking>"),
+            ContentDelta("The answer is 42."),
+            FinishStop(),
+            "data: [DONE]");
+
+        var stream = new UniversalSSEStream(inner, startsInThinkMode: true)
+        {
+            StreamThinkingLive = true,
+            OnReasoningContent = r => reasoning.Add(r)
+        };
+
+        var output = await ReadAllTextAsync(stream);
+
+        Assert.Equal(["step 1", " step 2"], reasoning);
+        Assert.Contains("The answer is 42.", output);
+        Assert.DoesNotContain("</thinking>", output);
+        Assert.False(stream.EndedWithUnresolvedThinking);
+    }
+
+    // Same long-form close, but split across SSE chunks ("</think" + "ing>"): the held-back
+    // partial close tail must be reassembled and still recognized.
+    [Fact]
+    public async Task StartsInThinkMode_LongFormCloseTag_SplitAcrossChunks()
+    {
+        var reasoning = new List<string>();
+        var inner = CreateSseStream(
+            ContentDelta("step 1</think"),
+            ContentDelta("ing>The answer is 42."),
+            FinishStop(),
+            "data: [DONE]");
+
+        var stream = new UniversalSSEStream(inner, startsInThinkMode: true)
+        {
+            StreamThinkingLive = true,
+            OnReasoningContent = r => reasoning.Add(r)
+        };
+
+        var output = await ReadAllTextAsync(stream);
+
+        Assert.Equal(["step 1"], reasoning);
+        Assert.Contains("The answer is 42.", output);
+        Assert.DoesNotContain("</thinking>", output);
+        Assert.False(stream.EndedWithUnresolvedThinking);
+    }
+
+    [Fact]
+    public async Task ThinkTags_LongFormPair_StripsFromContent()
+    {
+        var reasoning = new List<string>();
+        var inner = CreateSseStream(
+            ContentDelta("<thinking>step 1"),
+            ContentDelta(" step 2"),
+            ContentDelta("</thinking>The answer is 42."),
+            FinishStop(),
+            "data: [DONE]");
+
+        var stream = new UniversalSSEStream(inner)
+        {
+            StreamThinkingLive = true,
+            OnReasoningContent = r => reasoning.Add(r)
+        };
+
+        var output = await ReadAllTextAsync(stream);
+
+        Assert.Equal(["step 1", " step 2"], reasoning);
+        Assert.Contains("The answer is 42.", output);
+        Assert.DoesNotContain("<thinking>", output);
+        Assert.DoesNotContain("</thinking>", output);
+    }
+
     [Fact]
     public async Task StartsInThinkMode_NoCloseTag_Stop_DiscardsMonologueAndSetsFlag()
     {
@@ -250,6 +332,87 @@ public class UniversalSSEStreamTests
     {
         var inner = CreateSseStream(
             ContentDelta("<tool_call>{\"name\":\"get_time\",\"arguments\":{}}</tool_call>"),
+            FinishStop(),
+            "data: [DONE]");
+
+        var stream = new UniversalSSEStream(inner);
+        var lines = await ReadAllLinesAsync(stream);
+
+        var toolLine = lines.FirstOrDefault(l => l.Contains("\"tool_calls\""));
+        Assert.NotNull(toolLine);
+        Assert.Contains("\"name\":\"get_time\"", toolLine);
+        Assert.DoesNotContain("<tool_call>", string.Join("\n", lines));
+    }
+
+    [Fact]
+    public async Task ToolCallTag_SplitOpenTag_NoMarkupLeaks()
+    {
+        // llama.cpp streams token-per-delta: "<tool_call>" can be split mid-tag.
+        // The partial tail must be held back, re-attached, and the whole block rewritten.
+        var inner = CreateSseStream(
+            ContentDelta("<to"),
+            ContentDelta("ol_call><function=bash_exec><parameter=command>curl -sI http://localhost</parameter></function></tool_call>"),
+            FinishStop(),
+            "data: [DONE]");
+
+        var stream = new UniversalSSEStream(inner);
+        var lines = await ReadAllLinesAsync(stream);
+
+        var toolLine = lines.FirstOrDefault(l => l.Contains("\"tool_calls\""));
+        Assert.NotNull(toolLine);
+        Assert.Contains("\"name\":\"bash_exec\"", toolLine);
+        Assert.DoesNotContain("<tool_call>", string.Join("\n", lines));
+        Assert.DoesNotContain("<function=", string.Join("\n", lines));
+    }
+
+    [Fact]
+    public async Task ToolCallTag_SplitOpenTagAfterProse_KeepsProseNoMarkupLeaks()
+    {
+        // Same split, but with prose preceding the tool call in the same chunk —
+        // the prose must stay visible while the markup is consumed.
+        var inner = CreateSseStream(
+            ContentDelta("Good, server is up. Now let me verify:\n\n<to"),
+            ContentDelta("ol_call><function=bash_exec><parameter=command>curl -sI http://localhost</parameter></function></tool_call>"),
+            FinishStop(),
+            "data: [DONE]");
+
+        var stream = new UniversalSSEStream(inner);
+        var lines = await ReadAllLinesAsync(stream);
+        var output = string.Join("\n", lines);
+
+        Assert.Contains("Good, server is up. Now let me verify:", output);
+        var toolLine = lines.FirstOrDefault(l => l.Contains("\"tool_calls\""));
+        Assert.NotNull(toolLine);
+        Assert.Contains("\"name\":\"bash_exec\"", toolLine);
+        Assert.DoesNotContain("<tool_call>", output);
+        Assert.DoesNotContain("<function=", output);
+    }
+
+    [Fact]
+    public async Task ToolCallTag_PartialOpenTagTailAtDone_FlushedAsContent()
+    {
+        // Stream ends while only a partial open tag was held back: it is not a tool
+        // call after all — emit the tail as content instead of dropping it.
+        var inner = CreateSseStream(
+            ContentDelta("Let me show a literal tag: <to"),
+            FinishStop(),
+            "data: [DONE]");
+
+        var stream = new UniversalSSEStream(inner);
+        var output = await ReadAllTextAsync(stream);
+
+        Assert.Contains("Let me show a literal tag:", output);
+        Assert.Contains("\\u003Cto", output); // "<to" JSON-escaped by System.Text.Json
+        Assert.DoesNotContain("\"tool_calls\"", output);
+    }
+
+    [Fact]
+    public async Task ToolCallTag_TruncatedAtDone_BestEffortFlush()
+    {
+        // Close tag never arrives (stream truncated mid tool call): flush the buffer
+        // through the same parse path instead of silently dropping the tool call.
+        var inner = CreateSseStream(
+            ContentDelta("<tool_call>{\"name\":\"get_time\",\"arguments\":{}}"),
             FinishStop(),
             "data: [DONE]");
 

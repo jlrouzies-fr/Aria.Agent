@@ -1,0 +1,172 @@
+@page "/fleet"
+@using Aria.Web.Services.Fleet
+@implements IDisposable
+
+<PageTitle>ARIA // FLEET</PageTitle>
+
+<div class="fl-shell">
+
+    @* ── Header ── *@
+    <div class="fl-header">
+        <div class="fl-header-left">
+            <span class="fl-title">⬡ // FLEET</span>
+        </div>
+        <div class="fl-header-center">
+            <span class="fl-count-badge">
+                @_nodes.Count @(_nodes.Count == 1 ? "NODE" : "NODES")
+                · @_nodes.Count(n => n.Metrics != null) REPORTING
+            </span>
+        </div>
+        <div class="fl-header-right">
+            <button class="fl-btn" disabled="@(_copied)" @onclick="CopyFleetJsonAsync">
+                @(_copied ? "✓ COPIED" : "⧉ COPY FLEET JSON")
+            </button>
+        </div>
+    </div>
+
+    <div class="fl-canvas-wrap">
+        <div class="fl-canvas-inner">
+
+            @* SVG links — straight vertical lines from core bottom to each node card top, animated telemetry dots *@
+            <svg class="fl-edges-svg" xmlns="http://www.w3.org/2000/svg" width="4000" height="3000">
+                @for (var i = 0; i < _nodes.Count; i++)
+                {
+                    var node     = _nodes[i];
+                    var (nx, ny) = NodePosition(i, _nodes.Count);
+                    var nodeCx   = nx + NodeHalfW;
+                    // Anchor edges to the nearest bottom corner of the core card so the tree looks
+                    // attached to the core rather than converging on a single point below it.
+                    var fromX    = nodeCx < CoreCX ? CoreCX - CoreHalfW : (nodeCx > CoreCX ? CoreCX + CoreHalfW : CoreCX);
+                    var fromY    = CoreCY + CoreHalfH;
+                    var toX      = nodeCx;
+                    var toY      = ny;
+                    var pathD    = $"M{fromX},{fromY} L{toX},{toY}";
+                    var live     = node.Metrics != null;
+
+                    <path d="@pathD" fill="none"
+                          class="fl-edge @(live ? "fl-edge-active" : "")"
+                          stroke="@(live ? "var(--gold-bright, #d4a020)" : "var(--border-dim, #2a2a2a)")"
+                          stroke-width="1.5" />
+
+                    @* Telemetry flow dot — staggered start so the ring doesn't pulse in lockstep *@
+                    <circle r="4" fill="@(live ? "var(--gold-bright, #d4a020)" : "var(--text-dead, #555)")"
+                            opacity="0.9" filter="url(#fl-glow)">
+                        <animateMotion dur="2.4s" begin="-@(i * 450)ms" repeatCount="indefinite"
+                                       calcMode="spline"
+                                       keyTimes="0;1" keySplines="0.4 0 0.6 1"
+                                       path="@pathD" />
+                    </circle>
+                }
+
+                <defs>
+                    <filter id="fl-glow" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="2" result="blur" />
+                        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
+                </defs>
+            </svg>
+
+            @* ARIA CORE *@
+            <div class="fl-core-node"
+                 style="left:@((int)(CoreCX - CoreHalfW))px; top:@((int)(CoreCY - CoreHalfH))px">
+                <img class="fl-core-avatar" src="avatars/aria-core.jpeg" alt="ARIA CORE" />
+                <div class="fl-core-label">ARIA CORE</div>
+                <div class="fl-core-sub">@_nodes.Count @(_nodes.Count == 1 ? "NODE" : "NODES")</div>
+            </div>
+
+            @* Fleet nodes — one card per connected bridge, radial around the core *@
+            @for (var i = 0; i < _nodes.Count; i++)
+            {
+                var node       = _nodes[i];
+                var (nx, ny)   = NodePosition(i, _nodes.Count);
+                var live       = node.Metrics != null;
+                var models     = AllModels(node);
+                var overflow   = models.Count - MaxChips;
+
+                <div class="fl-node @(live ? "" : "fl-node-dead") @(_selected?.NodeId == node.NodeId ? "fl-node-selected" : "")"
+                     style="left:@((int)Math.Round(nx))px; top:@((int)Math.Round(ny))px"
+                     @onclick="() => SelectNode(node)">
+
+                    <div class="fl-node-head">
+                        <span class="fl-node-icon">@FormFactorGlyph(node)</span>
+                        <div class="fl-node-titles">
+                            <div class="fl-node-name" data-tip="@node.Label">@Trunc(node.Label, 16).ToUpperInvariant()</div>
+                            <div class="fl-node-sub">
+                                <span class="fl-os-badge">@OsBadge(node)</span>@node.Platform.ToUpperInvariant()
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (live)
+                    {
+                        var m      = node.Metrics!;
+                        var ramPct = RamPercent(node);
+                        var vramPct = VramPercent(node);
+
+                        <div class="fl-gauge">
+                            <div class="fl-gauge-head"><span>CPU</span><span>@Pct(m.SystemCpuPercent)</span></div>
+                            <div class="fl-gauge-track"><div class="fl-gauge-fill fl-fill-cpu" style="width:@GaugeWidth(m.SystemCpuPercent)"></div></div>
+                        </div>
+                        <div class="fl-gauge">
+                            <div class="fl-gauge-head"><span>RAM</span><span>@FmtMb(m.SystemMemoryUsedMb)/@FmtMb(m.SystemMemoryTotalMb)</span></div>
+                            <div class="fl-gauge-track"><div class="fl-gauge-fill fl-fill-ram" style="width:@GaugeWidth(ramPct)"></div></div>
+                        </div>
+                        @if (m.GpuMemoryTotalMb.HasValue)
+                        {
+                            <div class="fl-gauge">
+                                <div class="fl-gauge-head"><span>VRAM</span><span>@FmtMb(VramUsedMb(node))/@FmtMb(m.GpuMemoryTotalMb)</span></div>
+                                <div class="fl-gauge-track"><div class="fl-gauge-fill fl-fill-vram" style="width:@GaugeWidth(vramPct)"></div></div>
+                            </div>
+                        }
+                        @if (m.GpuUtilizationPercent.HasValue)
+                        {
+                            <div class="fl-gauge">
+                                <div class="fl-gauge-head"><span>GPU</span><span>@Pct(m.GpuUtilizationPercent)</span></div>
+                                <div class="fl-gauge-track"><div class="fl-gauge-fill fl-fill-gpu" style="width:@GaugeWidth(m.GpuUtilizationPercent)"></div></div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="fl-node-nosignal">◌ NO TELEMETRY</div>
+                    }
+
+                    @if (models.Count > 0)
+                    {
+                        <div class="fl-chips">
+                            @foreach (var model in models.Take(MaxChips))
+                            {
+                                <span class="fl-chip" data-tip="@model">@Trunc(model, 18)</span>
+                            }
+                            @if (overflow > 0)
+                            {
+                                <span class="fl-chip fl-chip-more" data-tip="@string.Join(" · ", models.Skip(MaxChips))">+@overflow</span>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+        </div>  @* fl-canvas-inner *@
+
+        <div class="fl-zoom-bar">
+            <button class="fl-zoom-btn fl-zoom-btn-in" data-tip="Zoom in">+</button>
+            <div class="fl-zoom-track">
+                <div class="fl-zoom-fill"></div>
+                <div class="fl-zoom-thumb"></div>
+            </div>
+            <button class="fl-zoom-btn fl-zoom-btn-out" data-tip="Zoom out">−</button>
+            <span class="fl-zoom-pct">100%</span>
+        </div>
+
+        @if (_nodes.Count == 0)
+        {
+            <div class="fl-canvas-empty">
+                <div>// THE FLEET IS EMPTY</div>
+                <div class="fl-canvas-empty-sub">No bridge nodes are connected — start Aria.Bridge on a machine and it will muster here.</div>
+            </div>
+        }
+    </div>
+</div>
+
+<FleetNodeDrawer Node="_selected" Copied="_copied" OnClose="CloseDrawer" OnCopyJson="CopyFleetJsonAsync" />

@@ -17,6 +17,8 @@ public static class TunnelAllowlist
     {
         "/",
         "/metrics",
+        // Read-only static hardware inventory (CPU/RAM/GPU/form factor) for the server's fleet view.
+        "/hardware",
         "/llm/proxy",
         "/llm/probe",
         // Read-only model enumeration against the channel's own endpoint (same key-custody pinning as
