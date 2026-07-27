@@ -165,6 +165,8 @@ Define named personas with their own model, colour, avatar, and reusable skill s
 - **Routing recap** — chat follows the channel's bound node, terminal tools follow the path's owning node, config syncs to every node. The full rules: **[Multi-node Routing](docs/readme/multi-node.md)**.
 - **Testing without two PCs** — a local debug mode spins up fake fleet nodes (`DEBUG-NODE-1`, `DEBUG-NODE-2`, …) with invented hardware profiles on one machine: **[Multi-bridge debug mode](docs/readme/multi-bridge-debug.md)**.
 
+<p align="center"><img src="docs/img/aria-core-example.jpeg" alt="The Fleet dashboard — ARIA CORE with two debug nodes in a lineage tree" width="88%"><br><sub><span style="color: gray;"><em>The Fleet muster — ARIA CORE and two debug nodes (a fake Windows desktop, a fake GPU-less Linux laptop), linked in the lineage tree</em></span></sub></p>
+
 ---
 
 ### ⏳ Vigils
