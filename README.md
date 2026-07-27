@@ -17,26 +17,26 @@
 
 ## ◈ Dataslate Index
 
-> `ARIA://DATASLATE/INDEX — 17 ENTRIES LOGGED`
+> `ARIA://DATASLATE/INDEX — 18 ENTRIES LOGGED`
 
 - `01` [What it does](#-what-it-does) — the terminal's capabilities
 - `02` [The Cogitator Terminal](#-the-cogitator-terminal) — the vox-link itself
 - `03` [The Bridge Node](#-the-bridge-node) — the local process behind it all
-- `03a` [Architecture Overview](#-architecture-overview) — how the pieces connect
-- `04` [Sub-agents & Personas](#-sub-agents--personas) — mercenaries for hire
-- `05` [The Hive](#-the-hive) — swarm deliberation under an Overmind
-- `05a` [The Fleet](#-the-fleet) — every machine, one consciousness
-- `06` [Vigils](#-vigils) — autonomous scheduled directives
-- `07` [Noosphere](#-noosphere) — bridge-local persistent memory
-- `08` [Agent Governance & Security](#-agent-governance-and-security) — trust levels and seals
-- `09` [Tools & Integrations](#-tools--integrations) — mail, web, MCP, vox
-- `10` [Index](#-index) — the command catalogue
-- `11` [WAR.COGITATOR](#-warcogitator) — the pixel-art wargame
-- `12` [Two clients, one harness](#-two-clients-one-harness) — shared orchestration
-- `13` **[Rites of Initialisation](#-rites-of-initialisation-quick-setup) — quick setup** ⚑&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`◄◄ START HERE`
-- `14` [The Archives](#-the-archives) — documentation codices
-- `15` [Why a bridge?](#-why-a-bridge--the-cogitator-node) — the cogitator node
-- `16` [Contacts & Soul Exchange](#-contacts--soul-exchange--to-be-implemented) — experimental, untested
+- `04` [Architecture Overview](#-architecture-overview) — how the pieces connect
+- `05` [Sub-agents & Personas](#-sub-agents--personas) — mercenaries for hire
+- `06` [The Hive](#-the-hive) — swarm deliberation under an Overmind
+- `07` [The Fleet](#-the-fleet) — every machine, one consciousness
+- `08` [Vigils](#-vigils) — autonomous scheduled directives
+- `09` [Noosphere](#-noosphere) — bridge-local persistent memory
+- `10` [Agent Governance & Security](#-agent-governance-and-security) — trust levels and seals
+- `11` [Tools & Integrations](#-tools--integrations) — mail, web, MCP, vox
+- `12` [Index](#-index) — the command catalogue
+- `13` [WAR.COGITATOR](#-warcogitator) — the pixel-art wargame
+- `14` [Two clients, one harness](#-two-clients-one-harness) — shared orchestration
+- `15` **[Rites of Initialisation](#-rites-of-initialisation-quick-setup) — quick setup** ⚑&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`◄◄ START HERE`
+- `16` [The Archives](#-the-archives) — documentation codices
+- `17` [Why a bridge?](#-why-a-bridge--the-cogitator-node) — the cogitator node
+- `18` [Contacts & Soul Exchange](#-contacts--soul-exchange--to-be-implemented) — experimental, untested
 
 ---
 
