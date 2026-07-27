@@ -188,5 +188,7 @@ your real bridge's app-data directory.
 - **Cross-node calls refuse even after approval** — sibling trust is missing (fleet started with
   an old script/bridge build). Re-run the script so `cross_trust` registers the keys, and check
   the web log for `[GrantSync] … imported 0 grants` warnings.
-- **Building fails while nodes run** — `dotnet build` of the bridge can conflict with running
-  instances started via `dotnet run`; `--stop` first.
+- **Building while nodes run** — nodes launch the built `aria-bridge.dll` directly (not
+  `dotnet run`), so a `dotnet build` no longer disturbs them. If a node still dies (e.g. after a
+  full `dotnet test` cycle), just relaunch the script — state persists, joins will 409 harmlessly,
+  and trust/channel rows are reused.

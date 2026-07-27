@@ -7,9 +7,9 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <AssemblyName>aria-bridge</AssemblyName>
         <RootNamespace>Aria.Bridge</RootNamespace>
-        <Version>1.25.13-beta</Version>
-        <AssemblyVersion>1.25.13.0</AssemblyVersion>
-        <FileVersion>1.25.13.0</FileVersion>
+        <Version>1.25.14-beta</Version>
+        <AssemblyVersion>1.25.14.0</AssemblyVersion>
+        <FileVersion>1.25.14.0</FileVersion>
         <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
         <PublishSingleFile>true</PublishSingleFile>
         <SelfContained>true</SelfContained>

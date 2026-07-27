@@ -29,21 +29,31 @@ public sealed class HardwareInventory(BridgeMetricsCollector metrics)
 
     public async Task<Snapshot> GetAsync(CancellationToken ct = default)
     {
-        if (_cached is { } s) return s;
-        await _lock.WaitAsync(ct);
-        try
+        if (_cached is null)
         {
-            _cached ??= await BuildAsync(ct);
-            return _cached;
+            await _lock.WaitAsync(ct);
+            try { _cached ??= await BuildAsync(ct); }
+            finally { _lock.Release(); }
         }
-        finally { _lock.Release(); }
+        var s = _cached;
+
+        // GPU identity piggybacks on the metrics collector's probes, and the earliest metrics
+        // snapshots can be partial (probe still in flight) — so a null GPU field is refilled from
+        // the LATEST metrics at request time rather than cached as null for the process lifetime.
+        if (s.GpuName == null || s.GpuVramTotalMb == null)
+        {
+            var m = metrics.GetLatest();
+            if (m != null)
+                s = s with { GpuName = s.GpuName ?? m.GpuName, GpuVramTotalMb = s.GpuVramTotalMb ?? m.GpuMemoryTotalMb };
+        }
+        return ApplyOverrides(s, DebugBridgeProfileLoader.Current);
     }
 
     private async Task<Snapshot> BuildAsync(CancellationToken ct)
     {
         var m = metrics.GetLatest() ?? await metrics.GetMetricsAsync(ct);
 
-        var snapshot = new Snapshot(
+        return new Snapshot(
             Hostname: Environment.MachineName,
             Os: RuntimeInformation.OSDescription,
             Arch: RuntimeInformation.OSArchitecture.ToString(),
@@ -53,8 +63,6 @@ public sealed class HardwareInventory(BridgeMetricsCollector metrics)
             GpuName: m.GpuName,
             GpuVramTotalMb: m.GpuMemoryTotalMb,
             FormFactor: await GetFormFactorAsync(ct));
-
-        return ApplyOverrides(snapshot, DebugBridgeProfileLoader.Current);
     }
 
     /// <summary>
@@ -145,11 +153,23 @@ public sealed class HardwareInventory(BridgeMetricsCollector metrics)
     {
         if (OperatingSystem.IsMacOS())
         {
+            // hw.model is the model IDENTIFIER: older Macs embed the family ("MacBookPro18,3"),
+            // but recent generations are bare ("Mac17,9") with no family substring at all — so
+            // fall back to system_profiler's marketing name ("Model Name: MacBook Pro"), which
+            // always carries the family, before deciding.
             var output = await BridgeMetricsCollector.RunCommandAsync("sysctl", ["hw.model"], ct);
             var match = output is null ? null : Regex.Match(output, @"hw\.model:\s*(\S+)");
-            if (match is not { Success: true }) return "unknown";
-            return match.Groups[1].Value.Contains("MacBook", StringComparison.OrdinalIgnoreCase)
-                ? "laptop" : "desktop";
+            if (match is { Success: true }
+                && match.Groups[1].Value.Contains("MacBook", StringComparison.OrdinalIgnoreCase))
+                return "laptop";
+
+            var profiler = await BridgeMetricsCollector.RunCommandAsync("system_profiler", ["SPHardwareDataType"], ct);
+            var name = profiler is null ? null : Regex.Match(profiler, @"Model Name:\s*(.+)");
+            if (name is { Success: true })
+                return name.Groups[1].Value.Contains("MacBook", StringComparison.OrdinalIgnoreCase)
+                    ? "laptop" : "desktop";
+
+            return match is { Success: true } ? "desktop" : "unknown";
         }
         if (OperatingSystem.IsWindows())
         {
