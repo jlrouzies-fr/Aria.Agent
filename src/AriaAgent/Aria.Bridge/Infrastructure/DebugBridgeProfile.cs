@@ -6,6 +6,9 @@ namespace Aria.Bridge.Infrastructure;
 /// <summary>
 /// Optional per-bridge fake identity and hardware, honored only in Development and only when the
 /// launcher sets <c>ARIA_BRIDGE_DEBUG_PROFILE</c>. Null fields fall through to real probes.
+/// Sentinel: <see cref="GpuName"/> = <c>"none"</c> (case-insensitive) fakes a GPU-less machine —
+/// GPU name, VRAM totals and utilization are suppressed (reported as null) in BOTH /hardware and
+/// /metrics; without it, a null GpuName would fall through to the real probe and leak the host GPU.
 /// </summary>
 public sealed record DebugBridgeProfile(
     string? Label,
@@ -26,6 +29,11 @@ public sealed record DebugBridgeProfile(
 /// </summary>
 public static class DebugBridgeProfileLoader
 {
+    /// <summary>Case-insensitive <see cref="DebugBridgeProfile.GpuName"/> sentinel meaning
+    /// "this machine has no GPU" — see the record's doc comment.</summary>
+    internal static bool IsNoGpu(DebugBridgeProfile profile) =>
+        string.Equals(profile.GpuName, "none", StringComparison.OrdinalIgnoreCase);
+
     private static readonly Lazy<DebugBridgeProfile?> CurrentLazy = new(() =>
         TryParse(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
                  Environment.GetEnvironmentVariable("ARIA_BRIDGE_DEBUG_PROFILE")));

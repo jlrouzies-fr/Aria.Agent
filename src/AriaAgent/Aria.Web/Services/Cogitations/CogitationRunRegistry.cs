@@ -142,8 +142,13 @@ public sealed class CogitationRunRegistry(
     {
         if (!_pendingContextRetries.TryRemove(cogitationId, out var req)) return null;
         _runs.TryRemove(cogitationId, out _);
-        return StartRun(req with { IsContextRetry = true });
+        return StartRun(req with { IsContextRetry = true, ContextRetryCount = req.ContextRetryCount + 1 });
     }
+
+    // A granted seal retried ONCE already; a second ContextApprovalRequiredException for the same
+    // turn means the executing node is not honoring the replicated session grant (e.g. missing
+    // sibling trust) — without this cap the turn ping-pongs approve → refuse → retry forever.
+    private const int MaxContextRetries = 1;
 
     // Sent to the model instead of re-sending the original prompt when a turn resumes after the user
     // grants the node seal. The session already holds the original user turn, the model's own tool
@@ -195,10 +200,26 @@ public sealed class CogitationRunRegistry(
         }
         catch (ContextApprovalRequiredException capEx)
         {
-            haltedForContextApproval = true;
-            run.SetAwaitingContextApproval(capEx.SessionId);
-            _pendingContextRetries[run.CogitationId] = req;
-            run.AppendNote("\n// CONTEXT APPROVAL REQUIRED — approve sensitive operations on your node to continue. //");
+            if (req.ContextRetryCount >= MaxContextRetries)
+            {
+                // The seal was granted and the retried call was STILL refused: the executing node
+                // is not honoring the session grant. Make it terminal instead of re-halting into
+                // another identical ceremony (the infinite approve/refuse loop this replaces).
+                run.AppendNote(
+                    "\n// CONTEXT GRANT NOT HONORED — the executing node refused the action even after " +
+                    "the session seal was granted and the call was retried. The approved grant is not " +
+                    "taking effect on the target node (sibling trust missing or grant replication " +
+                    "failing). The action was NOT performed — retrying the same call is pointless " +
+                    "until the node's trust configuration is fixed. //");
+                run.MarkInterrupted();
+            }
+            else
+            {
+                haltedForContextApproval = true;
+                run.SetAwaitingContextApproval(capEx.SessionId);
+                _pendingContextRetries[run.CogitationId] = req;
+                run.AppendNote("\n// CONTEXT APPROVAL REQUIRED — approve sensitive operations on your node to continue. //");
+            }
         }
         catch (Exception ex)
         {

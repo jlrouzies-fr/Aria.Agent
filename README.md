@@ -25,6 +25,7 @@
 - `03a` [Architecture Overview](#-architecture-overview) — how the pieces connect
 - `04` [Sub-agents & Personas](#-sub-agents--personas) — mercenaries for hire
 - `05` [The Hive](#-the-hive) — swarm deliberation under an Overmind
+- `05a` [The Fleet](#-the-fleet) — every machine, one consciousness
 - `06` [Vigils](#-vigils) — autonomous scheduled directives
 - `07` [Noosphere](#-noosphere) — bridge-local persistent memory
 - `08` [Agent Governance & Security](#-agent-governance-and-security) — trust levels and seals
@@ -143,6 +144,26 @@ Define named personas with their own model, colour, avatar, and reusable skill s
 </table>
 
 <p align="center"><img src="docs/img/hive.png" alt="A Hive collective — Overmind linked to its drones" width="88%"><br><sub><span style="color: gray;"><em>A collective on the canvas — the Overmind and its drones, linked by bezier vox-lines</em></span></sub></p>
+
+---
+
+### 🖧 The Fleet
+
+<table>
+  <tr>
+    <td valign="top">
+      <p>Where the Hive is a swarm of <em>agents</em>, the <strong>Fleet</strong> (<code>/fleet</code>) is the muster of your <em>machines</em> — every bridge node enrolled under your soul, gathered around <strong>ARIA CORE</strong> in a lineage tree. Each node card shows its form factor (desktop/laptop), OS badge, live CPU / RAM / VRAM / GPU gauges, and the model chips of its local channels; clicking a node opens a drawer with the full hardware inventory, live telemetry (GPU power, uptime, process memory), and per-channel model lists. A <strong>COPY FLEET JSON</strong> rite exports the whole muster for external tooling.</p>
+      <p>The Fleet is not just a dashboard — it is the agent's map of your dominion. The <code>fleet_status</code> tool hands the agent the same picture (hardware, live free RAM/VRAM, model names per node) so it can decide <em>where</em> work should run and which model size a machine can plausibly host. Terminal and file tools then follow through: each call is dispatched to the node that owns the target path. Because a cross-machine decision is the agent's alone, the <strong>fleet approval gate</strong> (<em>APPROVE / FREE</em> in the tools panel — APPROVE by default) pauses any call that resolves to a node other than the session's default for an in-chat approval, so you sign off before another machine is enlisted.</p>
+    </td>
+    <td align="center" width="160" valign="top">
+      <img src="docs/img/aria-core.png" alt="ARIA CORE" width="128">
+    </td>
+  </tr>
+</table>
+
+- **Model-size reasoning** — model entries are names only (no file sizes): the agent infers size from the name (`27b`, `8x7b`, `q4`), checks it against the target's free RAM/VRAM, and states its assumption when it relies on it.
+- **Routing recap** — chat follows the channel's bound node, terminal tools follow the path's owning node, config syncs to every node. The full rules: **[Multi-node Routing](docs/readme/multi-node.md)**.
+- **Testing without two PCs** — a local debug mode spins up fake fleet nodes (`DEBUG-NODE-1`, `DEBUG-NODE-2`, …) with invented hardware profiles on one machine: **[Multi-bridge debug mode](docs/readme/multi-bridge-debug.md)**.
 
 ---
 
@@ -350,6 +371,7 @@ GuestAccess__Codes="FRIEND-CODE-1234:2026-12-31T00:00:00Z"
 | **[Security](docs/readme/security.md)** | <ul><li>What each control does</li><li>What it stops</li><li>What you experience</li></ul> |
 | **[Security Hardening Plan](docs/security/hardening-plan.md)** | <ul><li>Technical threat model</li><li>Findings F-1–F-9</li><li>Remediation roadmap</li><li>Verification notes</li></ul> |
 | **[Multi-node Routing](docs/readme/multi-node.md)** | <ul><li>Channel↔bridge binding</li><li>Per-node key vaults + encrypted key sync</li><li>Path-routed terminal tools</li><li>Remote diagnostics</li></ul> |
+| **[Multi-bridge Debug Mode](docs/readme/multi-bridge-debug.md)** | <ul><li>`scripts/dev-fleet.sh`</li><li>Fake node profiles & ports</li><li>Auto-join, enroll & LM seeding</li><li>Troubleshooting</li></ul> |
 | **[Agent Harness](docs/readme/harness.md)** | <ul><li>The shared `Aria.Harness` orchestration layer</li><li>How Web/Console host it</li></ul> |
 | **[Reasoning Handler](docs/readme/reasoning.md)** | <ul><li>The universal SSE interceptor</li><li>Thinking + tool-call normalisation across every model</li></ul> |
 | **[Code Highlighting](docs/readme/code-highlighting-plan.md)** | <ul><li>Server-side `Markdown.ColorCode` setup</li><li>CSS rules</li><li>COPY-button handling</li></ul> |

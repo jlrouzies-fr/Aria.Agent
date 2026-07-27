@@ -65,14 +65,19 @@ public sealed class HardwareInventory(BridgeMetricsCollector metrics)
     {
         if (profile is null) return snapshot;
 
+        // "none" fakes a GPU-less machine: suppress both name and VRAM instead of letting the
+        // real probe's values leak through (a null profile field means "keep the real value").
+        var noGpu = DebugBridgeProfileLoader.IsNoGpu(profile);
+
         return snapshot with
         {
             Hostname    = profile.Hostname    ?? snapshot.Hostname,
+            Os          = profile.Platform    ?? snapshot.Os,
             CpuModel    = profile.CpuModel    ?? snapshot.CpuModel,
             CpuCores    = profile.CpuCores    ?? snapshot.CpuCores,
             TotalRamMb  = profile.TotalRamMb  ?? snapshot.TotalRamMb,
-            GpuName     = profile.GpuName     ?? snapshot.GpuName,
-            GpuVramTotalMb = profile.GpuVramTotalMb ?? snapshot.GpuVramTotalMb,
+            GpuName     = noGpu ? null : profile.GpuName     ?? snapshot.GpuName,
+            GpuVramTotalMb = noGpu ? null : profile.GpuVramTotalMb ?? snapshot.GpuVramTotalMb,
             FormFactor  = profile.FormFactor  ?? snapshot.FormFactor,
         };
     }

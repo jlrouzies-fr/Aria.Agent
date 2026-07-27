@@ -27,7 +27,12 @@
 # The script auto-joins every node via /soul/join and then pre-enrolls it through
 # /api/debug/enroll-node, so no manual pairing-code approval is required. A local
 # LM channel is also seeded through the bridge's own localhost HTTP API (not by
-# poking at the encrypted vault directly).
+# poking at the encrypted vault directly). Finally, every node's public key is
+# cross-registered as a trusted sibling on every other node (POST /debug/trust-sibling,
+# DEBUG+Development only) so context grants replicate between fleet nodes — this
+# replaces the production enrollment-certificate ceremony, which cannot bootstrap
+# in dev-fleet. Node profiles live in node_profile(); GpuName:"none" fakes a
+# GPU-less machine.
 #
 # Stop all launched instances:
 #   scripts/dev-fleet.sh --stop
@@ -155,7 +160,7 @@ node_profile() {
 JSON
             ;;
         2) cat <<'JSON'
-{"Label":"DEBUG-NODE-2","Platform":"Linux","Hostname":"DEBUG-LIN-02","FormFactor":"laptop","CpuModel":"Intel Core i7-1165G7","CpuCores":8,"TotalRamMb":16384}
+{"Label":"DEBUG-NODE-2","Platform":"Linux","Hostname":"DEBUG-LIN-02","FormFactor":"laptop","CpuModel":"Intel Core i7-1165G7","CpuCores":8,"TotalRamMb":16384,"GpuName":"none"}
 JSON
             ;;
         *) cat <<JSON
@@ -178,11 +183,21 @@ start_node() {
 
     echo "[dev-fleet] Starting $label on port $port (data: $data_dir)"
 
+    # Run the built DLL directly instead of `dotnet run`: a later `dotnet build`/`dotnet test`
+    # of the bridge project kills `dotnet run` children, but leaves a plain DLL process alone.
+    # The csproj builds RID-specific (PublishSingleFile), so resolve the runtime dir dynamically.
+    local bridge_dll
+    bridge_dll="$(find "$ROOT/src/AriaAgent/Aria.Bridge/bin/Debug/net10.0" -name aria-bridge.dll -maxdepth 2 | head -n1)"
+    if [[ -z "$bridge_dll" ]]; then
+        echo "ERROR: aria-bridge.dll not found under bin/Debug/net10.0 — build failed?" >&2
+        return 1
+    fi
+
     ARIA_BRIDGE_DATA_DIR="$data_dir" \
     ASPNETCORE_ENVIRONMENT=Development \
     ASPNETCORE_URLS="http://localhost:$port" \
     ARIA_BRIDGE_DEBUG_PROFILE="$profile" \
-        dotnet run --project "$ROOT/src/AriaAgent/Aria.Bridge" --no-launch-profile \
+        dotnet "$bridge_dll" \
             > "$log_file" 2>&1 &
 
     echo $! > "$data_dir/run.pid"
@@ -216,6 +231,9 @@ join_node() {
         echo "WARNING: could not extract nodePublicKey from join response for $label." >&2
         return 1
     fi
+
+    # Remember the key so cross_trust can register it on every sibling afterwards.
+    NODE_PUBS[$i]="$node_pub"
 
     local platform
     platform="$(echo "$join_resp" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("platform",""))' 2>/dev/null || true)"
@@ -288,6 +306,30 @@ seed_lm_channel() {
     fi
 }
 
+# Cross-register every node's public key as a trusted sibling on every OTHER node, via the
+# bridge's DEBUG-only /debug/trust-sibling endpoint. This replaces the production enrollment-
+# certificate ceremony (impossible in dev-fleet: no already-trusted device exists to sign).
+# Idempotent — re-running the script without --reset just upserts the same rows.
+cross_trust() {
+    local soul_id="$1"
+    local i j port_i payload
+    for ((i = 1; i <= NODES; i++)); do
+        port_i=$((5741 + i))
+        for ((j = 1; j <= NODES; j++)); do
+            [[ "$i" == "$j" ]] && continue
+            [[ -n "${NODE_PUBS[$j]:-}" ]] || continue
+            payload="$(python3 -c 'import json,sys; print(json.dumps({"userId":sys.argv[1],"nodePublicKey":sys.argv[2]}))' \
+                "$soul_id" "${NODE_PUBS[$j]}")"
+            if curl -fsS -X POST "http://localhost:$port_i/debug/trust-sibling" \
+                    -H 'Content-Type: application/json' -d "$payload" >/dev/null 2>&1; then
+                echo "[dev-fleet] node-$i now trusts node-$j's key."
+            else
+                echo "WARNING: /debug/trust-sibling failed for node-$j on node-$i (old bridge build?)." >&2
+            fi
+        done
+    done
+}
+
 stop_fleet() {
     local killed=0
     if [[ -d "$FLEET_DIR" ]]; then
@@ -320,6 +362,8 @@ stop_fleet() {
 
 main() {
     ensure_tools
+
+    NODE_PUBS=()
 
     if ((STOP)); then
         stop_fleet
@@ -354,6 +398,10 @@ main() {
     for ((i = 1; i <= NODES; i++)); do
         join_node "$i" "$soul_id" && seed_lm_channel "$i"
     done
+
+    if ((NODES > 1)); then
+        cross_trust "$soul_id"
+    fi
 
     echo
     echo "[dev-fleet] Fleet ready. Nodes:"

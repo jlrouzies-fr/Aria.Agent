@@ -166,7 +166,10 @@ public sealed class GovernedTool : AIFunction
             const string paused = "PAUSED - this action needs a one-time node seal, and an approval " +
                 "request has been opened on the user's node. Do not retry it in this turn. When the " +
                 "user grants the seal you will receive a [NODE SEAL GRANTED] confirmation message - " +
-                "retry the action at that point.";
+                "retry the action at that point. If you see this refusal AGAIN after a seal was " +
+                "granted, the executing node is not honoring the session grant: retrying the same " +
+                "call is pointless - stop and tell the user the target node refused the approved " +
+                "grant (cross-node trust or grant replication is broken).";
             _onToolComplete?.Invoke(_inner.Name, paused, null, null, null);
             return paused;
         }

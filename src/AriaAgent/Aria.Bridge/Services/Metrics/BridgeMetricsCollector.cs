@@ -196,12 +196,36 @@ public sealed class BridgeMetricsCollector
             gpuMemoryFreeMb  = sysTotalMb is { } t && sysUsedMb is { } u ? t - u : null;
         }
 
-        // Debug profile can fake GPU name/VRAM for fleet testing on GPU-less dev machines.
+        // Debug profile can fake GPU name/VRAM/RAM for fleet testing on GPU-less dev machines.
         if (DebugBridgeProfileLoader.Current is { } profile)
         {
-            if (profile.GpuName != null) gpuName = profile.GpuName;
-            if (profile.GpuVramTotalMb.HasValue) gpuMemoryTotalMb = profile.GpuVramTotalMb.Value;
-            if (profile.GpuVramFreeMb.HasValue) gpuMemoryFreeMb = profile.GpuVramFreeMb.Value;
+            if (DebugBridgeProfileLoader.IsNoGpu(profile))
+            {
+                // "none" = GPU-less machine: suppress everything GPU, including the unified-memory
+                // VRAM mirroring above — a null GpuName would otherwise leak the host GPU.
+                gpuName         = null;
+                gpuUtilization  = null;
+                gpuPowerMw      = null;
+                gpuMemoryTotalMb = null;
+                gpuMemoryFreeMb  = null;
+            }
+            else
+            {
+                if (profile.GpuName != null) gpuName = profile.GpuName;
+                if (profile.GpuVramTotalMb.HasValue) gpuMemoryTotalMb = profile.GpuVramTotalMb.Value;
+                if (profile.GpuVramFreeMb.HasValue) gpuMemoryFreeMb = profile.GpuVramFreeMb.Value;
+            }
+
+            // Fake total RAM: keep the real usage RATIO so free/used stay plausible, clamped so
+            // used never exceeds the fake total.
+            if (profile.TotalRamMb is { } fakeTotal)
+            {
+                if (sysTotalMb is { } realTotal && realTotal > 0 && sysUsedMb is { } realUsed)
+                    sysUsedMb = Math.Clamp(realUsed * (fakeTotal / realTotal), 0, fakeTotal);
+                else
+                    sysUsedMb = null;
+                sysTotalMb = fakeTotal;
+            }
         }
 
         return new BridgeMetrics(

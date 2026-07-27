@@ -25,6 +25,10 @@ public static class EndpointsMapper
         app.MapMemoryEndpoints();
         app.MapTerminalEndpoints();
         app.MapChannelEndpoints();
+#if DEBUG
+        // Dev-fleet only: no-ops outside Development. See DebugTrustEndpoints.
+        app.MapDebugTrustEndpoints();
+#endif
 
         return app;
     }

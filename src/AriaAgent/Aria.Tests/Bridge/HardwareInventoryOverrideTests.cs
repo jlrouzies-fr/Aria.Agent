@@ -41,8 +41,10 @@ public class HardwareInventoryOverrideTests
         Assert.Equal("NVIDIA GeForce RTX 4090", overridden.GpuName);
         Assert.Equal(24564, overridden.GpuVramTotalMb);
 
+        // The profile's Platform drives the reported OS (a fake Windows node must not leak macOS).
+        Assert.Equal("Windows", overridden.Os);
+
         // Fields not provided by the profile stay as the real probe values.
-        Assert.Equal("macOS", overridden.Os);
         Assert.Equal("Arm64", overridden.Arch);
         Assert.Equal("Apple M3", overridden.CpuModel);
         Assert.Equal(16384, overridden.TotalRamMb);
