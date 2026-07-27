@@ -53,6 +53,7 @@ public static class ChatCatalog
         new("/test",    "",          "Run tests and feed results back.",                                    "Dev",      CatalogStatus.Planned),
 
         // ── Aria-native ──────────────────────────────────────────────────────
+        new("/fleet",   "",          "Open the Fleet panel — every enrolled cogitator node.",              "Aria",     CatalogStatus.Available),
         new("/hive",    "",          "Open the Hive panel — agent collectives. (Armed-input flow planned.)","Aria",     CatalogStatus.Available),
         new("/vigil",   "",          "Open the Vigil scheduler — cron-driven directives.",                  "Aria",     CatalogStatus.Available),
         new("/vox",     "",          "Toggle voice input.",                                                 "Aria",     CatalogStatus.Available),
