@@ -17,6 +17,7 @@ builder.AddBridgeServices();
 var app = builder.Build();
 
 BuiltinTools.ConfigureMemory(app.Services);
+BuiltinTools.ConfigureDiffFeedback(builder.Configuration);
 
 app.UseBridgePipeline();
 await app.InitializeBridgeDatabaseAsync();

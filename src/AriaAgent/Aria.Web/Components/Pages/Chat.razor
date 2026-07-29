@@ -429,6 +429,10 @@
             <div id="explorer-viewer-resize-handle" class="explorer-resize-handle"></div>
         }
         <div class="messages-area" id="chatMessages">
+            @if (!string.IsNullOrEmpty(_contextWindowWarning))
+            {
+                <div class="context-window-warning">⚠ @_contextWindowWarning</div>
+            }
             @for (int i = 0; i < _messages.Count; i++)
             {
                 var msg = _messages[i];
@@ -472,6 +476,10 @@
                             <span class="msg-screenshot-label">⛶ SCREENSHOT</span>
                         }
                     </span>
+                    @{
+                        // One REVERT TURN control per checkpoint in this message (not on every DiffCard).
+                        var rewindShownForMsg = new HashSet<string>(StringComparer.Ordinal);
+                    }
                     @foreach (var section in msg.Sections)
                     {
                         if (section.Type == MessageSection.SectionType.Thinking)
@@ -516,6 +524,9 @@
                                         {
                                             @if (fm != null)
                                             {
+                                                var showRewind = !fm.Reverted
+                                                    && !string.IsNullOrWhiteSpace(fm.Checkpoint)
+                                                    && rewindShownForMsg.Add(fm.Checkpoint!);
                                                 <DiffCard Path="@fm.Path"
                                                           Diff="@fm.Diff"
                                                           Adds="@fm.Adds"
@@ -524,8 +535,10 @@
                                                           Created="@fm.Created"
                                                           Deleted="@fm.Deleted"
                                                           Reverted="@fm.Reverted"
+                                                          ShowRewind="@showRewind"
                                                           OnOpen="@(() => OpenDiffFileAsync(fm.Path))"
-                                                          OnRevert="@(() => RevertDiffAsync(msg, tc))" />
+                                                          OnRevert="@(() => RevertDiffAsync(msg, tc))"
+                                                          OnRewind="@(() => RewindCheckpointAsync(fm.Checkpoint!))" />
                                             }
                                             else
                                             {
@@ -589,7 +602,7 @@
                     }
                 </div>
             }
-            @if (_isStreaming && _streamingMsg != null && !StreamingHasOutput(_streamingMsg))
+            @if (_isStreaming && _streamingMsg != null && ShouldShowStreamingCursor(_streamingMsg))
             {
                 <span class="streaming-cursor"></span>
             }
@@ -1004,7 +1017,23 @@
                         <span class="approval-tool">@appr.ToolName.ToUpperInvariant()</span>
                         <span class="approval-reason">@appr.Reason</span>
                     </div>
-                    <div class="approval-args">@appr.ArgsPreview</div>
+                    @if (!string.IsNullOrWhiteSpace(appr.Diff))
+                    {
+                        @* Prospective diff (bridge /tools/preview, read-only): the human approves the
+                           actual change, not a truncated args blob. Read-only card — nothing written yet. *@
+                        <div class="approval-args">// PROPOSED CHANGE — preview only, nothing written yet</div>
+                        <DiffCard Path="@(appr.TargetPath ?? "")"
+                                  Diff="@appr.Diff"
+                                  Adds="@CountDiffAdds(appr.Diff)"
+                                  Dels="@CountDiffDels(appr.Diff)"
+                                  UndoToken=""
+                                  ShowRevert="false"
+                                  ShowOpen="false" />
+                    }
+                    else
+                    {
+                        <div class="approval-args">@appr.ArgsPreview</div>
+                    }
                     @if (isSeal)
                     {
                         <div class="approval-seal-note">Confirm at your cogitator node — a window has opened on your machine. The terminal cannot grant this seal.</div>

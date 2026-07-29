@@ -9,7 +9,7 @@ namespace Aria.Harness.Bridge;
 /// <summary>
 /// An AIFunction that calls a tool hosted by Aria.Bridge (terminal tools or stdio MCP servers).
 /// </summary>
-public sealed class BridgeMcpTool : AIFunction
+public sealed class BridgeMcpTool : AIFunction, IDiffPreviewTool
 {
     private static readonly JsonElement _emptySchema =
         JsonDocument.Parse("{}").RootElement;
@@ -66,6 +66,8 @@ public sealed class BridgeMcpTool : AIFunction
             toolArguments = toolArgs,
             serverName    = _server.Name,
             sessionId     = _context.SessionId,
+            contextWindow = _context.ContextWindow is { Assumed: false } known ? (int?)known.Tokens : null,
+            checkpoint    = HarnessContext.CurrentTurnCheckpoint,
             policy        = _server.AllowedPaths?.Length > 0 || _server.BlockedCommands?.Length > 0
                 ? new { allowedPaths = _server.AllowedPaths ?? [], blockedCommands = _server.BlockedCommands ?? [] }
                 : (object?)null,
@@ -92,6 +94,12 @@ public sealed class BridgeMcpTool : AIFunction
             using var doc = JsonDocument.Parse(responseJson);
             var text = doc.RootElement.TryGetProperty("text", out var textEl) ? textEl.GetString() ?? "" : "";
 
+            // The bridge's own failure flag (ToolCallResponse.IsError). Governance reads it to tell
+            // a failed call from a successful one — the text alone can't (bridge errors have no
+            // uniform prefix). Surfaced on the wrapper types below; never shown to the model.
+            var isError = doc.RootElement.TryGetProperty("isError", out var errEl) &&
+                          errEl.ValueKind == JsonValueKind.True;
+
             // A tool that produced an image (e.g. TakeScreenshot) carries it as base64 in the bridge
             // response. Surface it through MultimodalToolResult regardless of vision so the chat UI can
             // always render it to the user; whether the *model* also receives it as an image block is
@@ -116,15 +124,53 @@ public sealed class BridgeMcpTool : AIFunction
             if (doc.RootElement.TryGetProperty("metadataJson", out var mdEl) &&
                 mdEl.GetString() is { Length: > 0 } metadataJson)
             {
-                return new FileMutationToolResult { Text = text, MetadataJson = metadataJson };
+                return new FileMutationToolResult { Text = text, MetadataJson = metadataJson, IsError = isError };
             }
 
             if (doc.RootElement.TryGetProperty("text", out _))
-                return text;
+                return new BridgeToolResult { Text = text, IsError = isError };
         }
         catch { }
 
         return responseJson;
+    }
+
+    /// <summary>
+    /// Fetches the prospective unified diff for a file-mutation call from the bridge's read-only
+    /// /tools/preview endpoint — used by GovernedTool when the call pauses for approval, so the
+    /// human sees what the edit would do instead of a truncated args blob. Short timeout and
+    /// fail-open: any problem (old bridge, refusal, slow node) degrades to no diff.
+    /// </summary>
+    public async Task<string?> FetchDiffPreviewAsync(Dictionary<string, JsonElement> args, CancellationToken ct)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(new
+            {
+                command       = _server.Command,
+                arguments     = _server.Arguments,
+                environment   = _server.Environment,
+                toolName      = _name,
+                toolArguments = args,
+                serverName    = _server.Name,
+                sessionId     = _context.SessionId,
+                policy        = _server.AllowedPaths?.Length > 0 || _server.BlockedCommands?.Length > 0
+                    ? new { allowedPaths = _server.AllowedPaths ?? [], blockedCommands = _server.BlockedCommands ?? [] }
+                    : (object?)null,
+            });
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(2));
+
+            var responseJson = await _runtime.BridgePostAsync("http://localhost:5741/tools/preview", body, _context, timeout.Token, nodeId: _nodeId);
+
+            using var doc = JsonDocument.Parse(responseJson);
+            if (doc.RootElement.TryGetProperty("ok", out var okEl) && okEl.ValueKind == JsonValueKind.True &&
+                doc.RootElement.TryGetProperty("diff", out var diffEl) && diffEl.GetString() is { Length: > 0 } diff)
+                return diff;
+        }
+        catch { /* fail-open — the approval card falls back to the plain args preview */ }
+        return null;
     }
 
     // Pull the session id out of a context-approval refusal, whether it arrived as the raw gate string
@@ -149,6 +195,29 @@ public sealed class BridgeMcpTool : AIFunction
         catch { /* raw text without the sessionId=' marker → no session id */ }
         return null;
     }
+}
+
+/// <summary>
+/// A bridge-backed tool that can produce a PROSPECTIVE unified diff for a file-mutation call
+/// (bridge POST /tools/preview, read-only). GovernedTool fetches it when such a call pauses for
+/// approval; a null return means the preview was unavailable and the approval card falls back to
+/// the plain args preview.
+/// </summary>
+public interface IDiffPreviewTool
+{
+    Task<string?> FetchDiffPreviewAsync(Dictionary<string, JsonElement> args, CancellationToken ct);
+}
+
+/// <summary>
+/// A plain-text bridge tool result carrying the bridge's own failure flag
+/// (ToolCallResponse.IsError) so the governance layer can tell a failed call from a successful
+/// one — the text alone can't (bridge errors have no uniform prefix). <c>GovernedTool</c> unwraps
+/// it: the model and the UI see only <see cref="Text"/>, exactly as before.
+/// </summary>
+public sealed class BridgeToolResult
+{
+    public required string Text { get; init; }
+    public bool IsError { get; init; }
 }
 
 /// <summary>

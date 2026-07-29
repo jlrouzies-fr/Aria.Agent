@@ -22,7 +22,11 @@ public record ToolsCallRequest(
     Dictionary<string, JsonElement>? ToolArguments,
     string? ServerName = null,
     SecurityPolicy? Policy = null,
-    string? SessionId = null);
+    string? SessionId = null,
+    int? ContextWindow = null,
+    // Optional turn checkpoint id. Stamped onto FileUndo rows so /rewind can revert a whole agent
+    // turn. Null for Quick Exec, MCP, and older servers.
+    string? Checkpoint = null);
 
 // Returned by /tools/list — mirrors the SDK's McpClientTool fields needed by Aria.Web.
 public record BridgeToolInfo(

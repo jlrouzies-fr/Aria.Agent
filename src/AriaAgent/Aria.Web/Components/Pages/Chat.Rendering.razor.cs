@@ -25,12 +25,23 @@ public partial class Chat
 
     private void CloseImageModal() => _imageModalSrc = null;
 
-    // The blinking block cursor means "preparing to reply" — it must disappear the moment the
-    // streaming message shows any output (thinking, a tool call, a todo list, or text).
-    private static bool StreamingHasOutput(MessageEntry msg) =>
-        msg.Sections.Any(s =>
-            s.Type is MessageSection.SectionType.ToolActivity or MessageSection.SectionType.TodoList
-            || !string.IsNullOrEmpty(s.Text));
+    // The blinking block cursor means "the agent is doing something but nothing is visibly
+    // changing right now". It shows before the very first token, and it reappears whenever the
+    // most recent section is tool activity or a todo list — those render as a static card/list
+    // (no char-by-char growth), so without the cursor a running tool, or the gap between one
+    // tool call finishing and the next one (or the final answer) starting, looks like nothing is
+    // happening. It stays hidden while content or thinking text is actively streaming in, since
+    // the growing text itself already conveys activity.
+    private static bool ShouldShowStreamingCursor(MessageEntry msg)
+    {
+        var last = msg.Sections.LastOrDefault();
+        if (last is null) return true;
+        if (last.Type is MessageSection.SectionType.ToolActivity or MessageSection.SectionType.TodoList) return true;
+        // A brand-new message always has an empty placeholder Content section (added by the
+        // MessageEntry constructor) — that's not "output" yet, just an unfilled slot, so it must
+        // count the same as no sections at all.
+        return string.IsNullOrEmpty(last.Text);
+    }
 
     // ── Chat timeline rail ────────────────────────────────────────────────
 
@@ -254,6 +265,7 @@ public partial class Chat
         int Adds,
         int Dels,
         string UndoToken,
+        string? Checkpoint,
         bool Created,
         bool Deleted,
         bool Reverted = false);
@@ -298,19 +310,7 @@ public partial class Chat
         var updatedMetadata = metadata with { Reverted = true };
         tc.MetadataJson = System.Text.Json.JsonSerializer.Serialize(updatedMetadata, MetadataJsonOptions);
 
-        var sectionsJson = System.Text.Json.JsonSerializer.Serialize(msg.Sections, SectionJsonOptions);
-        var persisted = false;
-        if (_cogitationId.HasValue)
-        {
-            if (_cogitationOriginNodeId == null && msg.DbMessageId.HasValue)
-            {
-                persisted = await CogitationService.UpdateMessageSectionsAsync(_cogitationId.Value, msg.DbMessageId.Value, sectionsJson);
-            }
-            else if (_cogitationOriginNodeId != null && !string.IsNullOrEmpty(msg.BridgeMessageId))
-            {
-                persisted = await BridgeCogitation.UpdateMessageAsync(userId, _cogitationId.Value, msg.BridgeMessageId, sectionsJson, _cogitationOriginNodeId);
-            }
-        }
+        var persisted = await PersistToolCardStateAsync(msg, userId);
 
         if (!persisted)
         {
@@ -321,6 +321,20 @@ public partial class Chat
         var refreshArgs = System.Text.Json.JsonSerializer.Serialize(new { path = metadata.Path });
         await HandleFileToolCompletedAsync("write_file", refreshArgs);
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task<bool> PersistToolCardStateAsync(MessageEntry msg, string userId)
+    {
+        var sectionsJson = System.Text.Json.JsonSerializer.Serialize(msg.Sections, SectionJsonOptions);
+        if (_cogitationId.HasValue)
+        {
+            if (_cogitationOriginNodeId == null && msg.DbMessageId.HasValue)
+                return await CogitationService.UpdateMessageSectionsAsync(_cogitationId.Value, msg.DbMessageId.Value, sectionsJson);
+            if (_cogitationOriginNodeId != null && !string.IsNullOrEmpty(msg.BridgeMessageId))
+                return await BridgeCogitation.UpdateMessageAsync(userId, _cogitationId.Value, msg.BridgeMessageId, sectionsJson, _cogitationOriginNodeId);
+        }
+
+        return false;
     }
 
     private static string FormatResult(string toolName, string argsJson, string result)

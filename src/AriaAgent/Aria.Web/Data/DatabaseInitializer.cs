@@ -97,6 +97,11 @@ public static class DatabaseInitializer
                 // ── Vision capability probe: cached per source/model like Thinking/ToolCall formats,
                 //    so the screenshot tool knows whether to hand the image to the model or text-only. ──
                 "ALTER TABLE ModelFormatCaches ADD COLUMN VisionSupport TEXT NOT NULL DEFAULT 'Unknown';",
+                // ── Context-window discovery: per-model budgets. Existing rows migrate to assumed 100k
+                //    so today's behaviour is unchanged until a model is re-probed or a user sets an override. ──
+                "ALTER TABLE ModelFormatCaches ADD COLUMN ContextWindowTokens INTEGER;",
+                "ALTER TABLE ModelFormatCaches ADD COLUMN ContextWindowAssumed INTEGER NOT NULL DEFAULT 1;",
+                "UPDATE ModelFormatCaches SET ContextWindowTokens = 100000, ContextWindowAssumed = 1 WHERE ContextWindowTokens IS NULL;",
                 // ── Inline screenshots: a "screenshot" message stores the captured image so it persists
                 //    across refresh and renders in the transcript (bytes are never replayed to the model). ──
                 "ALTER TABLE CogitationMessages ADD COLUMN ImageBase64 TEXT;",

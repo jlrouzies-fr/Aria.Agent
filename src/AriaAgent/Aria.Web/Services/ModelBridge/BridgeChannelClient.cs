@@ -5,7 +5,7 @@ namespace Aria.Web.Services.ModelBridge;
 /// <summary>Read-only view of a node-authoritative channel, as returned by the bridge's GET /channels.</summary>
 public sealed record BridgeChannelInfo(
     string Name, string Url, List<string> Models, bool IsBridged, bool IsPublic, bool HasKey,
-    string? BridgeNodeId, string? NodeLabel = null);
+    string? BridgeNodeId, string? NodeLabel = null, int? ContextWindow = null);
 
 /// <summary>
 /// Fetches the node-authoritative channel list from the bridge. Channels (name → URL, models, key) are
@@ -74,6 +74,10 @@ public sealed class BridgeChannelClient(ModelBridgeRegistry registry)
                 if (e.TryGetProperty("models", out var m) && m.ValueKind == JsonValueKind.Array)
                     models.AddRange(m.EnumerateArray().Select(x => x.GetString() ?? "").Where(s => s.Length > 0));
 
+                int? contextWindow = null;
+                if (e.TryGetProperty("contextWindow", out var cw) && cw.ValueKind == JsonValueKind.Number)
+                    contextWindow = cw.GetInt32();
+
                 list.Add(new BridgeChannelInfo(
                     Name:         e.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "",
                     Url:          e.TryGetProperty("url", out var u) ? u.GetString() ?? "" : "",
@@ -82,7 +86,8 @@ public sealed class BridgeChannelClient(ModelBridgeRegistry registry)
                     IsPublic:     e.TryGetProperty("isPublic", out var p) && p.GetBoolean(),
                     HasKey:       e.TryGetProperty("hasKey", out var h) && h.GetBoolean(),
                     BridgeNodeId: nodeId,
-                    NodeLabel:    nodeLabel));
+                    NodeLabel:    nodeLabel,
+                    ContextWindow: contextWindow));
             }
             return list.Where(c => !string.IsNullOrWhiteSpace(c.Name)).ToList();
         }

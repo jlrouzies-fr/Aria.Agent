@@ -93,7 +93,7 @@ public static class ToolClassifier
 
     private static string? ExtractPath(IReadOnlyDictionary<string, JsonElement> args)
     {
-        foreach (var key in new[] { "path", "file_path", "directory" })
+        foreach (var key in new[] { "path", "file_path", "directory", "cwd" })
             if (args.TryGetValue(key, out var v) && v.ValueKind == JsonValueKind.String)
                 return v.GetString();
         return null;

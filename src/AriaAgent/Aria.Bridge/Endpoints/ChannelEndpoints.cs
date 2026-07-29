@@ -45,12 +45,13 @@ public static class ChannelEndpoints
             foreach (var c in custom)
                 byName[c.Name] = new
                 {
-                    name      = c.Name,
-                    url       = c.Url,
-                    models    = ParseModels(c.ModelsJson),
-                    isBridged = c.IsBridged,
-                    isPublic  = false,
-                    hasKey    = configured.Contains(c.Name),
+                    name          = c.Name,
+                    url           = c.Url,
+                    models        = ParseModels(c.ModelsJson),
+                    isBridged     = c.IsBridged,
+                    isPublic      = false,
+                    hasKey        = configured.Contains(c.Name),
+                    contextWindow = c.ContextWindow,
                 };
 
             return Results.Ok(new { channels = byName.Values });
@@ -77,18 +78,20 @@ public static class ChannelEndpoints
                 var maxSort = await db.Channels.AnyAsync() ? await db.Channels.MaxAsync(c => c.SortOrder) : 0;
                 db.Channels.Add(new BridgeChannel
                 {
-                    Name       = name,
-                    Url        = req.Url.Trim(),
-                    ModelsJson = modelsJson,
-                    IsBridged  = req.IsBridged ?? true,
-                    SortOrder  = maxSort + 1,
+                    Name          = name,
+                    Url           = req.Url.Trim(),
+                    ModelsJson    = modelsJson,
+                    IsBridged     = req.IsBridged ?? true,
+                    SortOrder     = maxSort + 1,
+                    ContextWindow = req.ContextWindow,
                 });
             }
             else
             {
-                existing.Url        = req.Url.Trim();
-                existing.ModelsJson = modelsJson;
-                existing.IsBridged  = req.IsBridged ?? existing.IsBridged;
+                existing.Url           = req.Url.Trim();
+                existing.ModelsJson    = modelsJson;
+                existing.IsBridged     = req.IsBridged ?? existing.IsBridged;
+                existing.ContextWindow = req.ContextWindow;
             }
 
             await db.SaveChangesAsync();
@@ -134,4 +137,4 @@ public static class ChannelEndpoints
     }
 }
 
-public record SaveChannelRequest(string Url, string[]? Models, bool? IsBridged);
+public record SaveChannelRequest(string Url, string[]? Models, bool? IsBridged, int? ContextWindow = null);

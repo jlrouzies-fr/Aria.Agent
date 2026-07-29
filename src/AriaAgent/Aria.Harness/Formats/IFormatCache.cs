@@ -1,4 +1,5 @@
 using Aria.Agent;
+using Aria.Harness.Context;
 
 namespace Aria.Harness.Formats;
 
@@ -15,6 +16,14 @@ public interface IFormatCache
 
     Task<VisionSupport?> GetVisionSupportAsync(string sourceUrl, string modelId, CancellationToken ct = default);
     Task SetVisionSupportAsync(string sourceUrl, string modelId, VisionSupport support, CancellationToken ct = default);
+
+    /// <summary>
+    /// Discover and cache the model's context window, if known. Stored per source+model like the
+    /// format verdicts; <see cref="ContextWindow.Assumed"/> true means the value is a fallback and
+    /// must not change today's behaviour.
+    /// </summary>
+    Task<ContextWindow?> GetContextWindowAsync(string sourceUrl, string modelId, CancellationToken ct = default);
+    Task SetContextWindowAsync(string sourceUrl, string modelId, ContextWindow window, CancellationToken ct = default);
 
     /// <summary>
     /// Persist a human-accepted detection as authoritative. Unlike the automatic setters this stores

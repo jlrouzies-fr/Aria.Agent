@@ -25,6 +25,7 @@ public static partial class BuiltinTools
         .. GrepToolInfos(),
         .. GitToolInfos(),
         .. ProjectInfoToolInfos(),
+        .. RunTestsToolInfos(),
         .. CommandsIndexToolInfos(),
         .. InstallToolInfos(),
         .. WebToolInfos(),
@@ -33,66 +34,83 @@ public static partial class BuiltinTools
 
     // ── Dispatcher ────────────────────────────────────────────────────────────
 
+    // Turn checkpoint stamped onto FileUndo rows for /rewind. Set for the duration of one
+    // InvokeAsync so every mutation helper (write/edit/multi_edit/…) picks it up without threading
+    // an extra parameter through every call site.
+    private static readonly AsyncLocal<string?> CurrentCheckpoint = new();
+
     public static async Task<ToolCallResponse> InvokeAsync(
         string toolName,
         Dictionary<string, JsonElement>? args,
         SecurityPolicy? policy,
-        BridgeDbContext? db = null)
+        BridgeDbContext? db = null,
+        int? contextWindow = null,
+        string? checkpoint = null)
     {
-        args ??= [];
+        var previous = CurrentCheckpoint.Value;
+        CurrentCheckpoint.Value = checkpoint;
         try
         {
-            // The agent's shell is part of the Projects capability (opt-in per node). If Projects is
-            // off, refuse bash_exec and run_background even when the server-side Terminal tool is toggled on.
-            if ((toolName == "bash_exec" || toolName == "run_background") && !await IsProjectsEnabledAsync(db))
-                return Err("Agent Projects not enabled on this bridge. Open http://localhost:5741 → Terminal / Projects and enable Agent Projects.");
-
-            return toolName switch
+            args ??= [];
+            try
             {
-                "bash_exec"      => await BashExecAsync(args, policy),
-                "run_background" => await RunBackgroundAsync(args, policy),
-                "wait_for"       => await WaitForAsync(args),
-                "process_list"   => ProcessList(),
-                "process_output" => ProcessOutput(args),
-                "process_kill"   => await ProcessKillAsync(args),
-                "read_file"      => ReadFile(args, policy),
-                "write_file"     => WriteFile(args, policy, db),
-                "edit_file"      => EditFile(args, policy, db),
-                "multi_edit"     => MultiEdit(args, policy, db),
-                "undo_file"      => UndoFile(args, policy, db),
-                "list_dir"       => ListDir(args, policy),
-                "glob"           => GlobFiles(args, policy),
-                "grep"           => GrepSearch(args, policy),
-                "git_status"     => await GitStatusAsync(args, policy),
-                "git_diff"       => await GitDiffAsync(args, policy),
-                "git_log"        => await GitLogAsync(args, policy),
-                "git_stage"      => await GitStageAsync(args, policy),
-                "git_commit"     => await GitCommitAsync(args, policy),
-                "git_discard"    => await GitDiscardAsync(args, policy),
-                "create_dir"     => CreateDir(args, policy),
-                "delete_file"    => DeleteFile(args, policy, db),
-                "delete_dir"     => DeleteDir(args, policy),
-                "move_path"      => MovePath(args, policy, db),
-                "project_info"   => await ProjectInfoAsync(args, policy),
-                "commands_index" => CommandsIndex(args),
-                "install_software" => await InstallSoftwareAsync(args, policy),
-                "system_info"    => await SystemInfoAsync(),
-                "GetCurrentDateTime" => GetCurrentDateTime(),
-                "SearchWeb"          => await SearchWebAsync(args, db),
-                "Inscribe"           => await InscribeToolAsync(args),
-                "Probe"              => await ProbeToolAsync(args),
-                "Contemplate"        => await ContemplateToolAsync(args),
-                "TakeScreenshot"     => await TakeScreenshotAsync(args),
-                "http_request"       => await HttpRequestAsync(args),
-                "read_image"         => ReadImage(args, policy),
-                _ => Err($"Unknown built-in tool: {toolName}")
-            };
+                // The agent's shell is part of the Projects capability (opt-in per node). If Projects is
+                // off, refuse bash_exec, run_background and run_tests even when the server-side Terminal tool is toggled on.
+                if ((toolName == "bash_exec" || toolName == "run_background" || toolName == "run_tests") && !await IsProjectsEnabledAsync(db))
+                    return Err("Agent Projects not enabled on this bridge. Open http://localhost:5741 → Terminal / Projects and enable Agent Projects.");
+
+                return toolName switch
+                {
+                    "bash_exec"      => await BashExecAsync(args, policy),
+                    "run_background" => await RunBackgroundAsync(args, policy),
+                    "wait_for"       => await WaitForAsync(args),
+                    "process_list"   => ProcessList(),
+                    "process_output" => ProcessOutput(args),
+                    "process_kill"   => await ProcessKillAsync(args),
+                    "read_file"      => ReadFile(args, policy, contextWindow),
+                    "write_file"     => WriteFile(args, policy, db),
+                    "edit_file"      => EditFile(args, policy, db),
+                    "multi_edit"     => MultiEdit(args, policy, db),
+                    "undo_file"      => UndoFile(args, policy, db),
+                    "list_dir"       => ListDir(args, policy),
+                    "glob"           => GlobFiles(args, policy),
+                    "grep"           => GrepSearch(args, policy),
+                    "git_status"     => await GitStatusAsync(args, policy),
+                    "git_diff"       => await GitDiffAsync(args, policy),
+                    "git_log"        => await GitLogAsync(args, policy),
+                    "git_stage"      => await GitStageAsync(args, policy),
+                    "git_commit"     => await GitCommitAsync(args, policy),
+                    "git_discard"    => await GitDiscardAsync(args, policy),
+                    "create_dir"     => CreateDir(args, policy),
+                    "delete_file"    => DeleteFile(args, policy, db),
+                    "delete_dir"     => DeleteDir(args, policy),
+                    "move_path"      => MovePath(args, policy, db),
+                    "project_info"   => await ProjectInfoAsync(args, policy),
+                    "run_tests"      => await RunTestsAsync(args, policy),
+                    "commands_index" => CommandsIndex(args),
+                    "install_software" => await InstallSoftwareAsync(args, policy),
+                    "system_info"    => await SystemInfoAsync(),
+                    "GetCurrentDateTime" => GetCurrentDateTime(),
+                    "SearchWeb"          => await SearchWebAsync(args, db),
+                    "Inscribe"           => await InscribeToolAsync(args),
+                    "Probe"              => await ProbeToolAsync(args),
+                    "Contemplate"        => await ContemplateToolAsync(args),
+                    "TakeScreenshot"     => await TakeScreenshotAsync(args),
+                    "http_request"       => await HttpRequestAsync(args),
+                    "read_image"         => ReadImage(args, policy),
+                    _ => Err($"Unknown built-in tool: {toolName}")
+                };
+            }
+            catch (TerminalSecurityException ex)  { return Err($"BLOCKED: {ex.Message}"); }
+            catch (FileNotFoundException ex)      { return Err($"NOT FOUND: {ex.Message}"); }
+            catch (DirectoryNotFoundException ex){ return Err($"NOT FOUND: {ex.Message}"); }
+            catch (UnauthorizedAccessException ex){ return Err($"ACCESS DENIED: {ex.Message}"); }
+            catch (Exception ex)                  { return Err($"ERROR: {ex.Message}"); }
         }
-        catch (TerminalSecurityException ex)  { return Err($"BLOCKED: {ex.Message}"); }
-        catch (FileNotFoundException ex)      { return Err($"NOT FOUND: {ex.Message}"); }
-        catch (DirectoryNotFoundException ex){ return Err($"NOT FOUND: {ex.Message}"); }
-        catch (UnauthorizedAccessException ex){ return Err($"ACCESS DENIED: {ex.Message}"); }
-        catch (Exception ex)                  { return Err($"ERROR: {ex.Message}"); }
+        finally
+        {
+            CurrentCheckpoint.Value = previous;
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

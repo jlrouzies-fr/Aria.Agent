@@ -24,6 +24,11 @@ public static partial class BridgeStatusPage
                 <span id="cap-projects-light" class="cap-light off">● DISABLED</span>
                 <button class="btn primary sm" id="cap-projects-btn" onclick="toggleCap('projects')">▶ ENABLE</button>
               </div>
+              <div style="margin-top:10px;font-size:11px;color:var(--text-dead)">
+                Edit diff feedback: <span id="cap-diff-feedback" style="color:var(--text-muted)">unknown</span>
+                — after a file mutation the model also receives the unified diff, and approval cards show it
+                beforehand (node appsettings <span style="font-family:monospace">AgentTools:DiffFeedback</span>).
+              </div>
             </div>
           </div>
           <div class="card">
@@ -134,6 +139,11 @@ public static partial class BridgeStatusPage
             _caps = { projects: !!d.projects, quickExec: !!d.quickExec };
             paintCap('projects', _caps.projects);
             paintCap('quick', _caps.quickExec);
+            const df = document.getElementById('cap-diff-feedback');
+            if (df && d.diffFeedback) {
+              df.textContent = d.diffFeedback.enabled ? ('on · cap ' + d.diffFeedback.maxChars + ' chars') : 'off';
+              df.style.color = d.diffFeedback.enabled ? 'var(--success)' : 'var(--text-dead)';
+            }
           } catch {}
         }
 

@@ -14,5 +14,8 @@ public class UserLocalSource
     // Real node-side channel name for the bridge keyRef; set only when Name was disambiguated across nodes.
     public string? ChannelName { get; set; }
 
+    /// <summary>Per-channel user override for context window, in tokens (null = use discovery/fallback).</summary>
+    public int? ContextWindow { get; set; }
+
     public User User { get; set; } = null!;
 }

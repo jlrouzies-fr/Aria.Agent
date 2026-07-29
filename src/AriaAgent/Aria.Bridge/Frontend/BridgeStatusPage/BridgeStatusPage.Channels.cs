@@ -23,6 +23,7 @@ public static partial class BridgeStatusPage
                 <div id="ch-form-label" class="subsection-title">Add New Channel</div>
                 <input id="ch-name" placeholder="name (e.g. Local LLM - Mac)" style="width:100%;margin-bottom:8px">
                 <input id="ch-url" placeholder="http://127.0.0.1:1234/v1" style="width:100%;margin-bottom:8px">
+                <input id="ch-context-window" type="number" min="0" placeholder="context window (tokens) — optional override" style="width:100%;margin-bottom:8px">
                 <input id="ch-key" type="password" placeholder="API key (optional — leave blank to keep the existing key)" style="width:100%;margin-bottom:8px" autocomplete="off">
                 <div class="section-lead" style="margin:0 0 8px">
                   Models are discovered automatically from the endpoint's <code>/models</code> API when you save —
@@ -106,6 +107,7 @@ public static partial class BridgeStatusPage
               const n = esc(c.name), nj = JSON.stringify(c.name);
               const key = c.hasKey ? '<span style="color:var(--success);font-size:10px">key ✓</span>' : '';
               const uj = JSON.stringify(c.url);
+              const cwj = JSON.stringify(c.contextWindow ?? null);
               const modelCount = (c.models||[]).length;
               const modelLbl = modelCount > 0 ? `${modelCount} model(s)` :
                 '<span style="color:var(--text-dead)">no models discovered yet</span>';
@@ -114,7 +116,7 @@ public static partial class BridgeStatusPage
                 <span style="min-width:130px;color:var(--text-bright)">${n}</span>
                 <span style="flex:1;min-width:160px;color:var(--text-muted);font-size:11px">${esc(c.url)} · ${modelLbl}</span>
                 <div style="display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap">${key}
-                  <button onclick='editCustomChannel(${nj},${uj})' style="background:transparent;border:1px solid var(--border-normal);color:var(--text-bright);${btn}">EDIT</button>
+                  <button onclick='editCustomChannel(${nj},${uj},${cwj})' style="background:transparent;border:1px solid var(--border-normal);color:var(--text-bright);${btn}">EDIT</button>
                   <button onclick='rediscoverChannelModels(${nj},${uj})' style="background:transparent;border:1px solid var(--border-normal);color:var(--text-bright);${btn}">⟳ MODELS</button>
                   <button onclick='testChannel(${nj},${uj})' style="background:transparent;border:1px solid var(--border-normal);color:var(--text-bright);${btn}">TEST</button>
                   <button onclick='deleteCustomChannel(${nj})' class="btn-danger" style="${btn}">DELETE</button>
@@ -176,9 +178,10 @@ public static partial class BridgeStatusPage
           }
         }
 
-        function editCustomChannel(name, url) {
+        function editCustomChannel(name, url, contextWindow) {
           document.getElementById('ch-name').value = name;
           document.getElementById('ch-url').value = url;
+          document.getElementById('ch-context-window').value = contextWindow ?? '';
           document.getElementById('ch-key').value = '';
           setChannelEditMode(name);
           document.getElementById('channels-msg').textContent = '';
@@ -187,6 +190,7 @@ public static partial class BridgeStatusPage
         function cancelChannelEdit() {
           document.getElementById('ch-name').value = '';
           document.getElementById('ch-url').value = '';
+          document.getElementById('ch-context-window').value = '';
           document.getElementById('ch-key').value = '';
           document.getElementById('channels-msg').textContent = '';
           setChannelEditMode(null);
@@ -231,6 +235,12 @@ public static partial class BridgeStatusPage
           const msg = document.getElementById('channels-msg');
           const name = document.getElementById('ch-name').value.trim();
           const url  = document.getElementById('ch-url').value.trim();
+          const cwRaw = document.getElementById('ch-context-window').value.trim();
+          const contextWindow = cwRaw ? parseInt(cwRaw, 10) : null;
+          if (cwRaw && (!Number.isFinite(contextWindow) || contextWindow < 0)) {
+            msg.textContent = 'Context window must be a non-negative number.';
+            return;
+          }
           const key  = document.getElementById('ch-key').value.trim();
           const targetName = editingChannelName || name;
           if (!targetName || !url) { msg.textContent = 'Name and URL are required.'; return; }
@@ -255,7 +265,7 @@ public static partial class BridgeStatusPage
           try {
             const r = await fetch('/channels/' + encodeURIComponent(targetName), {
               method: 'PUT', headers: {'Content-Type':'application/json'},
-              body: JSON.stringify({ url: finalUrl, models: [], isBridged: true })
+              body: JSON.stringify({ url: finalUrl, models: [], isBridged: true, contextWindow })
             });
             if (!r.ok) { msg.textContent = 'Error: ' + (await r.text()); return; }
             if (key) {

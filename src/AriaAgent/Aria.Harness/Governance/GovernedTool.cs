@@ -90,6 +90,22 @@ public sealed class GovernedTool : AIFunction
             {
                 if (_onApproval != null)
                 {
+                    // Prospective diff: a paused file mutation can show the human exactly what it
+                    // would change — fetched read-only from the bridge (short timeout inside the
+                    // tool). Fail-open: a preview problem must never stall the approval pause.
+                    // Seal-gated ops and non-file mutations keep the args blob.
+                    if (verdict.Severity == ToolSeverity.NeedsApproval &&
+                        ToolCategories.IsDiffPreviewable(_inner.Name) &&
+                        _inner is IDiffPreviewTool previewable)
+                    {
+                        try
+                        {
+                            if (await previewable.FetchDiffPreviewAsync(dict, cancellationToken) is { } diff)
+                                verdict = verdict with { Diff = diff };
+                        }
+                        catch { /* no diff — the approval card falls back to the args preview */ }
+                    }
+
                     var approved = await _onApproval(verdict, cancellationToken);
                     if (!approved)
                     {
@@ -121,6 +137,7 @@ public sealed class GovernedTool : AIFunction
             {
                 resultText  = fm.Text;
                 metadataJson = fm.MetadataJson;
+                resultText  = ApplyVerifyNudge(resultText, dict, succeeded: !fm.IsError);
                 _onToolComplete?.Invoke(_inner.Name, resultText, null, null, metadataJson);
                 return resultText;
             }
@@ -145,9 +162,19 @@ public sealed class GovernedTool : AIFunction
                 return mm.Text;
             }
 
+            // Any other bridge tool result arrives wrapped with the bridge's own failure flag;
+            // unwrap it so the model and the UI see the same plain text as before.
+            if (result is BridgeToolResult br)
+            {
+                resultText = ApplyVerifyNudge(br.Text, dict, succeeded: !br.IsError);
+                _onToolComplete?.Invoke(_inner.Name, resultText, null, null, null);
+                return resultText;
+            }
+
             resultText = result as string ?? JsonSerializer.Serialize(result, DisplayJson);
+            resultText = ApplyVerifyNudge(resultText, dict, succeeded: true);
             _onToolComplete?.Invoke(_inner.Name, resultText, null, null, null);
-            return result;
+            return result is string ? resultText : result;
         }
         catch (Exception ex) when (TryGetApprovalSessionId(ex, out var sessionId))
         {
@@ -179,6 +206,44 @@ public sealed class GovernedTool : AIFunction
             throw;
         }
     }
+
+    // ── Post-mutation verify nudge ────────────────────────────────────────────────────────────
+    // After the agent edits files, nothing prompts it to check its work — the turn just continues
+    // on faith. So while a turn accumulates successful file mutations with no build/test run, the
+    // mutation's OWN result earns a one-line reminder (at 1, then every 5). Advisory only: never
+    // blocks, never fails a call, never counts against budgets. The nudge rides the same result
+    // text the bridge's diff feedback appends to — both are plain suffixes and compose.
+    private string ApplyVerifyNudge(string resultText, Dictionary<string, JsonElement> args, bool succeeded)
+    {
+        // Verification marks apply to every completed call, nudge or not: a PASSED run_tests (any
+        // kind — test/build/lint runs share the structured header) or a bash_exec build/test
+        // command silences the nudge for the rest of the turn.
+        if (_inner.Name == "run_tests" && IsPassedTestRun(resultText))
+            _ctx.MarkVerificationRan();
+        else if (_inner.Name == "bash_exec" &&
+                 args.TryGetValue("command", out var cmd) &&
+                 ToolCategories.IsVerificationCommand(cmd.ValueKind == JsonValueKind.String ? cmd.GetString() : null))
+            _ctx.MarkVerificationRan();
+
+        if (!succeeded || !ToolCategories.IsFileMutation(_inner.Name))
+            return resultText;
+
+        // The counter tracks every successful mutation even with the toggle off — only the nudge
+        // append is gated. Thresholds: 1, then every 5 (1, 6, 11, …).
+        var n = _ctx.RecordMutation();
+        if (!_ctx.Policy.VerifyNudge || _ctx.VerificationRan || (n != 1 && (n - 1) % 5 != 0))
+            return resultText;
+
+        return resultText + $"\n\n◈ {n} file(s) mutated this turn, no build/test run yet — " +
+            "consider verifying (run_tests, or project_info to infer the command).";
+    }
+
+    // The bridge's run_tests renders a structured header ("◈ TEST RUN [cmd] — PASSED (exit 0, …)")
+    // for every completed run; a timed-out suite converts to a background job and returns a JSON
+    // note instead, so only a run that actually finished AND passed matches here.
+    private static bool IsPassedTestRun(string text) =>
+        text.StartsWith("◈ TEST RUN", StringComparison.Ordinal) &&
+        text.Contains("— PASSED", StringComparison.Ordinal);
 
     // The Layer B seal refusal reaches a tool in one of two shapes: a typed
     // ContextApprovalRequiredException (the /tools/call LocalRest path) OR — on the LLM/BridgeRequest

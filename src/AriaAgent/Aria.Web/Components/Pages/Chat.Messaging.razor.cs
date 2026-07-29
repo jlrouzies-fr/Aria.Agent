@@ -215,6 +215,18 @@ public partial class Chat
             return;
         }
 
+        // "/rewind …" also runs locally: it reverts the most recent mutating turn (or nth recent)
+        // captured in the transcript's file-mutation metadata. It must never reach the agent.
+        if (userText.Equals("/rewind", StringComparison.OrdinalIgnoreCase) ||
+            userText.StartsWith("/rewind ", StringComparison.OrdinalIgnoreCase))
+        {
+            _input = "";
+            await ClosePickersAsync();
+            await HandleRewindCommandAsync(userText["/rewind".Length..]);
+            await FocusInputAsync();
+            return;
+        }
+
         // "/scope …" (Wave 5) also runs locally: it lists the effective scope, asks the node for a
         // session path expansion, or revokes one — it must never reach the agent as a chat message.
         if (userText.Equals("/scope", StringComparison.OrdinalIgnoreCase) ||
@@ -574,9 +586,21 @@ public partial class Chat
         // crossed the session threshold, summarise now and continue on the fresh session. Uses the
         // reported prompt-token count when the source returned usage, else a char-based estimate.
         if (!run.WasInterrupted &&
-            AutoCompaction.ShouldCompact(run.Reply.InputTokens, TranscriptChars(), SessionState.AutoCompactThreshold))
+            AutoCompaction.ShouldCompact(run.Reply.InputTokens, TranscriptChars(), SessionState.AutoCompactThreshold, _effectiveContextWindow))
         {
             await AutoCompactAsync();
+        }
+
+        // User-facing warning when estimated usage exceeds a known context window. Not injected into
+        // the model — it is purely a UI hint to compact or switch model.
+        if (_effectiveContextWindow is { Assumed: false } knownWindow)
+        {
+            var estimated = run.Reply.InputTokens ?? AutoCompaction.EstimateTokens(TranscriptChars());
+            var usedPct = (double)estimated / knownWindow.Tokens * 100;
+            _contextWindowWarning = usedPct > 100
+                ? $"Context exceeded — estimated {estimated:N0} tokens is above the known {knownWindow.Tokens:N0}-token window. Replies may degrade; compact or switch model."
+                : null;
+            if (_contextWindowWarning != null) await InvokeAsync(StateHasChanged);
         }
 
         // Only auto-send if the user explicitly queued via Enter — never from _input

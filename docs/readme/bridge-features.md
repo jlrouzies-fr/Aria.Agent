@@ -103,6 +103,7 @@ The node exposes native shell, file, command-index, datetime, and web-search too
 | `system_info` | Read-only environment recon: OS/arch, shell, CPU/RAM, disk free, available package managers and runtimes |
 | `multi_edit` | Batch of exact-string edits to one file in a single call (unique-at-apply-time, atomic, one undo entry) |
 | `undo_file` | Restore the most recent undo snapshot for a file (stack semantics; itself undoable) |
+| `/rewind` support | Bridge stores per-turn checkpoints on `FileUndo` rows so the web chat can revert a whole mutating turn atomically, with per-file skip reporting when hashes no longer match |
 | `process_list` / `process_output` / `process_kill` | Manage background jobs started by `bash_exec background:true` (kill only works on registry-tracked pids) |
 | `run_background` | Start a long-running process (dev server, watcher) — returns immediately with pid/log; same command gate as `bash_exec` |
 | `wait_for` | Wait for a TCP port, a URL to respond, or a background job's log to match a pattern (readiness probe) |

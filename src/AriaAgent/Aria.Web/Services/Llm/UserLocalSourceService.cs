@@ -57,14 +57,15 @@ public class UserLocalSourceService(BridgeChannelClient channels)
                 : c.Name;
             return new UserLocalSource
             {
-                Id           = ++i,
-                Name         = display,
-                ChannelName  = ambiguous ? c.Name : null,
-                Url          = c.Url,
-                ModelsJson   = JsonSerializer.Serialize(c.Models),
-                IsBridged    = c.IsBridged,
-                SortOrder    = i,
-                BridgeNodeId = c.BridgeNodeId,
+                Id            = ++i,
+                Name          = display,
+                ChannelName   = ambiguous ? c.Name : null,
+                Url           = c.Url,
+                ModelsJson    = JsonSerializer.Serialize(c.Models),
+                IsBridged     = c.IsBridged,
+                SortOrder     = i,
+                BridgeNodeId  = c.BridgeNodeId,
+                ContextWindow = c.ContextWindow,
             };
         }).ToList();
     }
@@ -97,12 +98,13 @@ public class UserLocalSourceService(BridgeChannelClient channels)
 
         return new ModelSource
         {
-            Name         = src.Name,
-            Url          = src.Url,
-            Models       = models,
-            IsBridged    = src.IsBridged,
-            BridgeNodeId = src.BridgeNodeId,
-            ChannelName  = src.ChannelName,
+            Name          = src.Name,
+            Url           = src.Url,
+            Models        = models,
+            IsBridged     = src.IsBridged,
+            BridgeNodeId  = src.BridgeNodeId,
+            ChannelName   = src.ChannelName,
+            ContextWindow = src.ContextWindow,
         };
     }
 }

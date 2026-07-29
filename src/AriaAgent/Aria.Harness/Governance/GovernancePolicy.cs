@@ -54,6 +54,15 @@ public sealed record GovernancePolicy(
     /// </summary>
     public bool ApproveCrossNodeCalls { get; init; }
 
+    /// <summary>
+    /// Post-mutation verify nudge: while a turn accumulates successful file mutations without a
+    /// build/test verification, GovernedTool appends a one-line "consider verifying" reminder to
+    /// the mutation's own result (at 1, then every 5). Advisory only — never blocks, never fails
+    /// a call, never counts against budgets. Default ON in every mode; hosts layer the
+    /// <c>Governance:VerifyNudge</c> config toggle on top via <c>with</c>.
+    /// </summary>
+    public bool VerifyNudge { get; init; } = true;
+
     /// <summary>Per-session budget overrides layered on top of the mode's defaults — a null leaves
     /// the mode's own limit in place. Session-scoped only; never persisted.</summary>
     public GovernancePolicy WithBudgetOverrides(int? maxToolCalls, int? maxFileReads) =>

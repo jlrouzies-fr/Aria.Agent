@@ -1,4 +1,5 @@
 using Aria.Agent;
+using Aria.Harness.Context;
 using Aria.Harness.Formats;
 using Aria.Web.Data;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +18,7 @@ public sealed class WebFormatCache : IFormatCache
     private readonly Dictionary<string, ThinkingFormat> _thinking = new();
     private readonly Dictionary<string, ToolCallFormat> _toolCalls = new();
     private readonly Dictionary<string, VisionSupport> _vision = new();
+    private readonly Dictionary<string, ContextWindow> _contextWindows = new();
     private readonly HashSet<string> _confirmed = new();
     private readonly SemaphoreSlim _lock = new(1, 1);
     private bool _loaded;
@@ -40,7 +42,7 @@ public sealed class WebFormatCache : IFormatCache
         try
         {
             _thinking[key] = format;
-            await PersistAsync(sourceUrl, modelId, format, null, null, ct);
+            await PersistAsync(sourceUrl, modelId, format, null, null, null, ct);
         }
         finally { _lock.Release(); }
     }
@@ -59,7 +61,7 @@ public sealed class WebFormatCache : IFormatCache
         try
         {
             _vision[key] = support;
-            await PersistAsync(sourceUrl, modelId, null, null, support, ct);
+            await PersistAsync(sourceUrl, modelId, null, null, support, null, ct);
         }
         finally { _lock.Release(); }
     }
@@ -78,7 +80,26 @@ public sealed class WebFormatCache : IFormatCache
         try
         {
             _toolCalls[key] = format;
-            await PersistAsync(sourceUrl, modelId, null, format, null, ct);
+            await PersistAsync(sourceUrl, modelId, null, format, null, null, ct);
+        }
+        finally { _lock.Release(); }
+    }
+
+    public async Task<ContextWindow?> GetContextWindowAsync(string sourceUrl, string modelId, CancellationToken ct = default)
+    {
+        await EnsureLoadedAsync(ct);
+        var key = Key(sourceUrl, modelId);
+        return _contextWindows.TryGetValue(key, out var value) ? value : null;
+    }
+
+    public async Task SetContextWindowAsync(string sourceUrl, string modelId, ContextWindow window, CancellationToken ct = default)
+    {
+        var key = Key(sourceUrl, modelId);
+        await _lock.WaitAsync(ct);
+        try
+        {
+            _contextWindows[key] = window;
+            await PersistAsync(sourceUrl, modelId, null, null, null, window, ct);
         }
         finally { _lock.Release(); }
     }
@@ -97,6 +118,7 @@ public sealed class WebFormatCache : IFormatCache
             _thinking.Clear();
             _toolCalls.Clear();
             _vision.Clear();
+            _contextWindows.Clear();
             return count;
         }
         finally { _lock.Release(); }
@@ -125,6 +147,9 @@ public sealed class WebFormatCache : IFormatCache
             foreach (var key in _vision.Keys
                          .Where(k => k.Contains(modelIdContains, StringComparison.OrdinalIgnoreCase)).ToList())
                 _vision.Remove(key);
+            foreach (var key in _contextWindows.Keys
+                         .Where(k => k.Contains(modelIdContains, StringComparison.OrdinalIgnoreCase)).ToList())
+                _contextWindows.Remove(key);
 
             return rows.Count;
         }
@@ -181,6 +206,7 @@ public sealed class WebFormatCache : IFormatCache
             _thinking.Remove(key);
             _toolCalls.Remove(key);
             _vision.Remove(key);
+            _contextWindows.Remove(key);
             _confirmed.Remove(key);
 
             await using var db = await _dbFactory.CreateDbContextAsync(ct);
@@ -221,6 +247,9 @@ public sealed class WebFormatCache : IFormatCache
                 if (Enum.TryParse<VisionSupport>(entry.VisionSupport, out var vs)
                     && vs != VisionSupport.Unknown)
                     _vision[key] = vs;
+
+                if (entry.ContextWindowTokens.HasValue)
+                    _contextWindows[key] = new ContextWindow(entry.ContextWindowTokens.Value, entry.ContextWindowAssumed);
             }
 
             _loaded = true;
@@ -229,12 +258,13 @@ public sealed class WebFormatCache : IFormatCache
     }
 
     private async Task PersistAsync(string sourceUrl, string modelId,
-        ThinkingFormat? thinking, ToolCallFormat? toolCall, VisionSupport? vision, CancellationToken ct)
+        ThinkingFormat? thinking, ToolCallFormat? toolCall, VisionSupport? vision, ContextWindow? window, CancellationToken ct)
     {
         bool hasThinking = thinking.HasValue && thinking != ThinkingFormat.None && thinking != ThinkingFormat.Unknown;
         bool hasToolCall = toolCall.HasValue && toolCall != ToolCallFormat.Unknown;
         bool hasVision   = vision.HasValue && vision != VisionSupport.Unknown;
-        if (!hasThinking && !hasToolCall && !hasVision) return;
+        bool hasWindow   = window is not null;
+        if (!hasThinking && !hasToolCall && !hasVision && !hasWindow) return;
 
         try
         {
@@ -251,6 +281,11 @@ public sealed class WebFormatCache : IFormatCache
             if (hasThinking) entry.ThinkingFormat = thinking!.Value.ToString();
             if (hasToolCall) entry.ToolCallFormat = toolCall!.Value.ToString();
             if (hasVision)   entry.VisionSupport  = vision!.Value.ToString();
+            if (hasWindow && window is not null)
+            {
+                entry.ContextWindowTokens = window.Tokens;
+                entry.ContextWindowAssumed = window.Assumed;
+            }
             entry.DetectedAt = DateTime.UtcNow;
 
             await db.SaveChangesAsync(ct);

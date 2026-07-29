@@ -28,7 +28,7 @@ public static class ChatCatalog
         new("/scope",   "[add <path>|remove <path>]",
                           "Show effective filesystem scope; ask the node for a time-boxed session path expansion.", "Session", CatalogStatus.Available),
         new("/resume",  "",          "Reload a previous cogitation.",                                       "Session",  CatalogStatus.Planned),
-        new("/rewind",  "",          "Checkpoint-restore the conversation to an earlier turn.",             "Session",  CatalogStatus.Planned),
+        new("/rewind",  "[<n>]",     "Revert the most recent mutating turn, or the nth recent one.",       "Session",  CatalogStatus.Available),
         new("/export",  "",          "Dump the transcript to markdown.",                                    "Session",  CatalogStatus.Planned),
         new("/cost",    "",          "Show token + spend for the session.",                                 "Session",  CatalogStatus.Planned),
 
@@ -50,7 +50,7 @@ public static class ChatCatalog
         new("/review",  "",          "Review the working diff.",                                            "Dev",      CatalogStatus.Planned),
         new("/commit",  "",          "Draft a commit message from the diff.",                               "Dev",      CatalogStatus.Planned),
         new("/diff",    "",          "Show working changes inline.",                                        "Dev",      CatalogStatus.Planned),
-        new("/test",    "",          "Run tests and feed results back.",                                    "Dev",      CatalogStatus.Planned),
+        new("/test",    "",          "Run tests and feed results back.",                                    "Dev",      CatalogStatus.Available),
 
         // ── Aria-native ──────────────────────────────────────────────────────
         new("/fleet",   "",          "Open the Fleet panel — every enrolled cogitator node.",              "Aria",     CatalogStatus.Available),

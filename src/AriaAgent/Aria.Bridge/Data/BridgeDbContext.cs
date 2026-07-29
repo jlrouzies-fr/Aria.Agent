@@ -124,6 +124,7 @@ public class BridgeDbContext(DbContextOptions<BridgeDbContext> options, VaultEnc
             e.ToTable("FileUndo");
             e.HasKey(u => u.Id);
             e.HasIndex(u => u.CreatedAt);
+            e.HasIndex(u => u.Checkpoint);
         });
 
         b.Entity<BridgeHiveCollective>(e =>
@@ -558,6 +559,9 @@ public class FileUndo
     public string?  PreContent      { get; set; }                // null when the file did not exist (create)
     public string   PostHash        { get; set; } = "";
     public string   ToolName        { get; set; } = "";
+    /// <summary>Optional turn id that caused this mutation (cogitation run checkpoint). Null for
+    /// older rows, Explorer user edits, and Quick Exec — excluded from <c>/rewind</c>.</summary>
+    public string?  Checkpoint      { get; set; }
     public DateTime CreatedAt       { get; set; } = DateTime.UtcNow;
     public DateTime? RevertedAt     { get; set; }
 }
@@ -627,6 +631,12 @@ public class BridgeChannel
     public string ModelsJson { get; set; } = "[]";
     public bool   IsBridged  { get; set; } = true;
     public int    SortOrder  { get; set; }
+
+    /// <summary>
+    /// Optional user override for the context window of models served by this channel, in tokens.
+    /// Wins over provider discovery and the fallback assumption.
+    /// </summary>
+    public int?   ContextWindow { get; set; }
 }
 
 /// <summary>

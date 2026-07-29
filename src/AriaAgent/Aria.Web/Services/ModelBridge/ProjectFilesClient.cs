@@ -300,6 +300,26 @@ public class ProjectFilesClient(ModelBridgeRegistry registry, ContextApprovalSer
         return null;
     }
 
+    /// <summary>Reverts all unreverted file mutations recorded under one checkpoint (usually one
+    /// agent turn). Returns null on failure.</summary>
+    public async Task<RevertCheckpointResult?> RevertCheckpointAsync(
+        string userId, string checkpoint, string[] allowedPaths, string? nodeId = null, string? sessionId = null)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(new { checkpoint, allowedPaths }, _json);
+            var result = await SendWithApprovalAsync(userId, "/project-files/revert-checkpoint", body, nodeId, sessionId);
+            if (result?.StatusCode == 200 && result.Value.Body != null)
+            {
+                var resp = JsonSerializer.Deserialize<RevertCheckpointResponse>(result.Value.Body, _json);
+                if (resp != null)
+                    return new RevertCheckpointResult(resp.Checkpoint, resp.RewindCheckpoint, resp.Reverted, resp.Skipped, resp.Missing, resp.Results);
+            }
+        }
+        catch { }
+        return null;
+    }
+
     private record ListResponse(List<ProjectFileEntry> Files, int Scanned, bool Truncated);
     private record TreeResponse(List<string> Files, List<string> Dirs, int Scanned, bool Truncated);
     private record ReadResponse(string Path, string Content, bool Truncated, string Hash);
@@ -308,9 +328,24 @@ public class ProjectFilesClient(ModelBridgeRegistry registry, ContextApprovalSer
     private record GitRunResponse(string Output, bool Truncated);
     private record RevertResponse(string Path, bool Reverted, string? ReverseDiff);
     private record RevertErrorResponse(string Error, bool HashMismatch);
+    private record RevertCheckpointResponse(
+        string Checkpoint,
+        string RewindCheckpoint,
+        int Reverted,
+        int Skipped,
+        int Missing,
+        List<RevertCheckpointEntry> Results);
 }
 
 public record RevertResult(string? Path, bool Reverted, string? ReverseDiff, bool HashMismatch = false);
+public record RevertCheckpointResult(
+    string Checkpoint,
+    string RewindCheckpoint,
+    int Reverted,
+    int Skipped,
+    int Missing,
+    List<RevertCheckpointEntry> Results);
+public record RevertCheckpointEntry(string UndoToken, string Path, string Status, string Detail);
 
 public record TerminalProject(string Name, string Path, string Description, string? NodeId = null, string? Platform = null);
 public record ProjectFileEntry(string RelPath, string AbsPath);

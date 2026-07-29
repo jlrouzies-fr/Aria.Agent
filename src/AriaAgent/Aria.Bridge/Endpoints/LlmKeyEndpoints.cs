@@ -364,8 +364,18 @@ public static class LlmKeyEndpoints
             var thinkingTask = Aria.Shared.FormatProber.ProbeThinkingAsync(targetUrl, req.Model, key);
             var toolCallTask = Aria.Shared.FormatProber.ProbeToolCallAsync(targetUrl, req.Model, key);
             var visionTask   = Aria.Shared.FormatProber.ProbeVisionAsync(targetUrl, req.Model, key);
-            await Task.WhenAll(thinkingTask, toolCallTask, visionTask);
-            return Results.Ok(new { thinking = thinkingTask.Result, toolCall = toolCallTask.Result, vision = visionTask.Result });
+            var contextTask  = Aria.Shared.ContextWindowProber.ProbeAsync(targetUrl, req.Model, key);
+            await Task.WhenAll(thinkingTask, toolCallTask, visionTask, contextTask);
+
+            int? contextWindow = contextTask.Result;
+            return Results.Ok(new
+            {
+                thinking = thinkingTask.Result,
+                toolCall = toolCallTask.Result,
+                vision = visionTask.Result,
+                contextWindow,
+                contextWindowAssumed = !contextWindow.HasValue,
+            });
         });
 
         // Voice transcription: the browser POSTs audio straight here (multipart). The bridge injects

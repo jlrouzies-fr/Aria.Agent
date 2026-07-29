@@ -350,8 +350,16 @@ public partial class Chat
             case "/vigil":   SessionState.OpenVigilModal();           break;
             case "/governance": await HandleGovernanceCommandAsync(""); break;
             case "/scope":      await HandleScopeCommandAsync("");      break;
+            case "/rewind":     await HandleRewindCommandAsync("");     break;
+            // "/test" runs nothing locally — it's a prompt shortcut that sends a directive so the
+            // agent runs its run_tests builtin and reports the structured result.
+            case "/test":
+                _input = "Run the project's tests now using the run_tests tool and report back: overall outcome, pass/fail counts, and each failing test with its file:line. Do not modify any code yet.";
+                await SendAsync();
+                return;
             case "/vox":     await ToggleVoxAsync();                  break;
             case "/wargame": Nav.NavigateTo("/wargame");             break;
+            case "/fleet":   Nav.NavigateTo("/fleet");               break;
         }
 
         await FocusInputAsync();

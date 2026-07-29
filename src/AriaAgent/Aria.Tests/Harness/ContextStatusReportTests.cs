@@ -66,4 +66,38 @@ public class ContextStatusReportTests
 
         Assert.Contains("0.0% of the threshold used (100.0% headroom)", report);
     }
+
+    [Fact]
+    public void KnownWindow_ReportedWithUsage()
+    {
+        var report = ContextStatusReport.Build(new ContextStatusSnapshot(
+            LastInputTokens: 10_000, TranscriptChars: 0, ThresholdOverride: null,
+            MessageCount: 2, ToolCallCount: 1, Window: new ContextWindow(20_000, false)));
+
+        Assert.Contains("Context window: 20,000 tokens (known)", report);
+        Assert.Contains("Context window usage: 50.0%", report);
+        Assert.Contains("Auto-compact threshold: 16,000 tokens (derived from known window)", report);
+    }
+
+    [Fact]
+    public void AssumedWindow_ReportedAsAssumed()
+    {
+        var report = ContextStatusReport.Build(new ContextStatusSnapshot(
+            LastInputTokens: 10_000, TranscriptChars: 0, ThresholdOverride: null,
+            MessageCount: 2, ToolCallCount: 1, Window: new ContextWindow(100_000, true)));
+
+        Assert.Contains("Context window: 100,000 tokens (assumed)", report);
+        Assert.Contains("Auto-compact threshold: 100,000 tokens (default)", report);
+    }
+
+    [Fact]
+    public void NoWindow_ReportedUnknown()
+    {
+        var report = ContextStatusReport.Build(new ContextStatusSnapshot(
+            LastInputTokens: 5_000, TranscriptChars: 0, ThresholdOverride: null,
+            MessageCount: 1, ToolCallCount: 0));
+
+        Assert.Contains("Context window: unknown", report);
+        Assert.Contains("Auto-compact threshold: 100,000 tokens (default)", report);
+    }
 }

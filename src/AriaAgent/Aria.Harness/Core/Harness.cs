@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Aria.Agent;
 using Aria.Harness.Bridge;
+using Aria.Harness.Context;
 using Aria.Harness.Formats;
 using Aria.Harness.Governance;
 using Aria.Harness.Models;
@@ -47,6 +48,10 @@ public sealed class Harness : IHarness
                      ?? (sourceForLlm?.IsBridged == true ? sourceForLlm.BridgeNodeId : null)
                      ?? context.BridgeNodeId;
         context.BridgeNodeId = llmNodeId;
+
+        context.ContextWindow = await ResolveContextWindowAsync(sourceForLlm, options.SelectedModel, context, ct);
+        if (context.ContextWindow is { } known)
+            options.OnProgress?.Invoke($"// CONTEXT: {known.Tokens:N0} tokens ({(known.Assumed ? "assumed" : "known")})");
 
         var chatClientPair = BuildChatClient(options, context, llmNodeId);
         if (chatClientPair == null)
@@ -400,6 +405,10 @@ public sealed class Harness : IHarness
         var baseInstructions = options.InstructionsOverride ?? AgentDefaults.SystemMessage;
         if (hasTerminalTools)
             baseInstructions += BuildTerminalAddendum(terminalProjects, terminalNodePlatforms, options.ActiveProjectPath);
+        // run_tests rides the same bridge manifest as the terminal tools but only exists on bridges
+        // new enough to ship it — gate on actual registration so the prompt never names an absent tool.
+        if (tools.Any(t => t.Name == "run_tests"))
+            baseInstructions += RunTestsAddendum;
         // Gated on actual tool registration (not on the user's toggle): the memory tools also vanish
         // when the bridge is down, and the prompt must never reference absent tools.
         if (hasMemoryTools)
@@ -577,6 +586,17 @@ public sealed class Harness : IHarness
     }
 
     // ── Memory addendum ───────────────────────────────────────────────────────
+
+    // Injected only when the bridge actually registered run_tests this session (see the gate at the
+    // assembly site). Steers the model to the structured runner for the edit → verify → fix loop —
+    // raw bash_exec output made the model re-read and grep failure dumps itself.
+    private const string RunTestsAddendum = """
+
+
+        ## Structured Test & Build Runs
+
+        Prefer **run_tests** over bash_exec for build/test/lint/run verification: it infers the project's own command (or takes an explicit one), maps a plain test-name filter to the ecosystem's native flag, and returns structured results — pass/fail counts plus failing test names with file:line — instead of a raw stdout dump. Use bash_exec only for commands run_tests cannot express.
+        """;
 
     // Injected only when the memory tools were actually registered this session (see the hasMemoryTools
     // gate at the assembly site). Gives the model concrete save/recall triggers — the tool descriptions
@@ -851,6 +871,49 @@ public sealed class Harness : IHarness
         return support;
     }
 
+    /// <summary>
+    /// Resolves the effective context window for a source+model using the precedence order:
+    /// 1) user override on the bridge channel configuration, 2) provider discovery cached from the
+    /// format probe, 3) well-known cloud model catalog, 4) the 100k fallback marked assumed.
+    /// </summary>
+    public async Task<ContextWindow> ResolveContextWindowAsync(
+        ModelSource? source, string? modelId, HarnessContext context, CancellationToken ct = default)
+    {
+        var model = modelId ?? source?.Models.FirstOrDefault() ?? "";
+        if (source == null || string.IsNullOrEmpty(model))
+            return ContextWindow.AssumedDefault;
+
+        // 1. User override from the bridge channel configuration wins over everything.
+        if (source.ContextWindow.HasValue)
+        {
+            _logger.LogInformation("Context window for {Source}/{Model}: {Tokens} (channel override)", source.Name, model, source.ContextWindow.Value);
+            return new ContextWindow(source.ContextWindow.Value, false);
+        }
+
+        // 2. Cached provider discovery (populated by /llm/detect-format for bridged sources).
+        var cached = await _runtime.FormatCache.GetContextWindowAsync(source.Url, model, ct);
+        if (cached is { } cachedWindow)
+        {
+            _logger.LogInformation("Context window for {Source}/{Model}: {Tokens} (cached, assumed={Assumed})",
+                source.Name, model, cachedWindow.Tokens, cachedWindow.Assumed);
+            return cachedWindow;
+        }
+
+        // 3. For public/cloud providers, consult the static well-known model catalog.
+        if (source.IsPublicProvider)
+        {
+            if (ContextWindowCatalog.TryGetKnownTokens(model) is { } knownTokens)
+            {
+                _logger.LogInformation("Context window for {Source}/{Model}: {Tokens} (catalog)", source.Name, model, knownTokens);
+                return new ContextWindow(knownTokens, false);
+            }
+        }
+
+        // 4. Fallback: today's behaviour, explicitly assumed.
+        _logger.LogInformation("Context window for {Source}/{Model}: 100000 (assumed fallback)", source.Name, model);
+        return ContextWindow.AssumedDefault;
+    }
+
     private async Task<VisionSupport> RunVisionDetectionAsync(
         string? selectedSourceName, string? modelId, HarnessContext context, CancellationToken ct)
     {
@@ -913,6 +976,16 @@ public sealed class Harness : IHarness
             {
                 await _runtime.FormatCache.SetVisionSupportAsync(source.Url, modelId ?? source.Models.FirstOrDefault() ?? "", visionFmt, ct);
                 _logger.LogInformation("[FormatDetect] Bridge vision probe result: {Format}", visionFmt);
+            }
+
+            if (doc.RootElement.TryGetProperty("contextWindow", out var cw) &&
+                cw.ValueKind == JsonValueKind.Number)
+            {
+                var tokens = cw.GetInt32();
+                var assumed = doc.RootElement.TryGetProperty("contextWindowAssumed", out var cwa)
+                              && cwa.ValueKind == JsonValueKind.True;
+                await _runtime.FormatCache.SetContextWindowAsync(source.Url, model, new ContextWindow(tokens, assumed), ct);
+                _logger.LogInformation("[FormatDetect] Bridge context-window probe result: {Tokens} (assumed={Assumed})", tokens, assumed);
             }
 
             return thinkFmt;

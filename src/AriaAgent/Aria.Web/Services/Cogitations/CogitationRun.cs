@@ -28,6 +28,10 @@ public sealed class CogitationRun : ICogitationStreamSink
     public string? AgentModel      { get; }
     public DateTime StartedUtc     { get; } = DateTime.UtcNow;
 
+    /// <summary>Per-turn FileUndo checkpoint id minted at run start — stamped onto bridge mutations
+    /// so <c>/rewind</c> can revert the whole turn. Null until the run loop begins.</summary>
+    public string? CheckpointId { get; set; }
+
     public AIAgent               Agent    { get; }
     public AgentSession           Session  { get; }
     public CogitationStreamRouter Router   { get; }

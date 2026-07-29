@@ -56,6 +56,22 @@ public static class ToolEndpoints
             }
         });
 
+        // Read-only twin of /tools/call for the built-in file-mutation tools: returns the unified
+        // diff the call WOULD produce (same policy resolution and scope enforcement, nothing
+        // written). Drives the prospective-diff approval card in the web UI; any other tool (or a
+        // proxied MCP server) answers "no-preview" so the caller falls back to the args preview.
+        app.MapPost("/tools/preview", async (ToolsCallRequest req, BridgeDbContext db) =>
+        {
+            if (req.Command != "__aria_builtin__")
+                return Results.Ok(new BuiltinTools.ToolPreviewResponse(false, null, false, "no-preview"));
+
+            var policy = await NodeTerminalPolicy.ResolveBuiltinPolicyAsync(db, req.Policy, req.SessionId);
+            var result = BuiltinTools.Preview(req.ToolName, req.ToolArguments, policy);
+            BridgeLogger.Log(result.Ok ? "INFO" : "WARN",
+                $"Previewed built-in '{req.ToolName}' (read-only) → ok={result.Ok}{(result.Truncated ? " (truncated)" : "")}{(result.Reason != null ? $" — {result.Reason}" : "")}");
+            return Results.Ok(result);
+        });
+
         // Call a named tool on a local MCP server.
         // ToolArguments are JsonElement values so they round-trip without type loss.
         app.MapPost("/tools/call", async (ToolsCallRequest req, SessionStore store, BridgeDbContext db) =>
@@ -68,7 +84,7 @@ public static class ToolEndpoints
                 // and git endpoints: node declared paths (∪ this session's node-signed grants) are
                 // the maximum; the server-supplied policy may only narrow them, never widen.
                 var policy = await NodeTerminalPolicy.ResolveBuiltinPolicyAsync(db, req.Policy, req.SessionId);
-                var result = await BuiltinTools.InvokeAsync(req.ToolName, req.ToolArguments, policy, db);
+                var result = await BuiltinTools.InvokeAsync(req.ToolName, req.ToolArguments, policy, db, req.ContextWindow, req.Checkpoint);
                 BridgeLogger.Log(result.IsError ? "WARN" : "INFO",
                     $"Built-in '{req.ToolName}' returned {result.Text.Length} chars{(result.IsError ? " (isError=True)" : "")}");
                 return Results.Ok(result);

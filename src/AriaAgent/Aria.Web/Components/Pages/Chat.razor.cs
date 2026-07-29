@@ -1,4 +1,5 @@
 using Aria.Agent;
+using Aria.Harness.Context;
 using Aria.Shared;
 using Aria.Web.Data;
 using Aria.Web.Services.Chat;
@@ -85,6 +86,8 @@ public partial class Chat : ICogitationStreamSink
     private CancellationTokenSource? _greetingCts;
     private string?       _agentSource;
     private string?       _agentModel;
+    private ContextWindow? _effectiveContextWindow;
+    private string?       _contextWindowWarning;
     private string?       _lastUserId;
     private int?          _lastSubAgentId;
     // Owns the currently-open cogitation (reopen path). Distinct from the globally active sub-agent.
@@ -374,6 +377,8 @@ public partial class Chat : ICogitationStreamSink
         _session          = null;
         _agentSource      = null;
         _agentModel       = null;
+        _effectiveContextWindow = null;
+        _contextWindowWarning   = null;
         _activeCogAgent   = null;
         _lastSubAgentId   = SessionState.ActiveSubAgent?.Id;
         _isStreaming      = false;

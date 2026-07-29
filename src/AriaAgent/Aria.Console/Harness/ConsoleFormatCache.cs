@@ -1,4 +1,5 @@
 using Aria.Agent;
+using Aria.Harness.Context;
 using Aria.Harness.Formats;
 
 namespace Aria.Console.Harness;
@@ -11,6 +12,7 @@ public sealed class ConsoleFormatCache : IFormatCache
     private readonly Dictionary<string, ThinkingFormat> _thinking = new();
     private readonly Dictionary<string, ToolCallFormat> _toolCalls = new();
     private readonly Dictionary<string, VisionSupport> _vision = new();
+    private readonly Dictionary<string, ContextWindow> _contextWindows = new();
 
     public Task<ThinkingFormat?> GetThinkingFormatAsync(string sourceUrl, string modelId, CancellationToken ct = default)
     {
@@ -52,6 +54,18 @@ public sealed class ConsoleFormatCache : IFormatCache
         return Task.CompletedTask;
     }
 
+    public Task<ContextWindow?> GetContextWindowAsync(string sourceUrl, string modelId, CancellationToken ct = default)
+    {
+        var key = Key(sourceUrl, modelId);
+        return Task.FromResult<ContextWindow?>(_contextWindows.TryGetValue(key, out var value) ? value : null);
+    }
+
+    public Task SetContextWindowAsync(string sourceUrl, string modelId, ContextWindow window, CancellationToken ct = default)
+    {
+        _contextWindows[Key(sourceUrl, modelId)] = window;
+        return Task.CompletedTask;
+    }
+
     private readonly HashSet<string> _confirmed = new();
 
     public Task ConfirmFormatsAsync(string sourceUrl, string modelId, ThinkingFormat thinking, ToolCallFormat toolCall, CancellationToken ct = default)
@@ -74,6 +88,7 @@ public sealed class ConsoleFormatCache : IFormatCache
         _thinking.Remove(key);
         _toolCalls.Remove(key);
         _vision.Remove(key);
+        _contextWindows.Remove(key);
         _confirmed.Remove(key);
         return Task.CompletedTask;
     }
