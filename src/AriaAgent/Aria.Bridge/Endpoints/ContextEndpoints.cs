@@ -150,6 +150,18 @@ public static class ContextEndpoints
                     return Results.Ok(new { id = (string?)null, error = "A scope expansion needs a valid absolute path (no '|')." });
             }
 
+            // Concurrent callers (two chat tabs, chat + Explorer race) must share ONE pending ceremony.
+            // Minting a second id would LaunchContextPage again → double popup; the human then approves
+            // one page while the other waiter's poll never sees a verdict (or sees a different id).
+            if (TryFindReusablePending(req.sessionId, req.kind, scopePath, req.expiryUnix, out var existing))
+            {
+                audit.Record("context-approval", "requested", allowed: true,
+                    detail: req.kind == "scope"
+                        ? $"Path expansion approval {existing.Id[..8]} reused for session {req.sessionId}: {scopePath}"
+                        : $"Context approval {existing.Id[..8]} reused for session {req.sessionId ?? "(soul-wide)"}");
+                return Results.Ok(new { id = existing.Id });
+            }
+
             var id = Guid.NewGuid().ToString("N");
             var now = DateTime.UtcNow;
             _pending[id] = new PendingContextApproval
@@ -510,6 +522,46 @@ public static class ContextEndpoints
         var cutoff = DateTime.UtcNow - PendingTtl;
         foreach (var kv in _pending)
             if (kv.Value.CreatedAt < cutoff) _pending.TryRemove(kv.Key, out _);
+    }
+
+    /// <summary>
+    /// Finds a still-pending ceremony that covers the same grant the caller would mint. Normal
+    /// session grants and same-path scope expansions coalesce; vigil/hive always mint fresh (each
+    /// carries its own task/slot/expiry the human must see).
+    /// </summary>
+    private static bool TryFindReusablePending(
+        string? sessionId, string? kind, string? scopePath, long? expiryUnix,
+        out PendingContextApproval existing)
+    {
+        existing = null!;
+        // Vigil/hive pre-auths are not interchangeable — different task text / slot / absolute expiry.
+        if (kind is "vigil" or "hive") return false;
+
+        var now = DateTime.UtcNow;
+        foreach (var kv in _pending)
+        {
+            var p = kv.Value;
+            if (p.Status != "pending" || p.ExpiresAt < now) continue;
+            if (!string.Equals(p.SessionId, sessionId, StringComparison.Ordinal)) continue;
+            // Reuse only when the grant that would be minted is identical. The expiry override is what
+            // /approve actually signs, so a differing one must never be silently inherited.
+            if (p.ExpiryUnixOverride != expiryUnix) continue;
+
+            if (string.IsNullOrEmpty(kind) && string.IsNullOrEmpty(p.Kind))
+            {
+                existing = p;
+                return true;
+            }
+
+            if (kind == "scope" && p.Kind == "scope"
+                && string.Equals(p.Path, scopePath, StringComparison.Ordinal))
+            {
+                existing = p;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string RenderCeremonyPage(PendingContextApproval p)

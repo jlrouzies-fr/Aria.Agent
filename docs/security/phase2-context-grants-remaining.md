@@ -163,6 +163,45 @@ path already cover it.
       `Souls.ProjectsEnabled` schema-drift failures (raw-SQL `Souls` inserts missing the split
       capability columns) were fixed in the test setup and no longer fail.
 
+---
+
+## Addendum — the joined node's trust anchor (2026-07-30)
+
+Item A step 3 assumes each bridge holds the soul public key locally. That holds for the **primary**,
+which owns the master keypair. A **joined** node holds only its own node keypair, so it has nothing to
+verify the roster against, and a build that let it derive the soul key from the roster's `IsPrimary`
+entry broke the invariant above: a malicious relay could nominate its own key `R` as primary and
+self-sign the node's enrollment certificate under `R`. The cert and the claimed primary agreed with
+each other, verification passed, `R` landed in `Souls.PublicKeyBase64`, and every subsequent grant the
+server signed with `R` sailed through the Layer B gate without a human ever approving anything.
+
+There is no cryptographic escape from this: every candidate key reaches a joined node via the server.
+The anchor has to come from outside that channel, so it comes from the human:
+
+- `Souls.SoulKeyPinnedAt` records that a human at *that machine* confirmed the key. A joined node
+  treats `PublicKeyBase64` as untrusted while this is null — including values written by the earlier
+  deriving build, which are deliberately not grandfathered in.
+- The primary serves its own fingerprint at `GET /soul/fingerprint`, straight off that machine's
+  bridge. The reference value never transits the server, which is what makes the comparison mean
+  something.
+- The joined node's ceremony (`GET /soul/pin`) asks the human to type that fingerprint and pins only
+  on a match, so a server presenting `R` fails the comparison. The page never displays the candidate:
+  showing it would let the human confirm the server's claim against itself.
+- After pinning, a roster whose primary differs from the pin is refused wholesale
+  (`SoulKeyTrust.PinMismatch`) rather than silently adopted, so the key cannot be swapped later.
+- None of `/soul/pin`, `/soul/pin-key`, `/soul/unpin-key`, `/soul/pin-status` are on
+  `TunnelAllowlist`, so the server cannot drive the anchor it is being anchored against. A test
+  asserts this.
+
+Cost: a joined node refuses sibling and primary-signed grants until someone pins it. That is the
+intended failure mode — fail closed, and say so in the log.
+
+**Not** fixed here, deliberately: `EnrollmentExpiryUnix` is still not checked at verification time.
+It is set to `now + 10 minutes` at enrollment (`NodeService.RequestEnrollAsync`) and stored forever,
+so it bounds the freshness of the signing ceremony, not the lifetime of the node's trust. Enforcing it
+during roster verification would revoke every node ten minutes after it was enrolled. Giving
+enrollment certs a real, renewable validity period is a separate piece of work.
+
 ## Cross-references
 - `docs/security/defense-in-depth-plan.md` §3–§5, §9.3 (Layer B design + Phase 1 changelog)
 - `docs/readme/security.md` (user-facing model)

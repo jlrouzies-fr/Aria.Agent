@@ -369,6 +369,11 @@ public class BridgeSoul
     public string?  NodePrivateKeyBase64 { get; set; }
     public string?  NodeId               { get; set; }
     public string?  NodeLabel            { get; set; }
+    // When a human standing at THIS machine confirmed the soul master public key above. Joined nodes
+    // only; null on the primary, which holds the master private key and is self-authenticating.
+    // A joined node treats PublicKeyBase64 as untrusted while this is null: the soul key can only be
+    // established by the local pinning ceremony, never adopted from the server-relayed node roster.
+    public DateTime? SoulKeyPinnedAt     { get; set; }
     // The soul's Data Encryption Key (AES-256, base64) for E2E data sync (§11). Minted by the primary
     // bridge; delivered to additional nodes ECDH-wrapped at enrollment, unwrapped here on first connect.
     [Encrypted]

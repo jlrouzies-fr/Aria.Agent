@@ -38,26 +38,19 @@ public sealed class SiblingRoster(IServiceScopeFactory scopes, Action<string, st
             var roster = await hub.InvokeAsync<IReadOnlyList<SoulNodeRosterEntry>>(
                 "GetSoulNodeRoster", serverSoulId, ct) ?? [];
 
-            var soulPub = TryResolveSoulMasterPublicKey(soul, roster);
+            var soulPub = ResolveSoulMasterPublicKey(soul, roster, out var trust);
             if (string.IsNullOrEmpty(soulPub))
             {
-                log("WARN", $"[SiblingRoster] cannot resolve soul master key for {serverSoulId}");
+                // Remember what the server is claiming so the LOCAL pinning ceremony can check a
+                // human-supplied fingerprint against it. The candidate is never trusted on its own.
+                RememberPinCandidate(serverSoulId, roster);
+                log("WARN", trust == SoulKeyTrust.PinMismatch
+                    ? $"[SiblingRoster] REFUSED roster for {serverSoulId}: the server presented a different " +
+                      "soul master key than the one pinned on this node. Sibling grants stay rejected until " +
+                      "a human re-pins at this machine (/soul/pin-key)."
+                    : $"[SiblingRoster] soul master key not pinned on this node for {serverSoulId} — " +
+                      "sibling/primary grants are refused until a human pins it at this machine (/soul/pin-key).");
                 return;
-            }
-
-            // Joined nodes hold only a node keypair — cache the soul master PUBLIC key locally so
-            // ContextGrantStore can verify grants the primary signed and replication pushed here.
-            if (string.IsNullOrEmpty(soul.PublicKeyBase64) && !string.IsNullOrEmpty(soul.NodePublicKeyBase64))
-            {
-                using var scope = scopes.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<BridgeDbContext>();
-                var row = await db.Souls.FirstOrDefaultAsync(s => s.Id == soul.Id, ct);
-                if (row != null && string.IsNullOrEmpty(row.PublicKeyBase64))
-                {
-                    row.PublicKeyBase64 = soulPub;
-                    await db.SaveChangesAsync(ct);
-                }
-                soul.PublicKeyBase64 = soulPub;
             }
 
             await VerifyAndStoreAsync(serverSoulId, soulPub, roster);
@@ -70,55 +63,75 @@ public sealed class SiblingRoster(IServiceScopeFactory scopes, Action<string, st
         }
     }
 
-    /// <summary>
-    /// The soul master public key grants are verified under. Primary bridges already hold it;
-    /// joined bridges derive it from the roster's primary entry only after locally verifying their
-    /// own enrollment certificate chains to that key (directly or via a trusted sibling approver).
-    /// </summary>
-    public static string? TryResolveSoulMasterPublicKey(BridgeSoul soul, IReadOnlyList<SoulNodeRosterEntry> roster)
+    /// <summary>Why a joined node does or doesn't have a usable soul master key.</summary>
+    public enum SoulKeyTrust
     {
-        if (!string.IsNullOrEmpty(soul.PublicKeyBase64)) return soul.PublicKeyBase64;
+        /// <summary>Primary bridge, or a joined bridge whose pin matches the roster's primary entry.</summary>
+        Trusted,
+        /// <summary>Joined bridge with no human-confirmed soul key — fail closed.</summary>
+        NotPinned,
+        /// <summary>The roster's primary key differs from what a human pinned here — fail closed.</summary>
+        PinMismatch,
+    }
+
+    /// <summary>
+    /// The soul master public key that context grants are verified under.
+    ///
+    /// The primary bridge holds the master private key, so its own copy is authoritative. A joined
+    /// bridge holds only a node keypair and has no cryptographic way to recognise the soul key on its
+    /// own: every candidate reaches it through the untrusted server. It therefore accepts one only
+    /// after a human at that machine confirmed the fingerprint out of band (see the pinning ceremony
+    /// in <c>SoulPinEndpoints</c>), and thereafter refuses any roster that presents a different
+    /// primary. Deriving the key from the roster — as an earlier build did — let a malicious server
+    /// nominate its own key as "primary", self-sign the node's enrollment certificate under it, and
+    /// forge context grants that bypass the Layer B approval gate entirely.
+    /// </summary>
+    public static string? ResolveSoulMasterPublicKey(
+        BridgeSoul soul, IReadOnlyList<SoulNodeRosterEntry> roster, out SoulKeyTrust trust)
+    {
+        // Primary bridge: it IS the soul key holder, nothing to resolve or confirm.
+        if (string.IsNullOrEmpty(soul.NodePublicKeyBase64))
+        {
+            trust = SoulKeyTrust.Trusted;
+            return soul.PublicKeyBase64;
+        }
+
+        // Joined node. A value with no pin timestamp was cached by an older build straight from the
+        // roster, so it is treated as unverified rather than grandfathered in.
+        if (soul.SoulKeyPinnedAt is null || string.IsNullOrEmpty(soul.PublicKeyBase64))
+        {
+            trust = SoulKeyTrust.NotPinned;
+            return null;
+        }
 
         var primary = roster.FirstOrDefault(e => e.IsPrimary);
-        if (primary == null || string.IsNullOrEmpty(primary.NodePublicKeyBase64)) return null;
+        if (!string.IsNullOrEmpty(primary?.NodePublicKeyBase64)
+            && !string.Equals(primary.NodePublicKeyBase64, soul.PublicKeyBase64, StringComparison.Ordinal))
+        {
+            trust = SoulKeyTrust.PinMismatch;
+            return null;
+        }
 
-        var soulPub = primary.NodePublicKeyBase64;
-        return VerifyOwnEnrollment(soul, soulPub, roster) ? soulPub : null;
+        trust = SoulKeyTrust.Trusted;
+        return soul.PublicKeyBase64;
     }
 
-    // A joined node accepts the roster's primary key only when its own enrollment cert verifies
-    // under an approver that chains back to that primary key.
-    private static bool VerifyOwnEnrollment(BridgeSoul soul, string soulPub, IReadOnlyList<SoulNodeRosterEntry> roster)
+    // serverSoulId → the primary key the server most recently claimed. Held in memory only and never
+    // trusted by itself: the pinning ceremony accepts it only when a human types the matching
+    // fingerprint read off the primary device.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> PinCandidates = new();
+
+    private static void RememberPinCandidate(string serverSoulId, IReadOnlyList<SoulNodeRosterEntry> roster)
     {
-        if (string.IsNullOrEmpty(soul.ServerSoulId) || string.IsNullOrEmpty(soul.NodePublicKeyBase64))
-            return false;
-
-        var self = roster.FirstOrDefault(e => e.NodePublicKeyBase64 == soul.NodePublicKeyBase64);
-        if (self == null
-            || string.IsNullOrEmpty(self.EnrollmentCertB64)
-            || string.IsNullOrEmpty(self.ApproverPublicKeyBase64))
-        {
-            return false;
-        }
-
-        var payload = NodeCrypto.EnrollPayload(
-            soul.ServerSoulId, self.NodePublicKeyBase64, self.Label, self.EnrollmentExpiryUnix);
-
-        // Direct enrollment by the primary (soul key).
-        if (self.ApproverPublicKeyBase64 == soulPub
-            && NodeCrypto.Verify(soulPub, payload, self.EnrollmentCertB64))
-        {
-            return true;
-        }
-
-        // Co-equal enrollment: approver is a sibling whose cert already chains to the soul key.
-        var approverEntry = roster.FirstOrDefault(e => e.NodePublicKeyBase64 == self.ApproverPublicKeyBase64);
-        if (approverEntry == null) return false;
-        if (TryVerifyEntry(soul.ServerSoulId, soulPub, new Dictionary<string, string>(), approverEntry) == null)
-            return false;
-
-        return NodeCrypto.Verify(self.ApproverPublicKeyBase64, payload, self.EnrollmentCertB64);
+        var primary = roster.FirstOrDefault(e => e.IsPrimary);
+        if (!string.IsNullOrEmpty(primary?.NodePublicKeyBase64))
+            PinCandidates[serverSoulId] = primary.NodePublicKeyBase64;
     }
+
+    /// <summary>The soul master key the server currently claims for this soul, or null if the node
+    /// hasn't seen a roster yet. Only ever consumed by the local pinning ceremony.</summary>
+    public static string? PinCandidate(string serverSoulId) =>
+        PinCandidates.TryGetValue(serverSoulId, out var k) ? k : null;
 
     private async Task VerifyAndStoreAsync(
         string serverSoulId, string soulPublicKeyBase64, IReadOnlyList<SoulNodeRosterEntry> roster)

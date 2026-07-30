@@ -76,6 +76,12 @@ public class TunnelAllowlistTests
     [InlineData("/keys/sync-import")]
     [InlineData("/channels/openai")]
     [InlineData("/channels/my-local")]
+    // The soul-key pinning ceremony is the joined node's trust anchor. If the server could drive it,
+    // it could pin a key of its own choosing and forge context grants — the anchor must stay local.
+    [InlineData("/soul/pin")]
+    [InlineData("/soul/pin-key")]
+    [InlineData("/soul/unpin-key")]
+    [InlineData("/soul/pin-status")]
     public void LocalHumanOnlyPaths_AreBlocked(string path)
         => Assert.False(TunnelAllowlist.IsAllowed(path));
 

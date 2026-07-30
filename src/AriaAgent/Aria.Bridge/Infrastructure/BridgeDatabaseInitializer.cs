@@ -274,6 +274,7 @@ public static class BridgeDatabaseInitializer
             ("NodePrivateKeyBase64", "TEXT"),
             ("NodeId",               "TEXT"),
             ("NodeLabel",            "TEXT"),
+            ("SoulKeyPinnedAt",      "TEXT"),
             ("DataKeyBase64",        "TEXT"),
             ("TerminalEnabled",            "INTEGER NOT NULL DEFAULT 0"),
             ("TerminalAllowedPathsJson",   "TEXT"),

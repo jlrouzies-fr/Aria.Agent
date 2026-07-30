@@ -181,6 +181,34 @@ public class ContextApprovalEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task RequestApproval_TwiceForSameSession_ReusesIdAndLaunchesOnce()
+    {
+        await CreateSoulAsync();
+        var launches = 0;
+        ContextEndpoints.LaunchContextPage = _ => Interlocked.Increment(ref launches);
+
+        var first  = await RequestApprovalAsync("same-session");
+        var second = await RequestApprovalAsync("same-session");
+
+        Assert.Equal(first, second);
+        Assert.Equal(1, launches);
+    }
+
+    [Fact]
+    public async Task RequestApproval_DifferentSessions_LaunchSeparately()
+    {
+        await CreateSoulAsync();
+        var launches = 0;
+        ContextEndpoints.LaunchContextPage = _ => Interlocked.Increment(ref launches);
+
+        var a = await RequestApprovalAsync("session-a");
+        var b = await RequestApprovalAsync("session-b");
+
+        Assert.NotEqual(a, b);
+        Assert.Equal(2, launches);
+    }
+
+    [Fact]
     public async Task GetUnknownApprovalPage_IsStyledNotFound()
     {
         var id = Guid.NewGuid().ToString("N");

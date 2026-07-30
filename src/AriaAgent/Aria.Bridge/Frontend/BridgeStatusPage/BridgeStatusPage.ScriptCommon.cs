@@ -84,6 +84,7 @@ public static partial class BridgeStatusPage
         refreshTerminalCaps();
         refreshTerminalConfig();
         refreshJoinCode();
+        refreshSoulPin();
         refreshAudit();
         loadSessionCode();
         updateOnboardingBadges();
@@ -95,6 +96,7 @@ public static partial class BridgeStatusPage
         setInterval(refreshPty, 5000);
         setInterval(refreshSoul, 15000);
         setInterval(refreshJoinCode, 4000);
+        setInterval(refreshSoulPin, 8000);
         setInterval(refreshAudit, 5000);
 
         // ── Stylized tooltips ────────────────────────────────────────────────

@@ -5,6 +5,7 @@ public static class EndpointsMapper
     public static WebApplication MapBridgeEndpoints(this WebApplication app)
     {
         app.MapSoulEndpoints();
+        app.MapSoulPinEndpoints();
         app.MapCogitationEndpoints();
         app.MapHiveEndpoints();
         app.MapContactEndpoints();

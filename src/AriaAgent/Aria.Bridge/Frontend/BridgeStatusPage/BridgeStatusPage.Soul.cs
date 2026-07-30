@@ -11,6 +11,7 @@ public static partial class BridgeStatusPage
             <div class="card-body">
               <div id="join-code-banner" style="display:none;margin-bottom:12px;padding:8px 12px;border:1px solid var(--border-glow);background:rgba(192,174,130,0.08);font-family:monospace;font-size:11px;letter-spacing:.06em;color:var(--text-normal)"></div>
               <div id="session-code-banner" style="display:none;margin-bottom:12px;padding:8px 12px;border:1px solid var(--border-glow);background:rgba(224,123,57,0.08);font-family:monospace;font-size:11px;letter-spacing:.06em;color:var(--text-normal)"></div>
+              <div id="soul-pin-banner" style="display:none;margin-bottom:12px;padding:8px 12px;border:1px solid #b09040;background:rgba(212,160,32,0.10);font-family:monospace;font-size:11px;letter-spacing:.06em;color:var(--text-normal)"></div>
               <div id="soul-section" style="font-size:12px;color:var(--text-muted)">Loading…</div>
             </div>
           </div>
@@ -349,6 +350,31 @@ public static partial class BridgeStatusPage
             await refreshSoul();
             await refreshJoinCode();
           } catch(e) { msg.textContent = 'Error: ' + e.message; }
+        }
+
+        // A joined node refuses grants approved on other devices until a human confirms which master
+        // key belongs to this soul. Surface that loudly: the symptom otherwise is "approvals silently
+        // don't reach this machine", which is indistinguishable from a plain replication bug.
+        async function refreshSoulPin() {
+          const banner = document.getElementById('soul-pin-banner');
+          if (!banner) return;
+          try {
+            const r = await fetch('/soul/pin-status');
+            const d = r.ok ? await r.json() : null;
+            if (d && d.joined && !d.pinned) {
+              banner.style.display = 'block';
+              banner.innerHTML = `<strong style="color:#f0d060">⛨ SOUL KEY NOT CONFIRMED</strong>
+                <div style="margin-top:6px;line-height:1.6;color:var(--text-muted)">
+                  Approvals granted on your other devices will <strong style="color:var(--text-bright)">not</strong>
+                  be honoured here until you confirm your soul's master key on this machine.
+                  ${d.candidateAvailable
+                    ? `<a href="/soul/pin" target="_blank" style="color:#f0d060">▶ Confirm it now</a>`
+                    : `Waiting for this node to connect to the server first…`}
+                </div>`;
+            } else {
+              banner.style.display = 'none';
+            }
+          } catch { banner.style.display = 'none'; }
         }
 
         // Poll for the pairing code shown while this device awaits enrollment approval.
