@@ -677,8 +677,7 @@ src/AriaAgent/Aria.Web/aria.db.old-intschema-20260628-163017-wal
 bridge-publish/
 src/AriaAgent/bridge-publish/
 
-# AI docs
-AGENTS.md
+# AI docs — AGENTS.md is the cross-vendor standard and IS tracked; these are vendor-specific.
 CLAUDE.md
 .claude
 .claude/worktrees/*
