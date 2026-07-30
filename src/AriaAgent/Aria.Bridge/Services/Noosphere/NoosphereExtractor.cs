@@ -34,7 +34,13 @@ public class NoosphereExtractor(
         CancellationToken ct)
     {
         var channel = await ResolveAsync(ct);
-        if (channel == null) return null;
+        if (channel == null)
+        {
+            // Without this, Inscribe still "succeeds" and ProcessIngest falls back to raw text with
+            // no LastError for BuiltinTools to elevate — the agent then claims the Archivum was sealed.
+            Fail("No extraction channel configured or resolvable on this node — open the bridge Memory tab and set a working local model (e.g. LM Studio).");
+            return null;
+        }
 
         // Known-entities + anchors go directly above the schema — small local models lose
         // instructions placed far from the thing they govern, so the "reuse EXACT names" rule sits
@@ -137,7 +143,11 @@ public class NoosphereExtractor(
     public async Task<string?> ContemplateSynthesisAsync(string query, string probedText, CancellationToken ct)
     {
         var channel = await ResolveAsync(ct);
-        if (channel == null) return null;
+        if (channel == null)
+        {
+            Fail("No extraction channel configured or resolvable on this node — open the bridge Memory tab and set a working local model (e.g. LM Studio).");
+            return null;
+        }
 
         const string system =
             "You are the Noosphere contemplation cogitator of an Imperial archive. Answer the question " +
