@@ -169,7 +169,8 @@
 .sidebar-collapsed .nav-item-label { display: none; }
 .sidebar-collapsed .nav-sub-label-count { display: none; }
 .sidebar-collapsed .vigil-unseen-dot { position: absolute; top: 6px; right: 6px; }
-.sidebar-collapsed .device-pending-dot { position: absolute; top: 6px; right: 6px; }
+.sidebar-collapsed .device-pending-dot,
+.sidebar-collapsed .device-key-dot { position: absolute; top: 6px; right: 6px; margin-left: 0; }
 .sidebar-collapsed .sidebar-nav-item { position: relative; }
 .sidebar-collapsed .nav-agent-active { display: none; }
 
