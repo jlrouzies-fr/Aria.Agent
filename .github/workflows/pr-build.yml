@@ -32,3 +32,13 @@ jobs:
 
       - name: Build Aria.Bridge
         run: dotnet build src/AriaAgent/Aria.Bridge/Aria.Bridge.csproj --no-restore --configuration Release
+
+      # Aria.Tests and Aria.Console pin <RuntimeIdentifier>osx-arm64</RuntimeIdentifier> as a local dev
+      # default, so the RID is overridden here the same way release-bridge.yml does with -r. Restore is
+      # not shared with the steps above because those resolve RID-agnostic assets.
+      - name: Test
+        run: >
+          dotnet test src/AriaAgent/Aria.Tests/Aria.Tests.csproj
+          --configuration Release
+          -p:RuntimeIdentifier=linux-x64
+          --logger "console;verbosity=normal"
