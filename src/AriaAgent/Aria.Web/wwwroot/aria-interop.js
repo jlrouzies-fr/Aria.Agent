@@ -887,6 +887,15 @@ window.ariaInterop.initMemoryCanvas = function (canvasEl, centerX, centerY) {
     panY = rect.height / 2 - cy;
     apply();
 
+    // Switching node repaints a different world under the same canvas element, but pan/zoom live in
+    // this closure and survive the re-render — so Blazor calls back here to re-frame the new world.
+    canvasEl._memRecenter = function (newCx, newCy) {
+        var r = canvasEl.getBoundingClientRect();
+        panX = r.width / 2 - newCx * zoom;
+        panY = r.height / 2 - newCy * zoom;
+        apply();
+    };
+
     // Zoom toward the center of the current viewport (there's no cursor position to anchor to, unlike
     // the wheel handler below) — keep whatever world point is centered on screen still centered after.
     function setZoomCentered(newZ) {
@@ -957,6 +966,14 @@ window.ariaInterop.initMemoryCanvas = function (canvasEl, centerX, centerY) {
         if (btnIn) btnIn.addEventListener('click', function () { setZoomCentered(zoom * 1.2); });
         if (btnOut) btnOut.addEventListener('click', function () { setZoomCentered(zoom * 0.8); });
     }
+};
+
+window.ariaInterop.recenterMemoryCanvas = function (canvasEl, centerX, centerY) {
+    if (typeof canvasEl === 'string') canvasEl = document.querySelector(canvasEl);
+    if (!canvasEl || typeof canvasEl._memRecenter !== 'function') return;
+    canvasEl._memRecenter(
+        typeof centerX === 'number' ? centerX : 1400,
+        typeof centerY === 'number' ? centerY : 1100);
 };
 
 // ── Hive canvas pan + zoom ────────────────────────────────────────────────────

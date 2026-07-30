@@ -544,8 +544,7 @@ public static class SoulEndpoints
     {
         var salt  = RandomNumberGenerator.GetBytes(16);
         var nonce = RandomNumberGenerator.GetBytes(12);
-        using var kdf = new Rfc2898DeriveBytes(passphrase, salt, 200_000, HashAlgorithmName.SHA256);
-        var key        = kdf.GetBytes(32);
+        var key   = Rfc2898DeriveBytes.Pbkdf2(passphrase, salt, 200_000, HashAlgorithmName.SHA256, 32);
         var plaintext  = Encoding.UTF8.GetBytes(json);
         var ciphertext = new byte[plaintext.Length];
         var tag        = new byte[16];
@@ -567,9 +566,8 @@ public static class SoulEndpoints
         var nonce = blob[16..28];
         var tag   = blob[28..44];
         var ct    = blob[44..];
-        using var kdf = new Rfc2898DeriveBytes(passphrase, salt, 200_000, HashAlgorithmName.SHA256);
-        var key = kdf.GetBytes(32);
-        var pt  = new byte[ct.Length];
+        var key   = Rfc2898DeriveBytes.Pbkdf2(passphrase, salt, 200_000, HashAlgorithmName.SHA256, 32);
+        var pt    = new byte[ct.Length];
         using (var gcm = new AesGcm(key, 16))
             gcm.Decrypt(nonce, ct, tag, pt);
         return Encoding.UTF8.GetString(pt);

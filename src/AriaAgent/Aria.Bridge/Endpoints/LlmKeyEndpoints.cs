@@ -70,7 +70,7 @@ public static class LlmKeyEndpoints
             var keyB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(req.Key.Trim()));
             // Encrypt at rest under the bridge vault DEK when available.
             if (db.Vault != null)
-                keyB64 = db.Vault.Encrypt(keyB64);
+                keyB64 = db.Vault.Encrypt(keyB64) ?? keyB64;
 
             var conn = db.Database.GetDbConnection();
             await conn.OpenAsync();

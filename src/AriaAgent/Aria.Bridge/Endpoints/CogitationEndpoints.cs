@@ -262,7 +262,7 @@ public static class CogitationEndpoints
                 cog.Id, cog.SubAgentId ?? "(none)");
 
             return Results.Created($"/cogitations/{id}/messages/{msg.Id}",
-                new MessageDto(msg.Id, msg.CogitationId, msg.Role, msg.Content, msg.ThinkingContent, msg.SectionsJson, msg.CreatedAt, msg.ImageBase64, msg.ImageMediaType));
+                new MessageDto(msg.Id, msg.CogitationId, msg.Role, msg.Content ?? "", msg.ThinkingContent, msg.SectionsJson, msg.CreatedAt, msg.ImageBase64, msg.ImageMediaType));
         });
 
         // PUT /cogitations/{id}/messages/{messageId} — update the mutable sections of a message

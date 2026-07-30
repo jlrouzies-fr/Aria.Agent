@@ -161,10 +161,16 @@ internal static class TestOutputParsers
             if (skipped == null && TryCountLine(trimmed, "Skipped:", out var ls)) skipped = ls;
 
             var m = DotNetFailedTest.Match(line);
-            var x = m.Success ? null : DotNetXunitFail.Match(line);
-            if (m.Success || x!.Success)
+            if (m.Success)
             {
-                failures.Add(new TestFailure((m.Success ? m : x).Groups["name"].Value, null, null));
+                failures.Add(new TestFailure(m.Groups["name"].Value, null, null));
+                expectErrorMessage = false;
+                continue;
+            }
+            var x = DotNetXunitFail.Match(line);
+            if (x.Success)
+            {
+                failures.Add(new TestFailure(x.Groups["name"].Value, null, null));
                 expectErrorMessage = false;
                 continue;
             }
@@ -296,12 +302,19 @@ internal static class TestOutputParsers
             }
 
             var b = JestBullet.Match(line);
-            var x = b.Success ? null : JestCross.Match(line);
-            if (b.Success || x!.Success)
+            if (b.Success)
             {
-                var name = (b.Success ? b : x).Groups["name"].Value;
-                if (name.StartsWith("Console", StringComparison.OrdinalIgnoreCase)) continue;
-                failures.Add(new TestFailure(name, currentFile, null));
+                var name = b.Groups["name"].Value;
+                if (!name.StartsWith("Console", StringComparison.OrdinalIgnoreCase))
+                    failures.Add(new TestFailure(name, currentFile, null));
+                continue;
+            }
+            var x = JestCross.Match(line);
+            if (x.Success)
+            {
+                var name = x.Groups["name"].Value;
+                if (!name.StartsWith("Console", StringComparison.OrdinalIgnoreCase))
+                    failures.Add(new TestFailure(name, currentFile, null));
                 continue;
             }
 

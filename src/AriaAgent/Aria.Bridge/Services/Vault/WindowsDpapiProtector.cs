@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Runtime.Versioning;
 
 namespace Aria.Bridge.Services.Vault;
 
@@ -6,6 +7,7 @@ namespace Aria.Bridge.Services.Vault;
 /// Windows DPAPI protector. Uses <see cref="ProtectedData"/> with <see cref="DataProtectionScope.CurrentUser"/>,
 /// so the protected blob can only be unprotected by the same Windows user that created it.
 /// </summary>
+[SupportedOSPlatform("windows")]
 public sealed class WindowsDpapiProtector : IDataProtector
 {
     public string Name => "windows-dpapi";

@@ -25,7 +25,6 @@ public sealed class SiblingRoster(IServiceScopeFactory scopes, Action<string, st
     public async Task RefreshAsync(HubConnection hub, BridgeSoul soul, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(soul.ServerSoulId)) return;
-        if (string.IsNullOrEmpty(soul.PublicKeyBase64)) return;
 
         var serverSoulId = soul.ServerSoulId;
         if (_lastRefresh.TryGetValue(serverSoulId, out var last)
@@ -37,9 +36,31 @@ public sealed class SiblingRoster(IServiceScopeFactory scopes, Action<string, st
         try
         {
             var roster = await hub.InvokeAsync<IReadOnlyList<SoulNodeRosterEntry>>(
-                "GetSoulNodeRoster", serverSoulId, ct);
+                "GetSoulNodeRoster", serverSoulId, ct) ?? [];
 
-            await VerifyAndStoreAsync(serverSoulId, soul.PublicKeyBase64, roster ?? []);
+            var soulPub = TryResolveSoulMasterPublicKey(soul, roster);
+            if (string.IsNullOrEmpty(soulPub))
+            {
+                log("WARN", $"[SiblingRoster] cannot resolve soul master key for {serverSoulId}");
+                return;
+            }
+
+            // Joined nodes hold only a node keypair — cache the soul master PUBLIC key locally so
+            // ContextGrantStore can verify grants the primary signed and replication pushed here.
+            if (string.IsNullOrEmpty(soul.PublicKeyBase64) && !string.IsNullOrEmpty(soul.NodePublicKeyBase64))
+            {
+                using var scope = scopes.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<BridgeDbContext>();
+                var row = await db.Souls.FirstOrDefaultAsync(s => s.Id == soul.Id, ct);
+                if (row != null && string.IsNullOrEmpty(row.PublicKeyBase64))
+                {
+                    row.PublicKeyBase64 = soulPub;
+                    await db.SaveChangesAsync(ct);
+                }
+                soul.PublicKeyBase64 = soulPub;
+            }
+
+            await VerifyAndStoreAsync(serverSoulId, soulPub, roster);
             _lastRefresh[serverSoulId] = DateTime.UtcNow;
             log("INFO", $"[SiblingRoster] refreshed for soul {serverSoulId}");
         }
@@ -47,6 +68,56 @@ public sealed class SiblingRoster(IServiceScopeFactory scopes, Action<string, st
         {
             log("WARN", $"[SiblingRoster] refresh failed for soul {serverSoulId}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// The soul master public key grants are verified under. Primary bridges already hold it;
+    /// joined bridges derive it from the roster's primary entry only after locally verifying their
+    /// own enrollment certificate chains to that key (directly or via a trusted sibling approver).
+    /// </summary>
+    public static string? TryResolveSoulMasterPublicKey(BridgeSoul soul, IReadOnlyList<SoulNodeRosterEntry> roster)
+    {
+        if (!string.IsNullOrEmpty(soul.PublicKeyBase64)) return soul.PublicKeyBase64;
+
+        var primary = roster.FirstOrDefault(e => e.IsPrimary);
+        if (primary == null || string.IsNullOrEmpty(primary.NodePublicKeyBase64)) return null;
+
+        var soulPub = primary.NodePublicKeyBase64;
+        return VerifyOwnEnrollment(soul, soulPub, roster) ? soulPub : null;
+    }
+
+    // A joined node accepts the roster's primary key only when its own enrollment cert verifies
+    // under an approver that chains back to that primary key.
+    private static bool VerifyOwnEnrollment(BridgeSoul soul, string soulPub, IReadOnlyList<SoulNodeRosterEntry> roster)
+    {
+        if (string.IsNullOrEmpty(soul.ServerSoulId) || string.IsNullOrEmpty(soul.NodePublicKeyBase64))
+            return false;
+
+        var self = roster.FirstOrDefault(e => e.NodePublicKeyBase64 == soul.NodePublicKeyBase64);
+        if (self == null
+            || string.IsNullOrEmpty(self.EnrollmentCertB64)
+            || string.IsNullOrEmpty(self.ApproverPublicKeyBase64))
+        {
+            return false;
+        }
+
+        var payload = NodeCrypto.EnrollPayload(
+            soul.ServerSoulId, self.NodePublicKeyBase64, self.Label, self.EnrollmentExpiryUnix);
+
+        // Direct enrollment by the primary (soul key).
+        if (self.ApproverPublicKeyBase64 == soulPub
+            && NodeCrypto.Verify(soulPub, payload, self.EnrollmentCertB64))
+        {
+            return true;
+        }
+
+        // Co-equal enrollment: approver is a sibling whose cert already chains to the soul key.
+        var approverEntry = roster.FirstOrDefault(e => e.NodePublicKeyBase64 == self.ApproverPublicKeyBase64);
+        if (approverEntry == null) return false;
+        if (TryVerifyEntry(soul.ServerSoulId, soulPub, new Dictionary<string, string>(), approverEntry) == null)
+            return false;
+
+        return NodeCrypto.Verify(self.ApproverPublicKeyBase64, payload, self.EnrollmentCertB64);
     }
 
     private async Task VerifyAndStoreAsync(

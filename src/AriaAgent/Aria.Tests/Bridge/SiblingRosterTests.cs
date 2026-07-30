@@ -132,4 +132,50 @@ public class SiblingRosterTests
 
         Assert.Null(trusted);
     }
+
+    [Fact]
+    public void JoinedNode_ResolvesSoulMasterKey_WhenPrimaryEnrolledIt()
+    {
+        var (soulPub, soulKey) = NewKey();
+        var (nodePub, _) = NewKey();
+        var expiry = DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeSeconds();
+        var cert = SignEnrollment(soulKey, "soul-1", nodePub, "windows", expiry);
+
+        var roster = new List<SoulNodeRosterEntry>
+        {
+            new(soulPub, null, null, "primary", 0, IsPrimary: true),
+            new(nodePub, cert, soulPub, "windows", expiry, IsPrimary: false),
+        };
+        var joined = new BridgeSoul
+        {
+            ServerSoulId = "soul-1",
+            NodePublicKeyBase64 = nodePub,
+        };
+
+        Assert.Equal(soulPub, SiblingRoster.TryResolveSoulMasterPublicKey(joined, roster));
+    }
+
+    [Fact]
+    public void JoinedNode_DoesNotTrustUnverifiedPrimaryKey()
+    {
+        var (soulPub, soulKey) = NewKey();
+        var (nodePub, _) = NewKey();
+        var (roguePub, rogueKey) = NewKey();
+        var expiry = DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeSeconds();
+        // Cert signed by rogue key, not the soul key — server cannot swap primary and fool us.
+        var badCert = SignEnrollment(rogueKey, "soul-1", nodePub, "windows", expiry);
+
+        var roster = new List<SoulNodeRosterEntry>
+        {
+            new(soulPub, null, null, "primary", 0, IsPrimary: true),
+            new(nodePub, badCert, roguePub, "windows", expiry, IsPrimary: false),
+        };
+        var joined = new BridgeSoul
+        {
+            ServerSoulId = "soul-1",
+            NodePublicKeyBase64 = nodePub,
+        };
+
+        Assert.Null(SiblingRoster.TryResolveSoulMasterPublicKey(joined, roster));
+    }
 }
