@@ -12,6 +12,7 @@ public static partial class BridgeStatusPage
               <div id="join-code-banner" style="display:none;margin-bottom:12px;padding:8px 12px;border:1px solid var(--border-glow);background:rgba(192,174,130,0.08);font-family:monospace;font-size:11px;letter-spacing:.06em;color:var(--text-normal)"></div>
               <div id="session-code-banner" style="display:none;margin-bottom:12px;padding:8px 12px;border:1px solid var(--border-glow);background:rgba(224,123,57,0.08);font-family:monospace;font-size:11px;letter-spacing:.06em;color:var(--text-normal)"></div>
               <div id="soul-pin-banner" style="display:none;margin-bottom:12px;padding:8px 12px;border:1px solid #b09040;background:rgba(212,160,32,0.10);font-family:monospace;font-size:11px;letter-spacing:.06em;color:var(--text-normal)"></div>
+              <div id="soul-fingerprint-banner" style="display:none;margin-bottom:12px;padding:8px 12px;border:1px solid var(--border-glow);background:rgba(192,174,130,0.08);font-family:monospace;font-size:11px;letter-spacing:.06em;color:var(--text-normal)"></div>
               <div id="soul-section" style="font-size:12px;color:var(--text-muted)">Loading…</div>
             </div>
           </div>
@@ -355,26 +356,53 @@ public static partial class BridgeStatusPage
         // A joined node refuses grants approved on other devices until a human confirms which master
         // key belongs to this soul. Surface that loudly: the symptom otherwise is "approvals silently
         // don't reach this machine", which is indistinguishable from a plain replication bug.
+        // On the primary, surface a one-click fingerprint page instead — that is the out-of-band
+        // reference the human types into the joining machine's pinning ceremony.
         async function refreshSoulPin() {
-          const banner = document.getElementById('soul-pin-banner');
-          if (!banner) return;
+          const pinBanner = document.getElementById('soul-pin-banner');
+          const fpBanner  = document.getElementById('soul-fingerprint-banner');
           try {
             const r = await fetch('/soul/pin-status');
             const d = r.ok ? await r.json() : null;
-            if (d && d.joined && !d.pinned) {
-              banner.style.display = 'block';
-              banner.innerHTML = `<strong style="color:#f0d060">⛨ SOUL KEY NOT CONFIRMED</strong>
-                <div style="margin-top:6px;line-height:1.6;color:var(--text-muted)">
-                  Approvals granted on your other devices will <strong style="color:var(--text-bright)">not</strong>
-                  be honoured here until you confirm your soul's master key on this machine.
-                  ${d.candidateAvailable
-                    ? `<a href="/soul/pin" target="_blank" style="color:#f0d060">▶ Confirm it now</a>`
-                    : `Waiting for this node to connect to the server first…`}
-                </div>`;
-            } else {
-              banner.style.display = 'none';
+            if (pinBanner) {
+              if (d && d.joined && !d.pinned) {
+                pinBanner.style.display = 'block';
+                pinBanner.innerHTML = `<strong style="color:#f0d060">⛨ SOUL KEY NOT CONFIRMED</strong>
+                  <div style="margin-top:6px;line-height:1.6;color:var(--text-muted)">
+                    Approvals granted on your other devices will <strong style="color:var(--text-bright)">not</strong>
+                    be honoured here until you confirm your soul's master key on this machine.
+                    ${d.candidateAvailable
+                      ? `<a href="/soul/pin" target="_blank" style="color:#f0d060">▶ Confirm it now</a>`
+                      : `Waiting for this node to connect to the server first…`}
+                  </div>`;
+              } else {
+                pinBanner.style.display = 'none';
+              }
             }
-          } catch { banner.style.display = 'none'; }
+            if (fpBanner) {
+              // Primary only (!joined): this machine holds the master key, so it can show the
+              // fingerprint a joining device needs. Joined nodes must not offer this — their
+              // PublicKeyBase64 is only a pin, not an authoritative reference.
+              if (d && !d.joined && soul && soul.hasKeypair) {
+                fpBanner.style.display = 'flex';
+                fpBanner.style.alignItems = 'center';
+                fpBanner.style.gap = '10px';
+                fpBanner.style.flexWrap = 'wrap';
+                fpBanner.innerHTML = `<span style="flex:1;line-height:1.6;color:var(--text-muted)">
+                    ⛨ <strong style="color:var(--text-title)">MASTER KEY FINGERPRINT</strong> —
+                    when adding a device, open this and type the value into that machine's pinning page.
+                    Read it here — never from Aria.Web.
+                  </span>
+                  <a href="/soul/fingerprint" target="_blank" rel="noopener"
+                     style="flex-shrink:0;background:var(--bg-surface);border:1px solid var(--border-glow);color:var(--text-title);padding:6px 14px;cursor:pointer;font-family:monospace;font-size:11px;letter-spacing:.08em;text-decoration:none">▶ SHOW FINGERPRINT</a>`;
+              } else {
+                fpBanner.style.display = 'none';
+              }
+            }
+          } catch {
+            if (pinBanner) pinBanner.style.display = 'none';
+            if (fpBanner)  fpBanner.style.display = 'none';
+          }
         }
 
         // Poll for the pairing code shown while this device awaits enrollment approval.

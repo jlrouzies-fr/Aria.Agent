@@ -205,8 +205,9 @@ public static class SoulPinEndpoints
                approvals made on your other devices will not carry over to this one.</p>
             <ol>
               <li>Go to the machine that holds your soul's master key (your primary bridge).</li>
-              <li>On that machine, open <b>http://localhost:5741/soul/fingerprint</b> and read the
-                  fingerprint shown there.</li>
+              <li>On that machine open the bridge status page → <b>Soul</b>, click
+                  <b>SHOW FINGERPRINT</b>, and read the value shown there
+                  (or open <b>http://localhost:5741/soul/fingerprint</b> directly).</li>
               <li>Type it below. Take it from that machine's own page, not from Aria.Web — a value
                   the server showed you would only be checked against the server's own claim, which
                   proves nothing.</li>
