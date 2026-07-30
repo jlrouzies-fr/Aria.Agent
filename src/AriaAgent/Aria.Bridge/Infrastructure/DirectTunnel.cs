@@ -211,7 +211,7 @@ public sealed class DirectTunnel : IHostedService
         // Start the periodic UI-access knock so the gate opens for this network IP.
         var knockCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         hub.Closed += ex => { knockCts.Cancel(); return Task.CompletedTask; };
-        _ = Task.Run(() => KnockLoopAsync(hub, knockCts.Token), CancellationToken.None);
+        _ = Task.Run(() => KnockLoopAsync(hub, soul.Id, knockCts.Token), CancellationToken.None);
 
         // Ensure this node holds the sync DEK (§11): the primary mints it; additional nodes fetch the
         // copy the approver wrapped to them at enrollment and unwrap it locally.
@@ -276,7 +276,7 @@ public sealed class DirectTunnel : IHostedService
 
     // Periodic "knock" that tells the web UI the bridge is alive on this public IP, opening
     // the access gate for the same network even before the browser proves bridge control.
-    private async Task KnockLoopAsync(HubConnection hub, CancellationToken ct)
+    private async Task KnockLoopAsync(HubConnection hub, string soulId, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested && hub.State == HubConnectionState.Connected)
         {
@@ -290,6 +290,8 @@ public sealed class DirectTunnel : IHostedService
                 _log("WARN", $"[Knock] UI access knock failed: {ex.Message}");
             }
 
+            await ReportSoulKeyStateAsync(hub, soulId, ct);
+
             try
             {
                 await Task.Delay(TimeSpan.FromSeconds(60), ct);
@@ -298,6 +300,35 @@ public sealed class DirectTunnel : IHostedService
             {
                 break;
             }
+        }
+    }
+
+    // Tells the server whether this node holds a human-confirmed soul master key, so the Devices panel
+    // can point the human at the machine that still needs its pinning ceremony run. Purely a status
+    // report: a joined node that never pins still refuses sibling grants locally regardless of what it
+    // claims here, and the server draws no trust conclusion from it (see Aria.Shared.SoulKeyPinState).
+    // Sent on every knock rather than once at connect, so pinning clears the warning within a minute.
+    private async Task ReportSoulKeyStateAsync(HubConnection hub, string soulId, CancellationToken ct)
+    {
+        try
+        {
+            using var scope = _scopes.CreateScope();
+            var db   = scope.ServiceProvider.GetRequiredService<BridgeDbContext>();
+            var soul = await db.Souls.AsNoTracking().FirstOrDefaultAsync(s => s.Id == soulId, ct);
+            if (soul?.ServerSoulId is not { Length: > 0 } serverSoulId) return;
+
+            var state =
+                string.IsNullOrEmpty(soul.NodePublicKeyBase64) ? SoulKeyPinState.Ok
+              : soul.SoulKeyPinnedAt is null                   ? SoulKeyPinState.Unpinned
+              : SiblingRoster.LastTrust(serverSoulId) == SiblingRoster.SoulKeyTrust.PinMismatch
+                                                               ? SoulKeyPinState.Mismatch
+              :                                                  SoulKeyPinState.Ok;
+
+            await hub.InvokeAsync("ReportSoulKeyState", state, ct);
+        }
+        catch (Exception ex)
+        {
+            _log("WARN", $"[Tunnel] Soul-key state report failed: {ex.Message}");
         }
     }
 

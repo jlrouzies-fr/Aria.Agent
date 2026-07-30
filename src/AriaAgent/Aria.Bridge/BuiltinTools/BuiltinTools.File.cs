@@ -560,7 +560,12 @@ public static partial class BuiltinTools
 
     public sealed record DiffFeedbackOptions(bool Enabled = true, int MaxChars = 4000);
 
+    // Process-wide default — set once at bridge startup (and by WebApplicationFactory tests that boot
+    // Program). Tests that need a temporary value must NOT mutate this: every factory that starts the
+    // bridge re-enters ConfigureDiffFeedback and would clobber a mid-test change. Use PushDiffFeedback
+    // instead; the AsyncLocal override rides the test's execution context and is immune to that race.
     private static DiffFeedbackOptions _diffFeedback = new();
+    private static readonly AsyncLocal<DiffFeedbackOptions?> DiffFeedbackOverride = new();
 
     public static void ConfigureDiffFeedback(Microsoft.Extensions.Configuration.IConfiguration config)
     {
@@ -571,20 +576,34 @@ public static partial class BuiltinTools
             cap is > 0 ? cap.Value : 4000);
     }
 
-    // Direct value overload — tests toggle the knob through this.
+    // Sets the process-wide default. Prefer PushDiffFeedback in tests.
     internal static void ConfigureDiffFeedback(bool enabled, int maxChars = 4000) =>
         _diffFeedback = new DiffFeedbackOptions(enabled, maxChars);
 
-    internal static DiffFeedbackOptions DiffFeedback => _diffFeedback;
+    /// <summary>Scoped override for tests. Dispose restores the previous override (not the process default).</summary>
+    internal static IDisposable PushDiffFeedback(bool enabled, int maxChars = 4000)
+    {
+        var previous = DiffFeedbackOverride.Value;
+        DiffFeedbackOverride.Value = new DiffFeedbackOptions(enabled, maxChars);
+        return new OverrideScope(() => DiffFeedbackOverride.Value = previous);
+    }
+
+    private sealed class OverrideScope(Action restore) : IDisposable
+    {
+        public void Dispose() => restore();
+    }
+
+    internal static DiffFeedbackOptions DiffFeedback => DiffFeedbackOverride.Value ?? _diffFeedback;
 
     // The model-facing half of a mutation result: the confirmation line plus the same diff the
     // UI card gets. Skipped when no diff was computed (pre-image cap, no bridge db) or the edit
     // was a no-op (no hunks — the diff would be just the ---/+++ headers).
     private static string AppendDiffFeedback(string text, DiffResult? diff)
     {
-        if (!_diffFeedback.Enabled || diff == null || (diff.Adds == 0 && diff.Dels == 0))
+        var opts = DiffFeedback;
+        if (!opts.Enabled || diff == null || (diff.Adds == 0 && diff.Dels == 0))
             return text;
-        return text + "\n\n" + TruncateDiff(diff.Diff, _diffFeedback.MaxChars).Text;
+        return text + "\n\n" + TruncateDiff(diff.Diff, opts.MaxChars).Text;
     }
 
     // Head-biased truncation: keep whole diff lines while they fit the char cap, then a marker
@@ -663,7 +682,7 @@ public static partial class BuiltinTools
             if (diff.Adds == 0 && diff.Dels == 0)
                 return new ToolPreviewResponse(true, "", false, null); // no-op edit — nothing to show
 
-            var (text, truncated) = TruncateDiff(diff.Diff, _diffFeedback.MaxChars);
+            var (text, truncated) = TruncateDiff(diff.Diff, DiffFeedback.MaxChars);
             return new ToolPreviewResponse(true, text, truncated, null);
         }
         catch (TerminalSecurityException ex)  { return new ToolPreviewResponse(false, null, false, $"BLOCKED: {ex.Message}"); }

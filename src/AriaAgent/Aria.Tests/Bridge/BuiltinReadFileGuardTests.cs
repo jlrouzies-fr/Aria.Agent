@@ -9,7 +9,6 @@ namespace Aria.Tests.Bridge;
 /// truncated to ~200 lines and the model is guided to use range reads. With an assumed window or
 /// explicit range args, behaviour is unchanged.
 /// </summary>
-[Collection("DiffFeedback knob")]
 public class BuiltinReadFileGuardTests : IDisposable
 {
     private readonly string _root;

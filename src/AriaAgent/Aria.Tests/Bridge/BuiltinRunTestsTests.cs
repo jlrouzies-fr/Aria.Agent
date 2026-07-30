@@ -11,6 +11,9 @@ namespace Aria.Tests.Bridge;
 /// run_tests builtin: Projects capability gate, cwd scoping, command/filter validation, generic +
 /// sniffed-parser results through real shell runs, and the inference / filter-flag helpers.
 /// </summary>
+// Resets/reads the process-wide session cwd — share the BuiltinBackgroundJobs lock with
+// ShellCwd/Process tests so those don't race.
+[Collection("BuiltinBackgroundJobs")]
 public class BuiltinRunTestsTests : IDisposable
 {
     private readonly string _root;

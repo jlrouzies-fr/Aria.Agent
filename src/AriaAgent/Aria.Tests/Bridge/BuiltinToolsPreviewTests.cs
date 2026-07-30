@@ -10,8 +10,6 @@ namespace Aria.Tests.Bridge;
 /// the prospective unified diff. Nothing is ever written; failures mirror the real call; any
 /// other tool answers "no-preview".
 /// </summary>
-// Shares the static diff-feedback knob with BuiltinDiffFeedbackTests — see the collection note there.
-[Collection("DiffFeedback knob")]
 public class BuiltinToolsPreviewTests : IDisposable
 {
     private readonly string _root;
@@ -20,12 +18,10 @@ public class BuiltinToolsPreviewTests : IDisposable
     {
         _root = Path.Combine(Path.GetTempPath(), $"aria-pv-tests-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_root);
-        BuiltinTools.ConfigureDiffFeedback(enabled: true, maxChars: 4000);
     }
 
     public void Dispose()
     {
-        BuiltinTools.ConfigureDiffFeedback(enabled: true, maxChars: 4000); // reset the shared knob
         try { Directory.Delete(_root, recursive: true); } catch { }
     }
 
@@ -155,7 +151,8 @@ public class BuiltinToolsPreviewTests : IDisposable
     [Fact]
     public void OversizedDiff_TruncatedFlagAndMarker()
     {
-        BuiltinTools.ConfigureDiffFeedback(enabled: true, maxChars: 90);
+        // AsyncLocal override — see BuiltinDiffFeedbackTests.Truncation_HeadBiased.
+        using var _ = BuiltinTools.PushDiffFeedback(enabled: true, maxChars: 90);
         var path = Path.Combine(_root, "big.txt");
         File.WriteAllText(path, string.Join('\n', Enumerable.Range(1, 10).Select(i => $"line {i}")));
 

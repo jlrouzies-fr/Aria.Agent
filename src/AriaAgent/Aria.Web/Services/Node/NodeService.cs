@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Aria.Web.Services.Node;
 
 public record NodeInfo(string NodeId, string? Label, string? Platform, bool IsPrimary, bool Revoked,
-    bool Online, DateTime EnrolledAt, DateTime LastSeenAt);
+    bool Online, DateTime EnrolledAt, DateTime LastSeenAt, string PinState = SoulKeyPinState.Unknown);
 
 /// <summary>
 /// Node (bridge) management for the remote-nodes feature: list, enroll, revoke, and channel pinning.
@@ -21,9 +21,12 @@ public class NodeService(IDbContextFactory<AppDbContext> dbFactory, ModelBridgeR
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var rows   = await db.SoulNodeKeys.AsNoTracking().Where(k => k.UserId == userId).ToListAsync();
-        var online = registry.GetNodes(userId.ToString()).Select(n => n.NodeId).ToHashSet();
+        // The pin state lives on the live connection, so an offline node reports Unknown and shows no
+        // warning — we genuinely don't know, and a stale claim is worse than none.
+        var online = registry.GetNodes(userId.ToString()).ToDictionary(n => n.NodeId);
         return rows.Select(k => new NodeInfo(k.NodeId, k.Label, k.Platform, k.IsPrimary, k.Revoked,
-            online.Contains(k.NodeId), k.EnrolledAt, k.LastSeenAt)).ToList();
+            online.ContainsKey(k.NodeId), k.EnrolledAt, k.LastSeenAt,
+            online.TryGetValue(k.NodeId, out var conn) ? conn.SoulKeyPinState : SoulKeyPinState.Unknown)).ToList();
     }
 
     public IReadOnlyList<PendingNodeInfo> GetPending(string userId) => pendings.List(userId);

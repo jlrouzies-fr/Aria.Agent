@@ -39,6 +39,7 @@ public sealed class SiblingRoster(IServiceScopeFactory scopes, Action<string, st
                 "GetSoulNodeRoster", serverSoulId, ct) ?? [];
 
             var soulPub = ResolveSoulMasterPublicKey(soul, roster, out var trust);
+            LastTrusts[serverSoulId] = trust;
             if (string.IsNullOrEmpty(soulPub))
             {
                 // Remember what the server is claiming so the LOCAL pinning ceremony can check a
@@ -132,6 +133,19 @@ public sealed class SiblingRoster(IServiceScopeFactory scopes, Action<string, st
     /// hasn't seen a roster yet. Only ever consumed by the local pinning ceremony.</summary>
     public static string? PinCandidate(string serverSoulId) =>
         PinCandidates.TryGetValue(serverSoulId, out var k) ? k : null;
+
+    // serverSoulId → the trust verdict from the last roster refresh. Read only to describe this
+    // node's state to the human (bridge status page, and the server's Devices panel via
+    // Aria.Shared.SoulKeyPinState); never an input to a trust decision.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SoulKeyTrust> LastTrusts = new();
+
+    /// <summary>The verdict from the most recent roster refresh, or null if none has run yet.</summary>
+    public static SoulKeyTrust? LastTrust(string serverSoulId) =>
+        LastTrusts.TryGetValue(serverSoulId, out var t) ? t : null;
+
+    /// <summary>Drops the cached verdict so a pin/unpin is reflected without waiting for the next
+    /// five-minute refresh. Called by the pinning ceremony.</summary>
+    public static void ForgetTrust(string serverSoulId) => LastTrusts.TryRemove(serverSoulId, out _);
 
     private async Task VerifyAndStoreAsync(
         string serverSoulId, string soulPublicKeyBase64, IReadOnlyList<SoulNodeRosterEntry> roster)

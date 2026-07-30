@@ -86,6 +86,7 @@ public static class SoulPinEndpoints
             soul.PublicKeyBase64 = candidate;
             soul.SoulKeyPinnedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
+            SiblingRoster.ForgetTrust(serverSoulId);
 
             audit.Record("soul-pin", "pinned", allowed: true, capability: "soul-key-pin",
                 detail: $"Soul master key pinned for {serverSoulId} (fingerprint {expected})");
@@ -104,6 +105,7 @@ public static class SoulPinEndpoints
             soul.PublicKeyBase64 = null;
             soul.SoulKeyPinnedAt = null;
             await db.SaveChangesAsync();
+            if (soul.ServerSoulId is { Length: > 0 } sid) SiblingRoster.ForgetTrust(sid);
 
             audit.Record("soul-pin", "unpinned", allowed: true, capability: "soul-key-pin",
                 detail: $"Soul master key unpinned for {soul.ServerSoulId}");

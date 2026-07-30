@@ -102,6 +102,10 @@
     {
         <span class="device-pending-dot" title="A device is awaiting approval — open DEVICES and enter its pairing code"></span>
     }
+    else if (HasUnconfirmedSoulKey)
+    {
+        <span class="device-key-dot" title="A device has not confirmed your soul master key — open DEVICES"></span>
+    }
 </div>
 
 <div class="sidebar-nav-item @(_activePanel == "tools" ? "active" : "")" @onclick='() => TogglePanel("tools")'>

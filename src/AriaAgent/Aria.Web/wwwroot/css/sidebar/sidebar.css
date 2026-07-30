@@ -206,6 +206,25 @@
     50%       { opacity: 0.3; box-shadow: 0 0 2px rgba(224,123,57,0.3); }
 }
 
+/* Red pulse for a device that hasn't confirmed the soul master key — on "// DEVICES" and on the
+   offending row inside the panel. Deliberately not the amber of a pending pairing: that one is a
+   routine chore, this one means cross-device seals are silently not working on that machine. */
+.device-key-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #d04040;
+    box-shadow: 0 0 6px rgba(208,64,64,0.9);
+    margin-left: auto;
+    flex-shrink: 0;
+    animation: deviceKeyPulse 1.2s ease-in-out infinite;
+}
+@keyframes deviceKeyPulse {
+    0%, 100% { opacity: 1;   box-shadow: 0 0 6px rgba(208,64,64,0.9); }
+    50%       { opacity: 0.25; box-shadow: 0 0 2px rgba(208,64,64,0.3); }
+}
+
 /* ── Section panel overlay ──────────────────────────────── */
 .section-panel {
     position: absolute;

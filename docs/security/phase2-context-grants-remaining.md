@@ -196,6 +196,18 @@ The anchor has to come from outside that channel, so it comes from the human:
 Cost: a joined node refuses sibling and primary-signed grants until someone pins it. That is the
 intended failure mode — fail closed, and say so in the log.
 
+Failing closed silently is still a bad experience: from the chat side it reads as "seals stopped
+replicating to the Windows box", with nothing pointing at the cause. So each node reports its own pin
+state (`ok` / `unpinned` / `mismatch`, `Aria.Shared.SoulKeyPinState`) to the server on connect and on
+every 60-second knock, and Aria.Web pulses a red warning on that device's row in DEVICES with the
+`/soul/pin` URL to open on that machine.
+
+That report is a **node self-assertion the server cannot verify, and it is display-only**. Nothing may
+branch on it for trust, and nothing does: a node claiming `ok` while unpinned still refuses grants,
+because the decision is `ResolveSoulMasterPublicKey` running locally on that node. The warning tells
+the human which machine to walk to; it does not, and must not, become a way for the server to learn or
+influence whether a node is anchored. The ceremony itself stays off `TunnelAllowlist`.
+
 **Not** fixed here, deliberately: `EnrollmentExpiryUnix` is still not checked at verification time.
 It is set to `now + 10 minutes` at enrollment (`NodeService.RequestEnrollAsync`) and stored forever,
 so it bounds the freshness of the signing ceremony, not the lifetime of the node's trust. Enforcing it

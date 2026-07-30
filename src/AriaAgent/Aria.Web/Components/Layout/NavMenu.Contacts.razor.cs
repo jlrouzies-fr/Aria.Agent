@@ -220,6 +220,13 @@ public partial class NavMenu
     internal bool HasPendingDevices =>
         SessionState.CurrentUser is { } u && PendingEnrollments.List(u.Id).Count > 0;
 
+    /// <summary>Drives the nav dot for a connected device that has not confirmed the soul master key.
+    /// Read from the live registry rather than <see cref="_nodes"/>, which is only loaded while the
+    /// devices panel is open — the point is to be seen by someone who hasn't gone looking.</summary>
+    internal bool HasUnconfirmedSoulKey =>
+        SessionState.CurrentUser is { } u
+        && BridgeRegistry.GetNodes(u.Id).Any(n => Aria.Shared.SoulKeyPinState.NeedsAttention(n.SoulKeyPinState));
+
     // Live refresh when a device registers itself for pairing (or one is approved/expires).
     internal void OnPendingEnrollmentsChanged(string userId)
     {

@@ -12,9 +12,6 @@ namespace Aria.Tests.Bridge;
 /// at the configured cap — so the model can self-verify without a re-read. Off restores the bare
 /// one-line confirmation; no-op edits and cap-skipped diffs append nothing.
 /// </summary>
-// The knob is static state shared with BuiltinToolsPreviewTests — one collection keeps the
-// toggling sequential.
-[Collection("DiffFeedback knob")]
 public class BuiltinDiffFeedbackTests : IDisposable
 {
     private readonly string _root;
@@ -32,13 +29,10 @@ public class BuiltinDiffFeedbackTests : IDisposable
             .Options;
         _db = new BridgeDbContext(opts);
         _db.Database.EnsureCreated();
-
-        BuiltinTools.ConfigureDiffFeedback(enabled: true, maxChars: 4000);
     }
 
     public void Dispose()
     {
-        BuiltinTools.ConfigureDiffFeedback(enabled: true, maxChars: 4000); // reset the shared knob
         _db.Dispose();
         try { File.Delete(_dbPath); } catch { }
         try { Directory.Delete(_root, recursive: true); } catch { }
@@ -106,7 +100,9 @@ public class BuiltinDiffFeedbackTests : IDisposable
     [Fact]
     public async Task Truncation_HeadBiased_WithLineCountMarker()
     {
-        BuiltinTools.ConfigureDiffFeedback(enabled: true, maxChars: 90);
+        // AsyncLocal override — immune to WebApplicationFactory re-entering ConfigureDiffFeedback
+        // (which resets the process-wide default) while this test is mid-flight.
+        using var _ = BuiltinTools.PushDiffFeedback(enabled: true, maxChars: 90);
         var path = Path.Combine(_root, "big.txt");
         var before = string.Join('\n', Enumerable.Range(1, 10).Select(i => $"line {i}"));
         var after  = string.Join('\n', Enumerable.Range(1, 10).Select(i => $"LINE {i}"));
@@ -124,7 +120,7 @@ public class BuiltinDiffFeedbackTests : IDisposable
     [Fact]
     public async Task KnobOff_RestoresBareConfirmation()
     {
-        BuiltinTools.ConfigureDiffFeedback(enabled: false);
+        using var _ = BuiltinTools.PushDiffFeedback(enabled: false);
         var path = Path.Combine(_root, "off.txt");
         File.WriteAllText(path, "alpha one\n");
 
