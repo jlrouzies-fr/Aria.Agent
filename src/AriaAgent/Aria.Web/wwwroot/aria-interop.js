@@ -778,6 +778,37 @@ window.ariaInterop = {
 // (no structural changes), which is safe.
 window.ariaInterop.enhanceCodeBlocks = function () { /* no-op: buttons are server-rendered */ };
 
+// Typeset Markdig math fences (.math) with client-side KaTeX.
+//
+// Markdig.UseMathematics emits <span/div class="math">\(...\) or \[...\]</…>. We replace the
+// *interior* of those nodes with KaTeX output. That mutates Blazor-owned MarkupString DOM, so
+// we only call this when the transcript is NOT mid-stream (see Chat.OnAfterRenderAsync). Streaming
+// re-renders would otherwise fight KaTeX the same way the old copy-button MutationObserver did —
+// docs/troubleshooting/markdown-rendering-freezes.md. If a freeze reappears, see
+// docs/troubleshooting/math-rendering.md for the Jint server-side fallback plan.
+window.ariaInterop.typesetMath = function (rootId) {
+    if (typeof katex === 'undefined' || !katex.render) return;
+    var scope = rootId ? document.getElementById(rootId) : document;
+    if (!scope || !scope.querySelectorAll) return;
+    var nodes = scope.querySelectorAll('.math');
+    for (var i = 0; i < nodes.length; i++) {
+        var el = nodes[i];
+        if (el.querySelector('.katex')) continue;
+        var tex = (el.textContent || '').trim();
+        if (!tex) continue;
+        var display = false;
+        if (tex.startsWith('\\[') && tex.endsWith('\\]')) {
+            tex = tex.slice(2, -2).trim();
+            display = true;
+        } else if (tex.startsWith('\\(') && tex.endsWith('\\)')) {
+            tex = tex.slice(2, -2).trim();
+        }
+        try {
+            katex.render(tex, el, { throwOnError: false, displayMode: display });
+        } catch (_) { /* leave source text */ }
+    }
+};
+
 document.addEventListener('click', function (e) {
     var btn = e.target.closest && e.target.closest('.code-copy-btn');
     if (!btn) return;

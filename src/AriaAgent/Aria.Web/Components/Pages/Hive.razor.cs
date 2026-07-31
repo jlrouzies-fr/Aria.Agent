@@ -166,6 +166,9 @@ public partial class Hive
                 _canvasJsInit = false;
             }
         }
+
+        // Overmind / drone drawers render markdown via MarkupString; typeset when present.
+        try { await JS.InvokeVoidAsync("ariaInterop.typesetMath"); } catch { }
     }
 
     public void Dispose()

@@ -1,9 +1,11 @@
 using System.Net;
+using System.Text;
+using System.Text.RegularExpressions;
 using Markdig;
 
 namespace Aria.Web.Helpers;
 
-public static class MarkdownHelper
+public static partial class MarkdownHelper
 {
     // Source longer than this skips ColorCode and renders without syntax highlighting.
     // ColorCode wraps every token in a <span>, so highlighting a very large block inflates
@@ -20,9 +22,12 @@ public static class MarkdownHelper
 
     // Plain pipeline: advanced Markdown features, no raw HTML passthrough, no ColorCode.
     // Used as the fallback when the source is too large to highlight or ColorCode throws.
+    // UseMathematics is NOT part of UseAdvancedExtensions — without it, LaTeX like
+    // g_{\mu\nu} / \dot{a} is mangled (emphasis, generic attributes, backslash stripping).
     public static readonly MarkdownPipeline SafePipeline =
         new MarkdownPipelineBuilder()
             .UseAdvancedExtensions()
+            .UseMathematics()
             .DisableHtml()
             .Build();
 
@@ -31,6 +36,7 @@ public static class MarkdownHelper
         Markdown.ColorCode.MarkdownPipelineBuilderExtensions.UseColorCode(
             new MarkdownPipelineBuilder()
                 .UseAdvancedExtensions()
+                .UseMathematics()
                 .DisableHtml())
             .Build();
 
@@ -87,6 +93,10 @@ public static class MarkdownHelper
     {
         if (string.IsNullOrEmpty(text)) return "";
 
+        // Models usually emit \(...\) / \[...\]; Markdig's math extension only fences $...$ / $$...$$.
+        // Normalize first so formulas survive markdown parsing, then client KaTeX typesets .math nodes.
+        text = NormalizeMathDelimiters(text);
+
         try
         {
             var pipeline = text.Length > highlightLimit ? SafePipeline : HighlightedPipeline;
@@ -106,4 +116,42 @@ public static class MarkdownHelper
     // so this targets code blocks exactly without touching inline <code>.
     private static string AddCopyButtons(string html) =>
         html.Replace("<pre>", $"<pre class=\"code-block-wrapper\" style=\"position:relative\">{CopyButton}");
+
+    /// <summary>
+    /// Converts <c>\(...\)</c> / <c>\[...\]</c> to <c>$...$</c> / <c>$$...$$</c> outside fenced
+    /// code blocks so Markdig.UseMathematics can fence them. Leaves existing $-math alone.
+    /// </summary>
+    internal static string NormalizeMathDelimiters(string text)
+    {
+        if (text.IndexOf('\\') < 0) return text;
+
+        var sb = new StringBuilder(text.Length);
+        var pos = 0;
+        foreach (Match fence in CodeFenceRx().Matches(text))
+        {
+            sb.Append(NormalizeMathInProse(text.AsSpan(pos, fence.Index - pos)));
+            sb.Append(fence.Value);
+            pos = fence.Index + fence.Length;
+        }
+        sb.Append(NormalizeMathInProse(text.AsSpan(pos)));
+        return sb.ToString();
+    }
+
+    private static string NormalizeMathInProse(ReadOnlySpan<char> prose)
+    {
+        if (prose.IsEmpty) return "";
+        var s = prose.ToString();
+        s = DisplayMathRx().Replace(s, m => "$$" + m.Groups[1].Value + "$$");
+        s = InlineMathRx().Replace(s, m => "$" + m.Groups[1].Value + "$");
+        return s;
+    }
+
+    [GeneratedRegex(@"^```[\s\S]*?^```", RegexOptions.Multiline)]
+    private static partial Regex CodeFenceRx();
+
+    [GeneratedRegex(@"\\\[([\s\S]*?)\\\]")]
+    private static partial Regex DisplayMathRx();
+
+    [GeneratedRegex(@"\\\(([\s\S]*?)\\\)")]
+    private static partial Regex InlineMathRx();
 }

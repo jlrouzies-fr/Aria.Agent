@@ -352,6 +352,11 @@
 .msg-content.markdown th      { color: var(--text-bright); border: 1px solid var(--border-normal); padding: 3px 8px; background: var(--bg-surface); }
 .msg-content.markdown td      { color: var(--text-body); border: 1px solid var(--border-dim); padding: 3px 8px; }
 
+/* KaTeX (client typeset of Markdig .math fences). Inherit chat colours; display blocks breathe. */
+.msg-content.markdown .math,
+.msg-content.markdown .katex { color: inherit; }
+.msg-content.markdown .katex-display { margin: 8px 0; overflow-x: auto; overflow-y: hidden; }
+
 /* Streaming cursor blink */
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 .streaming-cursor {

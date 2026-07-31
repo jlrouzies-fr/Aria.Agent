@@ -667,6 +667,12 @@ public partial class Chat
             _ptyNeedsCreation = false;
             await CreatePtyAsync();
         }
+        // KaTeX mutates MarkupString DOM inside .math nodes — only typeset when not streaming so
+        // per-token re-renders don't desync Blazor (see docs/troubleshooting/math-rendering.md).
+        if (!_isStreaming)
+        {
+            try { await JS.InvokeVoidAsync("ariaInterop.typesetMath", "chatMessages"); } catch { }
+        }
         if (firstRender)
         {
             await ScrollToBottomAsync();

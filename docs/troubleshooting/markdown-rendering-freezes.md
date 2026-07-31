@@ -25,9 +25,14 @@ navigation walks into the foreign node, throws **inside the render-batch apply**
 client renderer dies silently — hence the WebSocket stays open and the server side looks
 healthy, but the UI is frozen.
 
-The specific offender was a global `MutationObserver` in `wwwroot/aria-interop.js` that
-watched all of `document.body` and did `pre.appendChild(copyButton)` on every code block —
-inserting a foreign `<button>` child into Blazor-owned `<pre>` elements.
+The same class of risk applies to **client KaTeX** (`ariaInterop.typesetMath`), which mutates
+`.math` nodes inside markdown MarkupStrings — mitigated by typesetting only when not
+streaming; see `math-rendering.md` (includes a Jint server-side fallback plan).
+
+The specific offender for the original freeze was a global `MutationObserver` in
+`wwwroot/aria-interop.js` that watched all of `document.body` and did
+`pre.appendChild(copyButton)` on every code block — inserting a foreign `<button>` child into
+Blazor-owned `<pre>` elements.
 
 ### Red herring: it is NOT ColorCode / DOM size
 
