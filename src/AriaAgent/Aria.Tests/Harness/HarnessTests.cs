@@ -76,6 +76,36 @@ public class HarnessTests
     }
 
     [Fact]
+    public async Task CreateSessionAsync_EnablesMessageInjectingChatClient()
+    {
+        var runtime = new FakeHarnessRuntime();
+        runtime.AddSource(new ModelSource
+        {
+            Name = "OpenAI",
+            Url = "https://api.openai.com/v1",
+            IsPublicProvider = true,
+            Models = ["gpt-4o"]
+        });
+
+        var harness = new Aria.Harness.Core.Harness(NullLogger<Aria.Harness.Core.Harness>.Instance, runtime);
+        var options = new HarnessOptions
+        {
+            SelectedSourceName = "OpenAI",
+            SelectedModel = "gpt-4o",
+            EnabledTools = [new ActiveToolConfig("datetime")]
+        };
+
+        var (agent, _) = await harness.CreateSessionAsync(options, HarnessContext.Empty);
+
+        Assert.IsType<Microsoft.Agents.AI.ChatClientAgent>(agent);
+        var chatAgent = (Microsoft.Agents.AI.ChatClientAgent)agent;
+#pragma warning disable MAAI001
+        var injector = chatAgent.GetService(typeof(Microsoft.Agents.AI.MessageInjectingChatClient));
+#pragma warning restore MAAI001
+        Assert.NotNull(injector);
+    }
+
+    [Fact]
     public void ConsoleHarnessRuntime_FindSource_ByName_ReturnsMatchingSource()
     {
         var runtime = new ConsoleHarnessRuntime(new ConfigurationBuilder().Build(), bridgeBaseUrl: "http://127.0.0.1:1");

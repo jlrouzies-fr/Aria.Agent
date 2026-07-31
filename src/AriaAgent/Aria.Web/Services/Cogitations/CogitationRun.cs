@@ -2,8 +2,10 @@ using Aria.Harness.Governance;
 using Aria.Web.Services.Chat;
 using Aria.Web.Services.ModelBridge;
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using OpenAI.Chat;
 using TodoItem = Aria.Tools.TodoItem;
+using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace Aria.Web.Services.Cogitations;
 
@@ -19,6 +21,9 @@ public enum CogitationRunStatus { Streaming, Persisting, Completed, AwaitingCont
 public sealed class CogitationRun : ICogitationStreamSink
 {
     private readonly SealService _sealService;
+#pragma warning disable MAAI001 // MessageInjectingChatClient is Experimental in Agents.AI 1.6.2
+    private MessageInjectingChatClient? _messageInjector;
+#pragma warning restore MAAI001
 
     public int     CogitationId    { get; }
     public string  UserId          { get; }
@@ -35,7 +40,9 @@ public sealed class CogitationRun : ICogitationStreamSink
     public AIAgent               Agent    { get; }
     public AgentSession           Session  { get; }
     public CogitationStreamRouter Router   { get; }
-    public MessageEntry           Reply    { get; }
+    /// <summary>Live assistant bubble receiving tokens. Replaced by <see cref="RotateReplyForSteer"/>
+    /// so mid-turn steers can interleave user messages between sealed assistant segments.</summary>
+    public MessageEntry           Reply    { get; private set; }
 
     public readonly object Sync = new();
 
@@ -86,7 +93,114 @@ public sealed class CogitationRun : ICogitationStreamSink
         Router          = router;
         Reply           = reply;
         _sealService    = sealService;
+        _messageInjector = ResolveMessageInjector(agent);
     }
+
+    /// <summary>
+    /// Enqueues a mid-turn user redirect into the live function loop (MessageInjectingChatClient).
+    /// Drained at the next tool-round boundary — does not cancel the run or start a new turn.
+    /// The payload is wrapped so the model treats it as an additive interrupt, not a new sole task.
+    /// </summary>
+#pragma warning disable MAAI001 // MessageInjectingChatClient is Experimental in Agents.AI 1.6.2
+    public bool TrySteer(string text)
+    {
+        if (Status != CogitationRunStatus.Streaming) return false;
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        var injector = _messageInjector ?? ResolveMessageInjector(Agent);
+        if (injector == null) return false;
+        _messageInjector = injector;
+
+        injector.EnqueueMessages(Session, [new ChatMessage(ChatRole.User, FormatSteerForModel(text.Trim()))]);
+        return true;
+    }
+
+    /// <summary>
+    /// Framing for the injected user message. Without this, models typically abandon the in-flight
+    /// plan and answer only the steer (e.g. "2+2" → "4" then stop).
+    /// </summary>
+    internal static string FormatSteerForModel(string userText) =>
+        "[MID-TURN STEER — the user is redirecting you while your current turn is still in progress. " +
+        "Handle this request now, then CONTINUE and finish the original task you were already working on. " +
+        "Do not stop after answering the steer alone; resume the prior plan until it is complete.]\n\n" +
+        userText;
+
+    /// <summary>How many injects are still waiting in the framework queue (not yet drained).</summary>
+    public int PendingInjectorCount
+    {
+        get
+        {
+            var injector = _messageInjector ?? ResolveMessageInjector(Agent);
+            if (injector == null) return 0;
+            return injector.GetPendingMessages(Session).Count;
+        }
+    }
+
+    // Key used by MessageInjectingChatClient for its per-session queue (not a public const in 1.6.2).
+    private const string PendingInjectedMessagesKey = "MessageInjectingChatClient.PendingInjectedMessages";
+
+    /// <summary>
+    /// Drops one pending inject whose text matches <paramref name="text"/> (first match), so ✕ on
+    /// the STEERING strip can cancel before the next tool-round drain. Returns false if not found.
+    /// </summary>
+    public bool TryCancelPendingSteer(string text)
+    {
+        text = text.Trim();
+        if (text.Length == 0) return false;
+        var injector = _messageInjector ?? ResolveMessageInjector(Agent);
+        if (injector == null) return false;
+
+        var framed = FormatSteerForModel(text);
+        var pending = injector.GetPendingMessages(Session).ToList();
+        var idx = pending.FindIndex(m =>
+            string.Equals(m.Text, framed, StringComparison.Ordinal)
+            || string.Equals(m.Text, text, StringComparison.Ordinal));
+        if (idx < 0) return false;
+        pending.RemoveAt(idx);
+
+        // Replace the session queue with the remainder (public API has enqueue/get only).
+        Session.StateBag.SetValue(PendingInjectedMessagesKey, pending);
+        return true;
+    }
+
+    private static MessageInjectingChatClient? ResolveMessageInjector(AIAgent agent)
+    {
+        if (agent is not ChatClientAgent chatAgent) return null;
+        return chatAgent.GetService(typeof(MessageInjectingChatClient)) as MessageInjectingChatClient;
+    }
+#pragma warning restore MAAI001
+
+    /// <summary>
+    /// Seals the current assistant bubble (if it has any real content) and starts a fresh
+    /// <see cref="Reply"/> for subsequent tokens. Returns the sealed entry so the Chat UI can keep
+    /// it in the transcript and insert the steered user message after it. Returns null when there
+    /// is nothing to seal yet (steer before any tokens) — caller should insert the user message
+    /// before the still-empty streaming bubble.
+    /// </summary>
+    public MessageEntry? RotateReplyForSteer()
+    {
+        lock (Sync)
+        {
+            // MessageEntry("", "") still creates an empty Content section — ignore that.
+            if (!HasMeaningfulReplyContent(Reply)) return null;
+
+            CollapseThinkingLocked();
+            var sealedReply = Reply;
+            Reply = new MessageEntry("assistant", "")
+            {
+                SpriteKey   = sealedReply.SpriteKey,
+                AccentColor = sealedReply.AccentColor,
+                AgentName   = sealedReply.AgentName,
+                IsSoul      = false,
+            };
+            return sealedReply;
+        }
+    }
+
+    private static bool HasMeaningfulReplyContent(MessageEntry reply) =>
+        reply.Sections.Any(s =>
+            s.Type == MessageSection.SectionType.ToolActivity
+            || (s.Type == MessageSection.SectionType.Content && !string.IsNullOrWhiteSpace(s.Text))
+            || (s.Type == MessageSection.SectionType.Thinking && !string.IsNullOrWhiteSpace(s.Text)));
 
     // ── Content streaming (called by CogitationRunRegistry's run loop) ─────────
 

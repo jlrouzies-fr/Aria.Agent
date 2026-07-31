@@ -1,8 +1,8 @@
 # // IDEA — Mid-turn steering via MessageInjectingChatClient
 
-**Status: planned.** While a cogitation turn is streaming, the soul can redirect the agent at the
+**Status: implemented (UI + Harness wiring).** While a cogitation turn is streaming, the soul can redirect the agent at the
 next tool-round boundary without stopping the turn or waiting for a full post-turn FIFO drain.
-Uses the native Microsoft Agents AI `MessageInjectingChatClient` (already in package 1.6.2).
+Uses the native Microsoft Agents AI `MessageInjectingChatClient` (package 1.6.2; Experimental MAAI001 suppressed at call sites).
 Builds on the multi-message queue (Ctrl+Enter FIFO); steering is a separate mid-turn path.
 
 ## Current state
@@ -21,11 +21,14 @@ Builds on the multi-message queue (Ctrl+Enter FIFO); steering is a separate mid-
 ### Locked UX
 
 - **Ctrl+Enter** — queue (post-turn FIFO). Unchanged.
-- **STEER** on each queue row (sibling of ✕) — inject that item mid-turn; remove from FIFO.
-- **Ctrl+Up** / **Cmd+Up** — if composer has text, steer that; else steer queue head. No-op when
-  not streaming. Plain ↑ on empty input still recalls queue head.
-- Steered text appears in the transcript and is persisted like a normal user message; do **not**
-  start a new `CogitationRun` or cancel the live stream.
+- **STEER** (queue header) / **Ctrl+Up** with empty composer — merge the **entire** queue into one
+  mid-turn inject (joined with blank lines), then clear the FIFO.
+- **Ctrl+Up** with composer text — steer that text alone (queue left intact).
+- Submitted steers sit in a bottom **STEERING** strip (waiting for agent) — not mid-transcript —
+  until `MessageInjectingChatClient` drains them; then they promote to normal user messages and the
+  assistant bubble seals/rotates. ✕ on the strip cancels before drain when still pending.
+- Per-row queue ✕ still discards one slot; plain ↑ on empty input still recalls one row for editing.
+- Do **not** start a new `CogitationRun` or cancel the live stream.
 
 ### Architecture
 

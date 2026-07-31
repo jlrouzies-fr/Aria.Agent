@@ -26,7 +26,7 @@ also needs — build Servitor first, or land the column with whichever goes firs
 | [Turn checkpoints & /rewind](turn-checkpoints-rewind-plan.md) | ✅ Tag `FileUndo` rows with the turn's run id; revert a whole agent turn atomically behind the existing hash guard |
 | [Worktree sub-agents & fleet placement](worktree-subagents-fleet-plan.md) | Git-worktree isolation for parallel coding children + `node` argument to place a sub-agent on a specific Fleet machine |
 | [Persistent shell](persistent-shell-plan.md) | One long-lived shell per agent session (sentinel protocol, SIGINT-on-timeout) — makes the README's "persistent bash" claim true |
-| [Mid-turn steering](mid-turn-steering-plan.md) | Inject user redirects mid-turn via MS `MessageInjectingChatClient` (STEER on queue rows + Ctrl+Up); Ctrl+Enter stays post-turn FIFO |
+| [Mid-turn steering](mid-turn-steering-plan.md) | Inject user redirects mid-turn via MS `MessageInjectingChatClient` (queue STEER merges all + Ctrl+Up); Ctrl+Enter stays post-turn FIFO |
 
 Suggested order: edit diff feedback first (smallest diff, reuses existing code), then run_tests +
 verify nudge (the edit → verify → fix loop), then context-window discovery and turn checkpoints

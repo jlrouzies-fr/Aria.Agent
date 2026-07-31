@@ -120,6 +120,9 @@ public partial class Chat : ICogitationStreamSink
     private bool          _smartScrollPending;
     // Follow-ups typed while a turn is streaming. FIFO — drained one-at-a-time after each run completes.
     private readonly List<string> _queuedMessages = [];
+    // Mid-turn steers submitted to MessageInjectingChatClient but not yet drained into the model.
+    // Shown in the STEERING strip above the composer; promoted into the transcript on drain.
+    private readonly List<string> _pendingSteers = [];
     private bool          _compactConfirmOpen;
 
     // Dossier defaults applied at session build for new chats; preserved across soft rebuilds.
@@ -412,6 +415,7 @@ public partial class Chat : ICogitationStreamSink
         _suggestedFolderName    = null;
         _suggestedFolderColor   = null;
         _queuedMessages.Clear();
+        _pendingSteers.Clear();
         ClearReplayState();
         SessionState.ActiveCogitationId = null;
     }

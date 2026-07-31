@@ -85,10 +85,21 @@ public sealed partial class Harness : IHarness
         var seenToolNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         tools = tools.Where(t => seenToolNames.Add(t.Name)).ToList();
 
-        var agent = chatClient.AsAIAgent(
-            name: null,
-            instructions: baseInstructions,
-            tools: tools);
+        // EnableMessageInjection installs MessageInjectingChatClient so the UI can enqueue mid-turn
+        // steers (tool-round boundary). Per-service-call persistence keeps those injects in session
+        // history between function-loop iterations. Both flags are Experimental (MAAI001) in Agents.AI 1.6.2.
+#pragma warning disable MAAI001
+        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions
+        {
+            ChatOptions = new ChatOptions
+            {
+                Instructions = baseInstructions,
+                Tools = tools,
+            },
+            EnableMessageInjection = true,
+            RequirePerServiceCallChatHistoryPersistence = true,
+        });
+#pragma warning restore MAAI001
 
         _reasoningHandlers.GetValue(agent, _ => reasoningHandler);
         _governanceContexts.GetValue(agent, _ => govCtx);

@@ -572,6 +572,15 @@ public partial class Chat
         if (_streamingMsg != null) SyncMirrorFromRun(_streamingMsg, run);
         if (run.WasInterrupted) MarkInterrupted();
 
+        // Promote steers the injector already drained; park any still-waiting ones back into the
+        // post-turn FIFO so they aren't lost when the turn ends.
+        await PromoteConsumedSteersAsync();
+        if (_pendingSteers.Count > 0)
+        {
+            _queuedMessages.InsertRange(0, _pendingSteers);
+            _pendingSteers.Clear();
+        }
+
         run.HasAttachedViewer = false;
         if (_runUpdatedHandler   != null) run.Updated         -= _runUpdatedHandler;
         if (_runCompletedHandler != null) run.Completed       -= _runCompletedHandler;
@@ -717,9 +726,14 @@ public partial class Chat
         // swallow these here so Enter accepts a selection instead of sending the message.
         if (AnyPickerOpen && e.Key is "Enter" or "ArrowDown" or "ArrowUp" or "Tab" or "Escape") return;
 
-        // Arrow-up on an empty input recalls the next (head) queued message for editing — same
-        // gesture as Claude Code's history recall. Editing it and pressing Ctrl+Enter re-queues it
-        // at the tail; discarding via ✕ removes that slot only.
+        // Ctrl/Cmd+Up steers mid-turn (composer text, else queue head). Plain ↑ on empty input
+        // still recalls the queue head for editing.
+        if (e.Key == "ArrowUp" && (e.CtrlKey || e.MetaKey))
+        {
+            await SteerComposerOrHeadAsync();
+            return;
+        }
+
         if (e.Key == "ArrowUp" && string.IsNullOrEmpty(_input) && _queuedMessages.Count > 0)
         {
             RecallQueued(0);
@@ -764,6 +778,265 @@ public partial class Chat
         if (index < 0 || index >= _queuedMessages.Count) return;
         _queuedMessages.RemoveAt(index);
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// STEER the queue: merge every pending FIFO item into one mid-turn inject. Shown in the
+    /// STEERING strip until the framework drains it; then promoted into the transcript.
+    /// </summary>
+    private async Task SteerAllQueuedAsync()
+    {
+        if (_queuedMessages.Count == 0) return;
+        var snapshot = _queuedMessages.ToList();
+        var merged = string.Join("\n\n", snapshot.Select(s => s.Trim()).Where(s => s.Length > 0));
+        if (string.IsNullOrEmpty(merged)) return;
+
+        _queuedMessages.Clear();
+        StateHasChanged();
+
+        if (!await SubmitSteerAsync(merged))
+        {
+            _queuedMessages.AddRange(snapshot);
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Ctrl/Cmd+Up: steer composer text if present, otherwise merge-and-steer the whole queue.
+    /// </summary>
+    private async Task SteerComposerOrHeadAsync()
+    {
+        if (!_isStreaming) return;
+
+        var composer = _input.Trim();
+        if (!string.IsNullOrEmpty(composer))
+        {
+            _input = "";
+            if (!await SubmitSteerAsync(composer))
+            {
+                _input = composer;
+                StateHasChanged();
+            }
+            return;
+        }
+
+        await SteerAllQueuedAsync();
+    }
+
+    /// <summary>
+    /// Enqueues a mid-turn redirect and parks it in the STEERING strip (not the transcript) until
+    /// the injector drains it at the next tool-round boundary.
+    /// </summary>
+    private Task<bool> SubmitSteerAsync(string text)
+    {
+        text = text.Trim();
+        if (string.IsNullOrEmpty(text)) return Task.FromResult(false);
+
+        var run = _attachedRun;
+        if (run == null || !_isStreaming || _streamingMsg == null)
+        {
+            _statusOverride = "STEER UNAVAILABLE — no live turn";
+            StateHasChanged();
+            return Task.FromResult(false);
+        }
+
+        if (!run.TrySteer(text))
+        {
+            _statusOverride = "STEER UNAVAILABLE — injector not active";
+            StateHasChanged();
+            return Task.FromResult(false);
+        }
+
+        _pendingSteers.Add(text);
+        _statusOverride = null;
+        StateHasChanged();
+        return Task.FromResult(true);
+    }
+
+    /// <summary>
+    /// Cancels one pending steer from the STEERING strip (and the injector queue if still waiting).
+    /// </summary>
+    private void CancelPendingSteer(int index)
+    {
+        if (index < 0 || index >= _pendingSteers.Count) return;
+        var text = _pendingSteers[index];
+        _pendingSteers.RemoveAt(index);
+        _attachedRun?.TryCancelPendingSteer(text);
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// When the framework has drained injects, promote those texts into the transcript: seal the
+    /// current assistant bubble, append the steered user message(s), open a fresh streaming bubble.
+    /// </summary>
+    private async Task PromoteConsumedSteersAsync()
+    {
+        var run = _attachedRun;
+        if (run == null || _pendingSteers.Count == 0 || _streamingMsg == null) return;
+
+        var stillWaiting = run.PendingInjectorCount;
+        var consumed = _pendingSteers.Count - stillWaiting;
+        if (consumed <= 0) return;
+
+        var toPromote = _pendingSteers.GetRange(0, consumed);
+        _pendingSteers.RemoveRange(0, consumed);
+
+        // One rotate for the batch, then all promoted user messages, then the new streaming bubble.
+        var sealedReply = run.RotateReplyForSteer();
+        if (sealedReply != null)
+        {
+            await PersistAssistantSegmentAsync(sealedReply);
+
+            // Fresh-send path: sealedReply IS the former _streamingMsg already in _messages.
+            // Reattach path: _streamingMsg is a separate mirror — swap it for the sealed object.
+            if (!ReferenceEquals(_streamingMsg, sealedReply))
+            {
+                var mirrorIdx = _messages.IndexOf(_streamingMsg);
+                if (mirrorIdx >= 0) _messages[mirrorIdx] = sealedReply;
+                else if (!_messages.Contains(sealedReply)) _messages.Add(sealedReply);
+            }
+
+            foreach (var text in toPromote)
+            {
+                _messages.Add(new MessageEntry("user", text) { IsSoul = true });
+                await PersistSteeredUserMessageAsync(text);
+            }
+
+            _streamingMsg   = run.Reply;
+            _thinkingTarget = _streamingMsg;
+            if (!_messages.Contains(_streamingMsg))
+                _messages.Add(_streamingMsg);
+        }
+        else
+        {
+            var idx = _messages.IndexOf(_streamingMsg);
+            if (idx < 0) idx = _messages.Count;
+            foreach (var text in toPromote)
+            {
+                _messages.Insert(idx++, new MessageEntry("user", text) { IsSoul = true });
+                await PersistSteeredUserMessageAsync(text);
+            }
+        }
+
+        _smartScrollPending = true;
+        StateHasChanged();
+    }
+
+    private async Task PersistSteeredUserMessageAsync(string text)
+    {
+        if (!_cogitationId.HasValue || SessionState.CurrentUser == null) return;
+
+        var cogId = _cogitationId.Value;
+        if (_cogitationOriginNodeId != null)
+        {
+            var uid = BridgeUserId();
+            if (uid == null) return;
+            var ok = await BridgeCogitation.AddMessageAsync(
+                uid, cogId, "user", text, originNodeId: _cogitationOriginNodeId);
+            if (ok) _ = CogitationService.TouchAsync(cogId);
+            else
+            {
+                _attachError = "// COGITATOR FAULT: could not save steered message to your node.";
+                StateHasChanged();
+            }
+        }
+        else
+        {
+            await CogitationService.AddMessageAsync(cogId, "user", text);
+        }
+    }
+
+    // Persist a sealed mid-turn assistant segment (same shape FinishRunAsync uses for the final
+    // reply). Screenshot-bearing tool sections become their own rows so reload order matches live.
+    private async Task PersistAssistantSegmentAsync(MessageEntry assistant)
+    {
+        if (!_cogitationId.HasValue || SessionState.CurrentUser == null) return;
+        if (assistant.Sections.Count == 0) return;
+
+        var cogId = _cogitationId.Value;
+        var chunks = SplitAssistantForPersistence(assistant);
+        if (_cogitationOriginNodeId != null)
+        {
+            var uid = BridgeUserId();
+            if (uid == null) return;
+            var origin = _cogitationOriginNodeId;
+            foreach (var chunk in chunks)
+            {
+                bool ok;
+                if (chunk.IsScreenshot)
+                    ok = await BridgeCogitation.AddMessageAsync(uid, cogId, "screenshot", chunk.Text,
+                        originNodeId: origin, imageBase64: chunk.ImageBase64, imageMediaType: chunk.ImageMediaType);
+                else
+                    ok = await BridgeCogitation.AddMessageAsync(uid, cogId, "assistant", chunk.Text, chunk.Thinking, chunk.SectionsJson,
+                        originNodeId: origin);
+                if (!ok)
+                {
+                    _attachError = "// COGITATOR FAULT: could not save steered assistant segment to your node.";
+                    StateHasChanged();
+                    return;
+                }
+            }
+            _ = CogitationService.TouchAsync(cogId);
+        }
+        else
+        {
+            foreach (var chunk in chunks)
+            {
+                if (chunk.IsScreenshot)
+                    await CogitationService.AddMessageAsync(cogId, "screenshot", chunk.Text,
+                        imageBase64: chunk.ImageBase64, imageMediaType: chunk.ImageMediaType);
+                else
+                    await CogitationService.AddMessageAsync(cogId, "assistant", chunk.Text, chunk.Thinking, chunk.SectionsJson);
+            }
+        }
+    }
+
+    private readonly record struct SteerPersistChunk(
+        bool IsScreenshot, string Text, string? Thinking, string? SectionsJson,
+        string? ImageBase64, string? ImageMediaType);
+
+    private static readonly System.Text.Json.JsonSerializerOptions SteerSectionJsonOptions = new()
+    {
+        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+    };
+
+    private static List<SteerPersistChunk> SplitAssistantForPersistence(MessageEntry assistant)
+    {
+        var chunks = new List<SteerPersistChunk>();
+        var thinking  = assistant.ThinkingContent.Length > 0 ? assistant.ThinkingContent : null;
+        var firstText = true;
+        var sb        = new System.Text.StringBuilder();
+        var sections  = new List<MessageSection>();
+
+        void FlushText()
+        {
+            if (sb.Length == 0 && sections.Count == 0) return;
+            var sectionsJson = sections.Count > 0
+                ? System.Text.Json.JsonSerializer.Serialize(sections, SteerSectionJsonOptions)
+                : null;
+            chunks.Add(new SteerPersistChunk(false, sb.ToString(), firstText ? thinking : null, sectionsJson, null, null));
+            firstText = false;
+            sb.Clear();
+            sections.Clear();
+        }
+
+        foreach (var s in assistant.Sections)
+        {
+            if (s.Type == MessageSection.SectionType.Content)
+                sb.Append(s.Text);
+            else if (s.Type == MessageSection.SectionType.ToolActivity &&
+                     s.ToolCall?.ImageBase64 is { Length: > 0 } image)
+            {
+                FlushText();
+                var caption = string.IsNullOrWhiteSpace(s.ToolCall!.Result) ? "Screenshot" : s.ToolCall!.Result!;
+                chunks.Add(new SteerPersistChunk(true, caption, null, null, image, s.ToolCall.ImageMediaType ?? "image/png"));
+            }
+            else if (s.Type == MessageSection.SectionType.ToolActivity)
+                sections.Add(s);
+        }
+        FlushText();
+        return chunks;
     }
 
     /// <summary>

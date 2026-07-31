@@ -575,7 +575,11 @@ public partial class Chat
         if (run != null && _attachedRun == run && _streamingMsg != null)
         {
             _pendingRunUpdate = null;
-            SyncMirrorFromRun(_streamingMsg, run);
+            // Promote steers the injector has drained before syncing the live bubble — so the
+            // transcript can seal/rotate and the new Reply is what we mirror into.
+            await PromoteConsumedSteersAsync();
+            if (_streamingMsg != null)
+                SyncMirrorFromRun(_streamingMsg, run);
             // Only replace the manifest list when the contents actually changed. Replacing it
             // on every throttled flush restarts the CSS pulse animation on the in-progress item
             // and can make the checklist appear to blink or jump.
