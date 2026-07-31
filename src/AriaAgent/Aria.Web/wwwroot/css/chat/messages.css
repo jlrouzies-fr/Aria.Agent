@@ -232,6 +232,37 @@
 .msg--soul .msg-content { width: 88%; text-align: right; }
 .msg--soul .msg-prefix { justify-content: flex-end; }
 
+/* Edit-and-replay: hover actions on soul turns + highlight while armed in the composer. */
+.msg-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 4px;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+.msg:hover .msg-actions,
+.msg--editing .msg-actions { opacity: 1; }
+.msg-action-btn {
+    background: none;
+    border: 1px solid var(--border-dim);
+    color: var(--text-dead);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    padding: 2px 7px;
+    cursor: pointer;
+}
+.msg-action-btn:hover {
+    color: var(--gold-bright);
+    border-color: var(--border-normal);
+}
+.msg--editing {
+    outline: 1px solid var(--gold-dim);
+    outline-offset: 2px;
+    background: color-mix(in srgb, var(--gold-dim) 8%, transparent);
+}
+
 .msg.system .msg-prefix { display: none; }
 .msg.system .msg-content {
     color: var(--text-system);

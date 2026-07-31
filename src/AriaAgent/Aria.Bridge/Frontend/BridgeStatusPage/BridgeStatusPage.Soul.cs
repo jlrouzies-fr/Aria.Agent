@@ -106,7 +106,7 @@ public static partial class BridgeStatusPage
                     <li>Open <strong>Devices</strong> in the sidebar and copy the <strong>Soul ID</strong> shown there.</li>
                     <li>On this machine, paste that ID above and click <strong>JOIN</strong>.</li>
                     <li>Note the pairing code shown here, then in Aria.Web → Devices enter it and click <strong>APPROVE</strong>.</li>
-                    <li>On the <strong>primary</strong> bridge Soul panel, click <strong>⧉ COPY</strong> next to the master-key fingerprint.</li>
+                    <li>On the <strong>primary</strong> bridge Soul panel, click <strong>▶ SHOW FINGERPRINT</strong>.</li>
                     <li>Back here, paste it into the join step that appears and confirm — that finishes joining.</li>
                   </ol>
                 </div>
@@ -356,9 +356,8 @@ public static partial class BridgeStatusPage
 
         // Join continues after enrollment: a joined node refuses grants until a human pastes the
         // primary's master-key fingerprint here (out of band). Shown as the next join step, not a
-        // separate warning. On the primary, surface the fingerprint with Copy — that is the value
-        // the joining machine needs.
-        let _masterFp = null;
+        // separate warning. On the primary, offer SHOW FINGERPRINT — that is the out-of-band
+        // reference the joining machine needs.
         async function refreshSoulPin() {
           const pinBanner = document.getElementById('soul-pin-banner');
           const fpBanner  = document.getElementById('soul-fingerprint-banner');
@@ -375,7 +374,7 @@ public static partial class BridgeStatusPage
                     <div style="margin-bottom:8px">⛨ <strong style="color:#f0d060">JOIN · CONFIRM MASTER KEY</strong>
                       <span style="color:var(--text-muted)"> — last step</span></div>
                     <ol style="margin:0 0 10px 18px;padding:0;line-height:1.8;color:var(--text-muted)">
-                      <li>On the <strong style="color:var(--text-bright)">primary</strong> bridge → Soul, click <strong style="color:var(--text-bright)">⧉ COPY</strong> next to the master-key fingerprint.</li>
+                      <li>On the <strong style="color:var(--text-bright)">primary</strong> bridge → Soul, click <strong style="color:var(--text-bright)">▶ SHOW FINGERPRINT</strong>.</li>
                       <li>Paste it below and confirm. Take it from that machine — never from Aria.Web.</li>
                     </ol>
                     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -405,39 +404,26 @@ public static partial class BridgeStatusPage
               // Primary only (!joined): this machine holds the master key, so it can show the
               // fingerprint a joining device needs. Joined nodes must not offer this — their
               // PublicKeyBase64 is only a pin, not an authoritative reference.
-              if (d && !d.joined && soul && soul.hasKeypair && d.fingerprint) {
-                _masterFp = d.fingerprint;
+              if (d && !d.joined && soul && soul.hasKeypair) {
                 fpBanner.style.display = 'flex';
                 fpBanner.style.alignItems = 'center';
                 fpBanner.style.gap = '10px';
                 fpBanner.style.flexWrap = 'wrap';
                 fpBanner.innerHTML = `<span style="flex:1;line-height:1.6;color:var(--text-muted)">
                     ⛨ <strong style="color:var(--text-title)">MASTER KEY FINGERPRINT</strong> —
-                    when a device is joining, copy this and paste it into that machine's last join step.
+                    when a device is joining, open this and paste the value into that machine's last join step.
                     Read it here — never from Aria.Web.
-                    <div style="margin-top:6px;font-size:15px;letter-spacing:.18em;color:var(--text-title);user-select:all">${esc(d.fingerprint)}</div>
                   </span>
-                  <button onclick="copyMasterFingerprint()" id="copy-master-fp-btn"
-                     style="flex-shrink:0;background:var(--bg-surface);border:1px solid var(--border-glow);color:var(--text-title);padding:6px 14px;cursor:pointer;font-family:monospace;font-size:11px;letter-spacing:.08em">⧉ COPY</button>
                   <a href="/soul/fingerprint" target="_blank" rel="noopener"
-                     style="flex-shrink:0;background:transparent;border:1px solid var(--border-dim);color:var(--text-dead);padding:6px 12px;cursor:pointer;font-family:monospace;font-size:10px;letter-spacing:.08em;text-decoration:none">OPEN PAGE</a>`;
+                     style="flex-shrink:0;background:var(--bg-surface);border:1px solid var(--border-glow);color:var(--text-title);padding:6px 14px;cursor:pointer;font-family:monospace;font-size:11px;letter-spacing:.08em;text-decoration:none">▶ SHOW FINGERPRINT</a>`;
               } else {
                 fpBanner.style.display = 'none';
-                _masterFp = null;
               }
             }
           } catch {
             if (pinBanner) { pinBanner.style.display = 'none'; pinBanner.dataset.form = ''; }
             if (fpBanner)  fpBanner.style.display = 'none';
           }
-        }
-
-        async function copyMasterFingerprint() {
-          try {
-            await navigator.clipboard.writeText(_masterFp || '');
-            const btn = document.getElementById('copy-master-fp-btn');
-            if (btn) { btn.textContent = '✓ COPIED'; setTimeout(() => { btn.textContent = '⧉ COPY'; }, 2000); }
-          } catch (e) { alert('Copy failed: ' + e.message); }
         }
 
         async function confirmJoinPin() {

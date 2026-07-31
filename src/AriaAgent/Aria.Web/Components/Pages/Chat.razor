@@ -436,11 +436,12 @@
             @for (int i = 0; i < _messages.Count; i++)
             {
                 var msg = _messages[i];
+                var msgIdx = i;
                 @if (msg.IsCompactSummary)
                 {
                     <div class="compact-divider">⟲ COMPACTED — prior history summarized below</div>
                 }
-                <div class="msg @msg.Role @(msg.IsSoul ? "msg--soul" : "")" id="msg-@i">
+                <div class="msg @msg.Role @(msg.IsSoul ? "msg--soul" : "") @(_replayFromIndex == msgIdx ? "msg--editing" : "")" id="msg-@i">
                     <span class="msg-prefix">
                         @if (msg.Role == "user")
                         {
@@ -598,6 +599,14 @@
                                     <span class="tk-label" data-tip="Output tokens per second — inference engine generation speed">tk/s</span>
                                 </span>
                             }
+                        </div>
+                    }
+                    @if (msg.Role == "user" && CanEditPrompt(msgIdx))
+                    {
+                        <div class="msg-actions">
+                            <button type="button" class="msg-action-btn"
+                                    data-tip="Edit and resend — discards later turns"
+                                    @onclick="() => BeginEditPrompt(msgIdx)">EDIT</button>
                         </div>
                     }
                 </div>
@@ -1256,10 +1265,29 @@
             </div>
         }
 
+        @if (_replayFromIndex != null)
+        {
+            <div class="replay-block">
+                <div class="replay-header">
+                    <span class="replay-title">✎ EDIT &amp; REPLAY</span>
+                    <span class="replay-hint">
+                        @(ReplayDiscardCount > 1
+                            ? $"SEND DISCARDS {ReplayDiscardCount} LATER TURNS"
+                            : "SEND REPLACES THIS TURN")
+                    </span>
+                    <button type="button" class="replay-cancel" @onclick="CancelEditPrompt" data-tip="Cancel edit">✕</button>
+                </div>
+                @if (ReplayHasAttachmentNote)
+                {
+                    <div class="replay-note">Attachment bytes are not re-sent — only the text below goes to the agent.</div>
+                }
+            </div>
+        }
+
         <div class="input-area">
             <DebouncedTextArea id="chatInput"
-                               class="@("chat-input " + (!string.IsNullOrEmpty(_queuedInput) ? "input-queued" : ""))"
-                               placeholder="@(_isStreaming ? "// Press Ctrl+Enter to queue next message…" : "// Transmit directive to Aria...")"
+                               class="@("chat-input " + (!string.IsNullOrEmpty(_queuedInput) ? "input-queued" : "") + (_replayFromIndex != null ? " input-replay" : ""))"
+                               placeholder="@(_isStreaming ? "// Press Ctrl+Enter to queue next message…" : (_replayFromIndex != null ? "// Edit prompt, then Ctrl+Enter to resend…" : "// Transmit directive to Aria..."))"
                                rows="1"
                                disabled="@(_agent == null || _cogitationOffline)"
                                Value="@_input"
@@ -1311,11 +1339,11 @@
                     }
                     else
                     {
-                        <button class="transmit-btn @(!string.IsNullOrEmpty(_queuedInput) ? "transmit-queued" : "")"
+                        <button class="transmit-btn @(!string.IsNullOrEmpty(_queuedInput) ? "transmit-queued" : "") @(_replayFromIndex != null ? "transmit-replay" : "")"
                                 @onclick="SendAsync"
-                                title="Send (Ctrl+Enter)"
+                                title="@(_replayFromIndex != null ? "Resend edited prompt (Ctrl+Enter)" : "Send (Ctrl+Enter)")"
                                 disabled="@((string.IsNullOrWhiteSpace(_input) && _attachedFileName == null) || _agent == null || _cogitationOffline)">
-                            @(!string.IsNullOrEmpty(_queuedInput) ? "QUEUED ▶▶" : "TRANSMIT ▶▶")
+                            @(_replayFromIndex != null ? "REPLAY ▶▶" : !string.IsNullOrEmpty(_queuedInput) ? "QUEUED ▶▶" : "TRANSMIT ▶▶")
                             <span class="transmit-hint">CTRL+Enter</span>
                         </button>
                     }

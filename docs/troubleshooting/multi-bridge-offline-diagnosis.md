@@ -34,7 +34,7 @@ The top bar button, chat placeholder, and soul-gated UI key off **circuit verifi
    - Server adds machine B to `SoulNodeKeys`.
 5. Machine B reconnects and authenticates successfully.
 6. **Finish joining on machine B** — last join step, not optional for cross-device grants:
-   - On machine A’s bridge → **Soul**, click **⧉ COPY** next to the master-key fingerprint.
+   - On machine A’s bridge → **Soul**, click **▶ SHOW FINGERPRINT**.
    - On machine B’s bridge → **Soul**, paste into **JOIN · CONFIRM MASTER KEY** and confirm
      (`POST /soul/pin-key`). Until this succeeds, B reports `unpinned` and Devices shows
      **JOIN NOT FINISHED**; seals approved on A will not be honoured on B.

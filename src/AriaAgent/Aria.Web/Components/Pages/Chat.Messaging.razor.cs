@@ -168,6 +168,16 @@ public partial class Chat
         // don't block on those (a Hive cogitation may open with no globally-selected channel at all).
         if (!_isHiveCogitation && (_agent == null || _session == null)) return;
 
+        // Edit-and-replay: truncate transcript + reset thread before the normal send path appends
+        // the edited user turn. Must run before we clear _input / append the new user bubble.
+        if (_replayFromIndex != null)
+        {
+            if (!await PrepareReplayBeforeSendAsync()) return;
+            // After truncate the live session is brand-new; SendAsync's null-session guard above
+            // already passed, but Prepare may have replaced _session — re-check.
+            if (!_isHiveCogitation && (_agent == null || _session == null)) return;
+        }
+
         // Never let a null router reach StartRun: `req.Router.Target = run` would NRE unhandled and
         // kill the whole circuit (frozen chat, dead UI). AttachToRun now restores it, so this firing
         // means some new detach path left the component half-torn-down — surface it instead of dying.
@@ -840,16 +850,29 @@ public partial class Chat
 
         _messages.Clear();
         _messages.Add(new MessageEntry("assistant", summary) { IsCompactSummary = true });
-        _historyLoaded   = true;
-        _historyInjected = false;
-
-        // Spin a fresh thread on the already-built agent so the live context window is actually
-        // reclaimed now, not just the next time a session happens to get recreated. If this faults,
-        // the old thread just keeps running uncompacted until that next recreation.
-        try { _session = await _agent.CreateSessionAsync(); } catch { }
+        await ResetAgentThreadAfterTranscriptChangeAsync();
 
         _isStreaming = false;
         await InvokeAsync(StateHasChanged);
         await ScrollToBottomAsync();
+    }
+
+    /// <summary>
+    /// After Compact or edit-and-replay rewrites the persisted transcript: spin a fresh agent
+    /// thread and force the next send to reinject history via <see cref="BuildHistoryContext"/>.
+    /// </summary>
+    private async Task ResetAgentThreadAfterTranscriptChangeAsync()
+    {
+        _historyLoaded   = _messages.Any(m => m.Role != "system");
+        _historyInjected = false;
+
+        // Spin a fresh thread on the already-built agent so the live context window matches the
+        // rewritten transcript. If this faults, the next session recreation will catch up.
+        try
+        {
+            if (_agent != null)
+                _session = await _agent.CreateSessionAsync();
+        }
+        catch { /* keep old thread until next recreation */ }
     }
 }

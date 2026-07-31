@@ -228,7 +228,7 @@ public static class SoulPinEndpoints
                it will honour approvals signed on your other devices.</p>
             <ol>
               <li>On the primary machine, open the bridge status page → <b>Soul</b>.</li>
-              <li>Click <b>⧉ COPY</b> next to the master-key fingerprint
+              <li>Click <b>▶ SHOW FINGERPRINT</b>
                   (or open <b>http://localhost:5741/soul/fingerprint</b>).</li>
               <li>Paste it below and confirm.</li>
             </ol>

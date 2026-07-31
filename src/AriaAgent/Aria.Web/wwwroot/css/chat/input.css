@@ -154,6 +154,42 @@
 }
 .queue-text:hover { color: var(--gold-bright); }
 
+/* ── Edit & replay banner (armed when EDIT is clicked on a prior user turn) ── */
+.replay-block {
+    border: 1px solid var(--border-normal);
+    border-left: 2px solid var(--gold-dim);
+    background: var(--bg-surface);
+    margin: 0 0 6px 0;
+    padding: 6px 10px 8px;
+    font-family: var(--font-mono);
+}
+.replay-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+}
+.replay-title { color: var(--gold-normal); letter-spacing: 2px; font-size: 10px; }
+.replay-hint { color: var(--text-dead); font-size: 9px; letter-spacing: 1px; margin-left: auto; }
+.replay-cancel {
+    background: none;
+    border: none;
+    color: var(--text-dead);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    cursor: pointer;
+    padding: 0 2px;
+}
+.replay-cancel:hover { color: #e07070; }
+.replay-note {
+    margin-top: 5px;
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+}
+.chat-input.input-replay { border-color: var(--gold-dim); }
+.transmit-btn.transmit-replay { border-color: var(--gold-dim); color: var(--gold-bright); }
+
 .transmit-btn {
     background: var(--bg-surface);
     border: 1px solid var(--border-active);

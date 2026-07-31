@@ -35,7 +35,7 @@ hosted server, so the anchor has to come from the primary bridge out of band. Se
 1. On the **new** machine, open the bridge status page ([http://localhost:5741](http://localhost:5741)) → **Soul**.
 2. Under **Join an existing soul**, paste the **Server Soul ID** from Aria.Web → **Devices** (not a local bridge ID), set a label, and click **JOIN**.
 3. **JOIN · STEP 1 — APPROVE THIS DEVICE** — note the pairing code on the new machine. In Aria.Web → **Devices** (from a browser that already trusts your primary), enter the code and **APPROVE**.
-4. On the **primary** bridge → **Soul**, click **⧉ COPY** next to the master-key fingerprint
+4. On the **primary** bridge → **Soul**, click **▶ SHOW FINGERPRINT**
    (`abcd-efgh-ijkl-mnop`). Read it from that machine's own bridge — never from Aria.Web.
 5. Back on the **new** machine, the Soul panel shows **JOIN · CONFIRM MASTER KEY**. Paste the
    fingerprint and click **CONFIRM & FINISH JOIN**.

@@ -324,7 +324,7 @@ Open the bridge status page at [http://localhost:5741](http://localhost:5741) (l
 > - **Forge a new soul** — your first node. Generates a fresh ECDSA identity held only on this machine.
 > - **Join an existing soul** — *already running a bridge elsewhere?* Paste the **Server Soul ID** from Aria.Web → Devices, click **JOIN**, then finish the join on this machine:
 >   1. Approve the pairing code in Aria.Web → **Devices** (from a browser that already trusts your primary).
->   2. On the **primary** bridge Soul panel, click **⧉ COPY** next to the master-key fingerprint.
+>   2. On the **primary** bridge Soul panel, click **▶ SHOW FINGERPRINT**.
 >   3. Back on this machine, paste it into **JOIN · CONFIRM MASTER KEY** and confirm — that finishes joining.
 >
 > Until step 3, the new node is enrolled but will not honour approvals signed on your other devices (by design — the fingerprint is the out-of-band check that the server cannot forge). Full detail: **[Multi-node Routing → Joining a second node](docs/readme/multi-node.md#joining-a-second-node)**.

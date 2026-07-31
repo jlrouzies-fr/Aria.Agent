@@ -303,6 +303,28 @@ public static class CogitationEndpoints
             return Results.Ok(new MessageDto(msg.Id, msg.CogitationId, msg.Role, msg.Content, msg.ThinkingContent, msg.SectionsJson, msg.CreatedAt, msg.ImageBase64, msg.ImageMediaType));
         });
 
+        // POST /cogitations/{id}/messages/replace — wipe the transcript and insert the supplied
+        // messages in order. Shared by Compact (one summary) and edit-and-replay (kept prefix).
+        app.MapPost("/cogitations/{id}/messages/replace", async (
+            string id, ReplaceMessagesRequest req,
+            BridgeDbContext db,
+            ILogger<CogitationLogCategory> logger) =>
+        {
+            var cog = await db.Cogitations.FirstOrDefaultAsync(c => c.Id == id);
+            if (cog is null)
+            {
+                logger.LogWarning("[Cogitations] Replace refused: cogitation={CogitationId} not found", id);
+                return Results.NotFound();
+            }
+
+            var written = await ReplaceTranscriptAsync(db, cog, req.Messages ?? []);
+            logger.LogInformation(
+                "[Cogitations] Replaced transcript for cogitation={CogitationId}: wrote {Count} messages",
+                id, written.Count);
+
+            return Results.Ok(written);
+        });
+
         // POST /cogitations/{id}/compact — replace all messages with a single summary message,
         // used by the chat "/compact" command to reclaim context window.
         app.MapPost("/cogitations/{id}/compact", async (
@@ -317,23 +339,17 @@ public static class CogitationEndpoints
                 return Results.NotFound();
             }
 
-            var removed = await db.Messages.Where(m => m.CogitationId == id).ExecuteDeleteAsync();
+            var written = await ReplaceTranscriptAsync(db, cog,
+            [
+                new AddMessageRequest("assistant", req.Summary, null)
+            ]);
 
-            var summary = new BridgeMessage
-            {
-                CogitationId = id,
-                Role         = "assistant",
-                Content      = req.Summary,
-            };
-            db.Messages.Add(summary);
-            cog.UpdatedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync();
-
+            var summary = written[0];
             logger.LogInformation(
-                "[Cogitations] Compacted cogitation={CogitationId}: removed {Removed} messages, left 1 summary",
-                id, removed);
+                "[Cogitations] Compacted cogitation={CogitationId}: left 1 summary",
+                id);
 
-            return Results.Ok(new MessageDto(summary.Id, summary.CogitationId, summary.Role, summary.Content, summary.ThinkingContent, summary.SectionsJson, summary.CreatedAt, summary.ImageBase64, summary.ImageMediaType));
+            return Results.Ok(summary);
         });
 
         // GET /debug/cogitations — stats for the status page
@@ -352,6 +368,42 @@ public static class CogitationEndpoints
 
         static CogitationDto ToDto(BridgeCogitation c) =>
             new(c.Id, c.SoulId, c.Title, c.AriaAvatarKey, c.SubAgentId, c.FolderId, c.CreatedAt, c.UpdatedAt);
+
+        /// <summary>Deletes every message for <paramref name="cog"/> and inserts <paramref name="messages"/>
+        /// in order (staggered CreatedAt so OrderBy stays stable). Shared by replace + compact.</summary>
+        static async Task<List<MessageDto>> ReplaceTranscriptAsync(
+            BridgeDbContext db, BridgeCogitation cog, IReadOnlyList<AddMessageRequest> messages)
+        {
+            await db.Messages.Where(m => m.CogitationId == cog.Id).ExecuteDeleteAsync();
+
+            var stamp = DateTime.UtcNow;
+            var entities = new List<BridgeMessage>(messages.Count);
+            for (var i = 0; i < messages.Count; i++)
+            {
+                var req = messages[i];
+                var msg = new BridgeMessage
+                {
+                    CogitationId    = cog.Id,
+                    Role            = req.Role,
+                    Content         = req.Content,
+                    ThinkingContent = req.ThinkingContent,
+                    SectionsJson    = req.SectionsJson,
+                    ImageBase64     = req.ImageBase64,
+                    ImageMediaType  = req.ImageMediaType,
+                    CreatedAt       = stamp.AddMilliseconds(i),
+                };
+                entities.Add(msg);
+                db.Messages.Add(msg);
+            }
+
+            cog.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
+            return entities
+                .Select(m => new MessageDto(m.Id, m.CogitationId, m.Role, m.Content ?? "", m.ThinkingContent,
+                    m.SectionsJson, m.CreatedAt, m.ImageBase64, m.ImageMediaType))
+                .ToList();
+        }
     }
 }
 
@@ -364,5 +416,6 @@ public record UpdateCogitationRequest(string? Title, string? AriaAvatarKey, int?
 public record AddMessageRequest(string Role, string Content, string? ThinkingContent, string? SectionsJson = null, string? ImageBase64 = null, string? ImageMediaType = null);
 public record UpdateMessageRequest(string? SectionsJson = null, string? Content = null, string? ThinkingContent = null);
 public record CompactCogitationRequest(string Summary);
+public record ReplaceMessagesRequest(List<AddMessageRequest>? Messages);
 public record CogitationDto(string Id, string SoulId, string Title, string? AriaAvatarKey, string? SubAgentId, int? FolderId, DateTime CreatedAt, DateTime UpdatedAt);
 public record MessageDto(string Id, string CogitationId, string Role, string Content, string? ThinkingContent, string? SectionsJson, DateTime CreatedAt, string? ImageBase64 = null, string? ImageMediaType = null);

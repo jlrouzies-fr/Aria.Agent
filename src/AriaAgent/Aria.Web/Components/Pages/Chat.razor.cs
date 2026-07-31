@@ -410,6 +410,7 @@ public partial class Chat : ICogitationStreamSink
         _suggestedFolderId      = null;
         _suggestedFolderName    = null;
         _suggestedFolderColor   = null;
+        ClearReplayState();
         SessionState.ActiveCogitationId = null;
     }
 

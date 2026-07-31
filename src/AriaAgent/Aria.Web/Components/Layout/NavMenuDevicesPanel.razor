@@ -62,7 +62,7 @@
                     <text>
                         ⚠ JOIN NOT FINISHED — seals approved elsewhere will not reach this device yet.
                         On that machine's bridge Soul panel, paste the fingerprint from your primary
-                        (Soul → <strong>⧉ COPY</strong>) and confirm the last join step.
+                        (Soul → <strong>▶ SHOW FINGERPRINT</strong>) and confirm the last join step.
                     </text>
                 }
             </div>
@@ -77,7 +77,7 @@
                   @onclick="() => { Menu._justApprovedNodeId = null; Menu._justApprovedLabel = null; }">✕</span>
             ✓ Device @(string.IsNullOrWhiteSpace(Menu._justApprovedLabel) ? "" : $"\"{Menu._justApprovedLabel}\" ")approved.
             Finish joining on that machine: paste the primary bridge's master-key fingerprint
-            (primary bridge → Soul → <strong>⧉ COPY</strong>) into its last join step.
+            (primary bridge → Soul → <strong>▶ SHOW FINGERPRINT</strong>) into its last join step.
             Reconnect can take <strong>up to 5 minutes</strong> — leave it running.
         </div>
     }
@@ -109,7 +109,7 @@
     
     <div class="device-pairing-hint">
         To add a machine: run Aria.Bridge there and join this soul. Approve its code here, then
-        finish on that machine by pasting this primary's master-key fingerprint (Soul → ⧉ COPY).
+        finish on that machine by pasting this primary's master-key fingerprint (Soul → ▶ SHOW FINGERPRINT).
     </div>
     @if (!string.IsNullOrEmpty(Menu._nodeError))
     {

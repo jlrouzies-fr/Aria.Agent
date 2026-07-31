@@ -181,8 +181,8 @@ The anchor has to come from outside that channel, so it comes from the human:
 - `Souls.SoulKeyPinnedAt` records that a human at *that machine* confirmed the key. A joined node
   treats `PublicKeyBase64` as untrusted while this is null — including values written by the earlier
   deriving build, which are deliberately not grandfathered in.
-- The primary serves its own fingerprint at `GET /soul/fingerprint` and on the Soul panel
-  (**⧉ COPY**, grouped as `abcd-efgh-ijkl-mnop`), straight off that machine's bridge. The
+- The primary serves its own fingerprint at `GET /soul/fingerprint` (Soul panel →
+  **▶ SHOW FINGERPRINT**, grouped as `abcd-efgh-ijkl-mnop`), straight off that machine's bridge. The
   reference value never transits the server, which is what makes the comparison mean something.
 - Confirming the fingerprint is the **last step of joining**, not a separate ceremony: after the
   pairing code is approved, the joined node's Soul panel shows **JOIN · CONFIRM MASTER KEY**

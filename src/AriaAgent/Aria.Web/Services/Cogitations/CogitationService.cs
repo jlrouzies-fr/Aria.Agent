@@ -147,11 +147,11 @@ public class CogitationService(IDbContextFactory<AppDbContext> dbFactory)
     }
 
     /// <summary>
-    /// Replaces all messages of a legacy (server-stored) cogitation with a single summary message
-    /// (used by "/compact"). For bridge-owned cogitations this is a no-op; the caller compacts
-    /// directly on the bridge instead.
+    /// Replaces the entire transcript of a legacy (server-stored) cogitation with <paramref name="messages"/>
+    /// in order. Used by Compact and edit-and-replay. For bridge-owned cogitations this is a no-op;
+    /// the caller writes directly to the bridge instead.
     /// </summary>
-    public async Task CompactAsync(int cogitationId, string summary)
+    public async Task ReplaceMessagesAsync(int cogitationId, IReadOnlyList<TranscriptMessageWrite> messages)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var origin = await db.Cogitations
@@ -166,17 +166,38 @@ public class CogitationService(IDbContextFactory<AppDbContext> dbFactory)
             .Where(m => m.CogitationId == cogitationId)
             .ExecuteDeleteAsync();
 
-        db.CogitationMessages.Add(new CogitationMessage
+        // Stagger CreatedAt so OrderBy(CreatedAt) preserves the intended transcript order even when
+        // many rows land in the same SaveChanges batch.
+        var stamp = DateTime.UtcNow;
+        for (var i = 0; i < messages.Count; i++)
         {
-            CogitationId = cogitationId,
-            Role         = "assistant",
-            Content      = summary,
-        });
+            var m = messages[i];
+            db.CogitationMessages.Add(new CogitationMessage
+            {
+                CogitationId    = cogitationId,
+                Role            = m.Role,
+                Content         = m.Content,
+                ThinkingContent = m.ThinkingContent,
+                SectionsJson    = m.SectionsJson,
+                ImageBase64     = m.ImageBase64,
+                ImageMediaType  = m.ImageMediaType,
+                CreatedAt       = stamp.AddMilliseconds(i),
+            });
+        }
+
         await db.Cogitations
             .Where(c => c.Id == cogitationId)
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.UpdatedAt, DateTime.UtcNow));
         await db.SaveChangesAsync();
     }
+
+    /// <summary>
+    /// Replaces all messages of a legacy (server-stored) cogitation with a single summary message
+    /// (used by "/compact"). For bridge-owned cogitations this is a no-op; the caller compacts
+    /// directly on the bridge instead.
+    /// </summary>
+    public Task CompactAsync(int cogitationId, string summary) =>
+        ReplaceMessagesAsync(cogitationId, [new TranscriptMessageWrite("assistant", summary)]);
 
     public async Task<int> CountByAgentAsync(string userId, int subAgentId)
     {
