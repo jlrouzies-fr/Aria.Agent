@@ -118,7 +118,8 @@ public partial class Chat : ICogitationStreamSink
     private string?       _attachError;
     private DateTime      _streamStart;
     private bool          _smartScrollPending;
-    private string        _queuedInput      = "";
+    // Follow-ups typed while a turn is streaming. FIFO — drained one-at-a-time after each run completes.
+    private readonly List<string> _queuedMessages = [];
     private bool          _compactConfirmOpen;
 
     // Dossier defaults applied at session build for new chats; preserved across soft rebuilds.
@@ -410,6 +411,7 @@ public partial class Chat : ICogitationStreamSink
         _suggestedFolderId      = null;
         _suggestedFolderName    = null;
         _suggestedFolderColor   = null;
+        _queuedMessages.Clear();
         ClearReplayState();
         SessionState.ActiveCogitationId = null;
     }

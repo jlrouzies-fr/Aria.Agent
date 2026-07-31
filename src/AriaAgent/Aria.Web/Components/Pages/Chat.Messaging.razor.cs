@@ -113,12 +113,7 @@ public partial class Chat
             });
             await ScrollToBottomAsync();
 
-            if (!string.IsNullOrWhiteSpace(_queuedInput) && _agent != null && _session != null)
-            {
-                _input       = _queuedInput;
-                _queuedInput = "";
-                await SendAsync();
-            }
+            await DrainQueuedAsync();
         }
     }
 
@@ -613,19 +608,11 @@ public partial class Chat
             if (_contextWindowWarning != null) await InvokeAsync(StateHasChanged);
         }
 
-        // Only auto-send if the user explicitly queued via Enter — never from _input
-        // to avoid the oninput race condition causing spurious re-sends.
-        if (!string.IsNullOrWhiteSpace(_queuedInput) && _agent != null && _session != null)
-        {
-            _input       = _queuedInput;
-            _queuedInput = "";
-            await SendAsync();
-        }
-        else
-        {
-            _queuedInput = "";
+        // Only auto-send if the user explicitly queued via Ctrl+Enter — never from _input
+        // to avoid the oninput race condition causing spurious re-sends. One item per turn;
+        // remaining FIFO items drain after subsequent completions.
+        if (!await DrainQueuedAsync())
             await JS.InvokeVoidAsync("ariaInterop.focusElement", "chatInput");
-        }
     });
 
     /// <summary>
@@ -730,12 +717,12 @@ public partial class Chat
         // swallow these here so Enter accepts a selection instead of sending the message.
         if (AnyPickerOpen && e.Key is "Enter" or "ArrowDown" or "ArrowUp" or "Tab" or "Escape") return;
 
-        // Arrow-up on an empty input recalls a queued message for editing/cancelling — same gesture
-        // as Claude Code's history recall. Editing it and pressing Enter re-queues it (below); leaving
-        // the input and doing nothing effectively "cancels" the queue.
-        if (e.Key == "ArrowUp" && string.IsNullOrEmpty(_input) && !string.IsNullOrEmpty(_queuedInput))
+        // Arrow-up on an empty input recalls the next (head) queued message for editing — same
+        // gesture as Claude Code's history recall. Editing it and pressing Ctrl+Enter re-queues it
+        // at the tail; discarding via ✕ removes that slot only.
+        if (e.Key == "ArrowUp" && string.IsNullOrEmpty(_input) && _queuedMessages.Count > 0)
         {
-            RecallQueued();
+            RecallQueued(0);
             return;
         }
 
@@ -750,8 +737,8 @@ public partial class Chat
             var text = _input.Trim();
             if (!string.IsNullOrEmpty(text))
             {
-                _queuedInput = text;
-                _input       = "";
+                _queuedMessages.Add(text);
+                _input = "";
                 StateHasChanged();
             }
         }
@@ -761,21 +748,35 @@ public partial class Chat
         }
     }
 
-    // Pulls the queued message back into the composer for editing — same gesture as ArrowUp on an
-    // empty input. Pressing Ctrl+Enter afterwards re-queues (while streaming) or sends it.
-    private void RecallQueued()
+    // Pulls a queued message back into the composer for editing. Pressing Ctrl+Enter afterwards
+    // re-queues it at the tail (while streaming) or sends it.
+    private void RecallQueued(int index)
     {
-        if (string.IsNullOrEmpty(_queuedInput)) return;
-        _input       = _queuedInput;
-        _queuedInput = "";
+        if (index < 0 || index >= _queuedMessages.Count) return;
+        _input = _queuedMessages[index];
+        _queuedMessages.RemoveAt(index);
         StateHasChanged();
     }
 
-    // Discards the queued message without sending it (the ✕ on the queue block).
-    private void CancelQueued()
+    // Discards one queued message (the ✕ on that queue row).
+    private void CancelQueued(int index)
     {
-        _queuedInput = "";
+        if (index < 0 || index >= _queuedMessages.Count) return;
+        _queuedMessages.RemoveAt(index);
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// If the FIFO has an item and a session is ready, pops the head and starts a turn.
+    /// Returns true when a send was started.
+    /// </summary>
+    private async Task<bool> DrainQueuedAsync()
+    {
+        if (_queuedMessages.Count == 0 || _agent == null || _session == null) return false;
+        _input = _queuedMessages[0];
+        _queuedMessages.RemoveAt(0);
+        await SendAsync();
+        return true;
     }
 
     // User declined the "/compact" confirmation — just close the modal, nothing was touched yet.

@@ -41,7 +41,7 @@ public partial class Chat
 
         _replayFromIndex = index;
         _input           = _messages[index].Content;
-        _queuedInput     = "";
+        _queuedMessages.Clear();
         ClearAttachment();
         StateHasChanged();
         _ = FocusInputAsync();

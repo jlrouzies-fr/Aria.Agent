@@ -146,6 +146,71 @@ public partial class Chat
     private static string CollapseNewlines(string s) =>
         string.IsNullOrEmpty(s) ? s : _excessNewlines.Replace(s, "\n\n");
 
+    // ── Copy answer ───────────────────────────────────────────────────────
+    // Hover actions on completed assistant turns: COPY (plain text) and MD (raw markdown).
+
+    private int?    _copyFeedbackIndex;
+    private string? _copyFeedbackKind;   // "plain" | "md"
+    private CancellationTokenSource? _copyFeedbackCts;
+
+    private static bool CanCopyAnswer(MessageEntry msg) =>
+        msg.Role == "assistant" && !string.IsNullOrWhiteSpace(msg.Content);
+
+    private async Task CopyAnswerAsync(int index, bool asMarkdown)
+    {
+        if (index < 0 || index >= _messages.Count) return;
+        var msg = _messages[index];
+        if (!CanCopyAnswer(msg) || msg == _streamingMsg) return;
+
+        var markdown = msg.Content;
+        var text = asMarkdown ? markdown : MarkdownToPlainText(markdown);
+        try
+        {
+            await JS.InvokeVoidAsync("ariaInterop.copyText", text);
+        }
+        catch
+        {
+            return;
+        }
+
+        _copyFeedbackIndex = index;
+        _copyFeedbackKind  = asMarkdown ? "md" : "plain";
+        StateHasChanged();
+
+        _copyFeedbackCts?.Cancel();
+        _copyFeedbackCts?.Dispose();
+        _copyFeedbackCts = new CancellationTokenSource();
+        var ct = _copyFeedbackCts.Token;
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                await Task.Delay(1500, ct);
+                if (_copyFeedbackIndex == index)
+                {
+                    _copyFeedbackIndex = null;
+                    _copyFeedbackKind  = null;
+                    StateHasChanged();
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
+    }
+
+    /// <summary>Renders markdown to HTML then strips tags — readable plain text for the clipboard.</summary>
+    private static string MarkdownToPlainText(string markdown)
+    {
+        if (string.IsNullOrEmpty(markdown)) return "";
+        // Use SafePipeline directly (not MarkdownHelper.ToHtml) so code-block COPY buttons
+        // are not baked into the HTML we are about to strip.
+        var html = global::Markdig.Markdown.ToHtml(markdown, MarkdownHelper.SafePipeline);
+        var text = System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", "");
+        text = System.Net.WebUtility.HtmlDecode(text);
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"[ \t]+\r?\n", "\n");
+        text = _excessNewlines.Replace(text, "\n\n");
+        return text.Trim();
+    }
+
     // Collapse every thinking section of a message — called once the agent finishes cogitating
     // (content begins, streaming ends, or when loading history). User can re-expand by clicking.
     private static void CollapseThinking(MessageEntry m)

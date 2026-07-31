@@ -232,30 +232,44 @@
 .msg--soul .msg-content { width: 88%; text-align: right; }
 .msg--soul .msg-prefix { justify-content: flex-end; }
 
-/* Edit-and-replay: hover actions on soul turns + highlight while armed in the composer. */
+/* Message hover actions: edit on soul turns; copy / markdown on assistant answers. */
 .msg-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 6px;
-    margin-top: 4px;
+    gap: 4px;
+    margin-top: 6px;
     opacity: 0;
     transition: opacity 0.12s ease;
 }
+.msg-actions--assistant { justify-content: flex-start; }
 .msg:hover .msg-actions,
 .msg--editing .msg-actions { opacity: 1; }
 .msg-action-btn {
-    background: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    background: var(--bg-surface, transparent);
     border: 1px solid var(--border-dim);
     color: var(--text-dead);
-    font-family: var(--font-mono);
-    font-size: 9px;
-    letter-spacing: 1.5px;
-    padding: 2px 7px;
     cursor: pointer;
+    transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }
 .msg-action-btn:hover {
     color: var(--gold-bright);
     border-color: var(--border-normal);
+    background: color-mix(in srgb, var(--gold-dim) 10%, transparent);
+}
+.msg-action-btn--done {
+    color: var(--gold-bright);
+    border-color: var(--gold-dim);
+}
+.msg-action-icon {
+    width: 13px;
+    height: 13px;
+    display: block;
 }
 .msg--editing {
     outline: 1px solid var(--gold-dim);

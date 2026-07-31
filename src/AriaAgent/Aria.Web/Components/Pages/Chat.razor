@@ -601,12 +601,66 @@
                             }
                         </div>
                     }
+                    @if (msg.Role == "assistant" && CanCopyAnswer(msg) && msg != _streamingMsg)
+                    {
+                        var plainCopied = _copyFeedbackIndex == msgIdx && _copyFeedbackKind == "plain";
+                        var mdCopied    = _copyFeedbackIndex == msgIdx && _copyFeedbackKind == "md";
+                        <div class="msg-actions msg-actions--assistant">
+                            <button type="button" class="msg-action-btn @(plainCopied ? "msg-action-btn--done" : "")"
+                                    data-tip="@(plainCopied ? "// COPIED — plain text" : "// COPY — plain text")"
+                                    data-tip-variant="action"
+                                    aria-label="Copy answer as plain text"
+                                    @onclick="() => CopyAnswerAsync(msgIdx, false)">
+                                @if (plainCopied)
+                                {
+                                    <svg class="msg-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <polyline points="20 6 9 17 4 12"/>
+                                    </svg>
+                                }
+                                else
+                                {
+                                    <svg class="msg-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                    </svg>
+                                }
+                            </button>
+                            <button type="button" class="msg-action-btn @(mdCopied ? "msg-action-btn--done" : "")"
+                                    data-tip="@(mdCopied ? "// COPIED — markdown" : "// COPY — markdown source")"
+                                    data-tip-variant="action"
+                                    aria-label="Copy answer as markdown"
+                                    @onclick="() => CopyAnswerAsync(msgIdx, true)">
+                                @if (mdCopied)
+                                {
+                                    <svg class="msg-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <polyline points="20 6 9 17 4 12"/>
+                                    </svg>
+                                }
+                                else
+                                {
+                                    <svg class="msg-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                        <polyline points="14 2 14 8 20 8"/>
+                                        <path d="M10 13l-2 2 2 2"/>
+                                        <path d="M14 17l2-2-2-2"/>
+                                    </svg>
+                                }
+                            </button>
+                        </div>
+                    }
                     @if (msg.Role == "user" && CanEditPrompt(msgIdx))
                     {
                         <div class="msg-actions">
                             <button type="button" class="msg-action-btn"
-                                    data-tip="Edit and resend — discards later turns"
-                                    @onclick="() => BeginEditPrompt(msgIdx)">EDIT</button>
+                                    data-tip="// EDIT & REPLAY — discards later turns"
+                                    data-tip-variant="action"
+                                    aria-label="Edit and replay this prompt"
+                                    @onclick="() => BeginEditPrompt(msgIdx)">
+                                <svg class="msg-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M12 20h9"/>
+                                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                                </svg>
+                            </button>
                         </div>
                     }
                 </div>
@@ -1251,17 +1305,25 @@
                 </div>
             }
 
-        @if (!string.IsNullOrEmpty(_queuedInput))
+        @if (_queuedMessages.Count > 0)
         {
-            @* Queued message pinned above the composer (same visual family as the directive
-               manifest). Click the block (or press ↑ on an empty input) to recall it for editing. *@
+            @* Queued follow-ups pinned above the composer (same visual family as the directive
+               manifest). Click a row (or press ↑ on an empty input) to recall it for editing;
+               ✕ removes that slot only. FIFO — drained one turn at a time after each run completes. *@
             <div class="queue-block">
-                <div class="queue-header" @onclick="RecallQueued" data-tip="Recall into the composer (↑)">
+                <div class="queue-header">
                     <span class="queue-title">⧉ QUEUE</span>
+                    <span class="queue-count">@_queuedMessages.Count</span>
                     <span class="queue-hint">CLICK / ↑ TO EDIT</span>
-                    <button class="queue-cancel" @onclick="CancelQueued" @onclick:stopPropagation="true" data-tip="Discard queued message">✕</button>
                 </div>
-                <div class="queue-text" @onclick="RecallQueued">@_queuedInput</div>
+                @for (var qi = 0; qi < _queuedMessages.Count; qi++)
+                {
+                    var qIdx = qi;
+                    <div class="queue-item">
+                        <div class="queue-text" @onclick="() => RecallQueued(qIdx)" data-tip="Recall into the composer">@_queuedMessages[qIdx]</div>
+                        <button type="button" class="queue-cancel" @onclick="() => CancelQueued(qIdx)" @onclick:stopPropagation="true" data-tip="Discard queued message">✕</button>
+                    </div>
+                }
             </div>
         }
 
@@ -1286,7 +1348,7 @@
 
         <div class="input-area">
             <DebouncedTextArea id="chatInput"
-                               class="@("chat-input " + (!string.IsNullOrEmpty(_queuedInput) ? "input-queued" : "") + (_replayFromIndex != null ? " input-replay" : ""))"
+                               class="@("chat-input " + (_queuedMessages.Count > 0 ? "input-queued" : "") + (_replayFromIndex != null ? " input-replay" : ""))"
                                placeholder="@(_isStreaming ? "// Press Ctrl+Enter to queue next message…" : (_replayFromIndex != null ? "// Edit prompt, then Ctrl+Enter to resend…" : "// Transmit directive to Aria..."))"
                                rows="1"
                                disabled="@(_agent == null || _cogitationOffline)"
@@ -1339,11 +1401,11 @@
                     }
                     else
                     {
-                        <button class="transmit-btn @(!string.IsNullOrEmpty(_queuedInput) ? "transmit-queued" : "") @(_replayFromIndex != null ? "transmit-replay" : "")"
+                        <button class="transmit-btn @(_queuedMessages.Count > 0 ? "transmit-queued" : "") @(_replayFromIndex != null ? "transmit-replay" : "")"
                                 @onclick="SendAsync"
                                 title="@(_replayFromIndex != null ? "Resend edited prompt (Ctrl+Enter)" : "Send (Ctrl+Enter)")"
                                 disabled="@((string.IsNullOrWhiteSpace(_input) && _attachedFileName == null) || _agent == null || _cogitationOffline)">
-                            @(_replayFromIndex != null ? "REPLAY ▶▶" : !string.IsNullOrEmpty(_queuedInput) ? "QUEUED ▶▶" : "TRANSMIT ▶▶")
+                            @(_replayFromIndex != null ? "REPLAY ▶▶" : _queuedMessages.Count > 0 ? "QUEUED ▶▶" : "TRANSMIT ▶▶")
                             <span class="transmit-hint">CTRL+Enter</span>
                         </button>
                     }
