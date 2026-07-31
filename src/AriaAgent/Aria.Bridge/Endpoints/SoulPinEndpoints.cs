@@ -12,10 +12,10 @@ namespace Aria.Bridge.Endpoints;
 /// A joined node holds only its own node keypair. Every candidate for the soul master key reaches it
 /// through the hosted server, which the threat model treats as untrusted — so there is no way for the
 /// node to recognise the real key by itself. This ceremony supplies the missing anchor out of band:
-/// the human reads the primary device's fingerprint off a device they already trust (Aria.Web →
-/// DEVICES, the ★ primary row, or <c>/node/info</c> on the primary machine) and types it here. The
-/// node pins the key only if the typed fingerprint matches what the server is currently claiming, so
-/// a server that nominates its own key as "primary" fails the comparison and is never pinned.
+/// the human reads the primary device's fingerprint off that machine's own bridge (Soul panel →
+/// Copy, or <c>/soul/fingerprint</c>) and pastes it here as the last step of joining. The node pins
+/// the key only if the typed fingerprint matches what the server is currently claiming, so a server
+/// that nominates its own key as "primary" fails the comparison and is never pinned.
 ///
 /// Deliberately NOT on <see cref="Aria.Shared.TunnelAllowlist"/>: the server must never be able to
 /// drive pinning. Like every other mutating bridge endpoint it is also local-origin only.
@@ -25,23 +25,28 @@ public static class SoulPinEndpoints
     public static void MapSoulPinEndpoints(this WebApplication app)
     {
         // GET /soul/pin-status — is this node joined, and is its soul key pinned? Never returns the
-        // candidate fingerprint: revealing it would let the human confirm the server's own claim
-        // instead of comparing against the primary, which is the entire point of the ceremony.
+        // candidate fingerprint on a joined node: revealing it would let the human confirm the
+        // server's own claim instead of comparing against the primary. On the primary, returning
+        // this machine's own fingerprint is safe — it is read straight from local key material.
         app.MapGet("/soul/pin-status", async (BridgeDbContext db) =>
         {
             var soul = await ActiveSoulAsync(db);
             if (soul is null) return Results.NotFound("No soul");
 
             var joined = !string.IsNullOrEmpty(soul.NodePublicKeyBase64);
+            string? fingerprint = null;
+            if (!string.IsNullOrEmpty(soul.PublicKeyBase64)
+                && (soul.SoulKeyPinnedAt != null || !joined))
+            {
+                fingerprint = NodeCrypto.FormatThumbprint(soul.PublicKeyBase64);
+            }
+
             return Results.Ok(new
             {
                 joined,
                 pinned      = soul.SoulKeyPinnedAt != null,
                 pinnedAt    = soul.SoulKeyPinnedAt,
-                // Safe to show: it's the key the human already confirmed.
-                fingerprint = soul.SoulKeyPinnedAt != null && !string.IsNullOrEmpty(soul.PublicKeyBase64)
-                    ? NodeCrypto.Thumbprint(soul.PublicKeyBase64)
-                    : null,
+                fingerprint,
                 candidateAvailable = joined && soul.ServerSoulId is { Length: > 0 } sid
                                      && SiblingRoster.PinCandidate(sid) != null,
             });
@@ -67,7 +72,7 @@ public static class SoulPinEndpoints
             var typed    = Normalize(req.Fingerprint);
             var expected = Normalize(NodeCrypto.Thumbprint(candidate));
             if (typed.Length == 0)
-                return Results.BadRequest(new { error = "Enter the primary device's fingerprint." });
+                return Results.BadRequest(new { error = "Paste the primary device's fingerprint." });
 
             if (!string.Equals(typed, expected, StringComparison.OrdinalIgnoreCase))
             {
@@ -88,9 +93,10 @@ public static class SoulPinEndpoints
             await db.SaveChangesAsync();
             SiblingRoster.ForgetTrust(serverSoulId);
 
+            var grouped = NodeCrypto.FormatThumbprint(candidate);
             audit.Record("soul-pin", "pinned", allowed: true, capability: "soul-key-pin",
-                detail: $"Soul master key pinned for {serverSoulId} (fingerprint {expected})");
-            return Results.Ok(new { ok = true, fingerprint = NodeCrypto.Thumbprint(candidate) });
+                detail: $"Soul master key pinned for {serverSoulId} (fingerprint {grouped})");
+            return Results.Ok(new { ok = true, fingerprint = grouped });
         });
 
         // POST /soul/unpin-key — drop the pin so a human can re-pin, e.g. after a legitimate
@@ -127,10 +133,11 @@ public static class SoulPinEndpoints
             if (string.IsNullOrEmpty(soul.PublicKeyBase64))
                 return Results.Content(Page("This soul has no keypair yet."), "text/html");
 
-            return Results.Content(FingerprintPage(NodeCrypto.Thumbprint(soul.PublicKeyBase64)), "text/html");
+            return Results.Content(FingerprintPage(NodeCrypto.FormatThumbprint(soul.PublicKeyBase64)), "text/html");
         });
 
-        // GET /soul/pin — the local ceremony page.
+        // GET /soul/pin — the local ceremony page (also offered inline on the Soul panel as the last
+        // join step; this standalone page remains for deep links / Devices-panel warnings).
         app.MapGet("/soul/pin", async (BridgeDbContext db) =>
         {
             var soul = await ActiveSoulAsync(db);
@@ -139,7 +146,7 @@ public static class SoulPinEndpoints
                 return Results.Content(Page("This is the primary bridge — it holds the soul master key, nothing to pin."), "text/html");
             if (soul.SoulKeyPinnedAt != null)
                 return Results.Content(Page(
-                    $"✓ Soul key already pinned ({NodeCrypto.Thumbprint(soul.PublicKeyBase64!)})."), "text/html");
+                    $"✓ Soul key already pinned ({NodeCrypto.FormatThumbprint(soul.PublicKeyBase64!)})."), "text/html");
 
             return Results.Content(CeremonyPage(), "text/html");
         });
@@ -165,8 +172,11 @@ public static class SoulPinEndpoints
         .row{display:flex;gap:12px;margin-top:16px}
         button{flex:1;padding:12px;font-family:inherit;font-size:12px;letter-spacing:2px;cursor:pointer;border:none}
         .ok{background:#b09040;color:#160404;font-weight:bold}
+        .copy{background:#0a0806;color:#f0d060;border:1px solid #6a5010;flex:0 0 auto;padding:12px 18px}
         .warn{border:1px solid #6a5010;background:#100a02;padding:10px;font-size:11px;color:#e8c060;margin-top:14px}
         .msg{margin-top:14px;font-size:12px;min-height:18px}
+        .fp{margin:18px 0;padding:16px;border:1px solid #6a5010;background:#0a0806;color:#f0d060;
+            font-size:22px;letter-spacing:4px;text-align:center;word-break:break-all;user-select:all}
         """;
 
     private static string Page(string message) => $$"""
@@ -178,43 +188,53 @@ public static class SoulPinEndpoints
 
     private static string FingerprintPage(string fingerprint) => $$"""
         <!doctype html><html><head><meta charset="utf-8"><title>Soul Key Fingerprint</title>
-        <style>{{Style}}
-          .fp{margin:18px 0;padding:16px;border:1px solid #6a5010;background:#0a0806;color:#f0d060;
-              font-size:22px;letter-spacing:4px;text-align:center;word-break:break-all}
-        </style></head><body>
+        <style>{{Style}}</style></head><body>
           <div class="card">
             <h1>⛨ SOUL MASTER KEY FINGERPRINT</h1>
-            <p>This is the fingerprint of your soul's master key, read straight from this machine's
-               own bridge. Type it into the pinning page on a device you are adding.</p>
-            <div class="fp">{{System.Net.WebUtility.HtmlEncode(fingerprint)}}</div>
-            <div class="warn">Read it from this page, on this machine. A value shown to you by the
-              hosted server is not a valid reference — checking it against itself would prove nothing.</div>
+            <p>Copy this value and paste it into the last join step on the device you are adding
+               (Soul panel on that machine). Read it from <b>this</b> machine's bridge — never from Aria.Web.</p>
+            <div class="fp" id="fp">{{System.Net.WebUtility.HtmlEncode(fingerprint)}}</div>
+            <div class="row">
+              <button class="ok copy" onclick="copyFp()">⧉ COPY</button>
+            </div>
+            <div class="msg" id="msg"></div>
+            <div class="warn">A value shown by the hosted server is not a valid reference — checking it
+              against itself would prove nothing.</div>
           </div>
+        <script>
+          async function copyFp() {
+            const v = document.getElementById('fp').textContent.trim();
+            const msg = document.getElementById('msg');
+            try {
+              await navigator.clipboard.writeText(v);
+              msg.style.color = '#7ed07e';
+              msg.textContent = '✓ Copied — paste it on the joining machine.';
+            } catch (e) {
+              msg.style.color = '#e08080';
+              msg.textContent = 'Copy failed — select the fingerprint and copy manually.';
+            }
+          }
+        </script>
         </body></html>
         """;
 
     private static string CeremonyPage() => $$"""
-        <!doctype html><html><head><meta charset="utf-8"><title>Pin Soul Key</title>
+        <!doctype html><html><head><meta charset="utf-8"><title>Join — Confirm Soul Key</title>
         <style>{{Style}}</style></head><body>
           <div class="card">
-            <h1>⛨ CONFIRM YOUR SOUL'S MASTER KEY</h1>
-            <p>This machine joined your soul as an additional node. It holds its own node key but has
-               never been told which master key belongs to your soul — and it cannot work that out on
-               its own, because everything it hears comes through the server.</p>
-            <p>Until you confirm the key here, this node <b>refuses</b> grants signed elsewhere, so
-               approvals made on your other devices will not carry over to this one.</p>
+            <h1>⛨ JOIN · CONFIRM MASTER KEY</h1>
+            <p>Last step of joining. This machine is enrolled, but it still needs the fingerprint of
+               your soul's master key — read from the <b>primary</b> bridge, not from Aria.Web — before
+               it will honour approvals signed on your other devices.</p>
             <ol>
-              <li>Go to the machine that holds your soul's master key (your primary bridge).</li>
-              <li>On that machine open the bridge status page → <b>Soul</b>, click
-                  <b>SHOW FINGERPRINT</b>, and read the value shown there
-                  (or open <b>http://localhost:5741/soul/fingerprint</b> directly).</li>
-              <li>Type it below. Take it from that machine's own page, not from Aria.Web — a value
-                  the server showed you would only be checked against the server's own claim, which
-                  proves nothing.</li>
+              <li>On the primary machine, open the bridge status page → <b>Soul</b>.</li>
+              <li>Click <b>⧉ COPY</b> next to the master-key fingerprint
+                  (or open <b>http://localhost:5741/soul/fingerprint</b>).</li>
+              <li>Paste it below and confirm.</li>
             </ol>
-            <input id="fp" placeholder="fingerprint from the primary machine" autocomplete="off" spellcheck="false">
+            <input id="fp" placeholder="paste abcd-efgh-ijkl-mnop" autocomplete="off" spellcheck="false">
             <div class="row">
-              <button class="ok" onclick="pin()">⛨ PIN THIS KEY</button>
+              <button class="ok" onclick="pin()">⛨ CONFIRM &amp; FINISH JOIN</button>
             </div>
             <div class="msg" id="msg"></div>
             <div class="warn">If the fingerprint keeps failing to match, stop. The server may be
@@ -235,16 +255,17 @@ public static class SoulPinEndpoints
               const d = await r.json();
               if (r.ok && d.ok) {
                 msg.style.color = '#7ed07e';
-                msg.textContent = '✓ Pinned (' + d.fingerprint + '). This node now accepts grants from your soul.';
+                msg.textContent = '✓ Join complete (' + d.fingerprint + '). This node now accepts grants from your soul.';
               } else {
                 msg.style.color = '#e08080';
-                msg.textContent = d.error || 'Pinning failed.';
+                msg.textContent = d.error || 'Confirmation failed.';
               }
             } catch (e) {
               msg.style.color = '#e08080';
               msg.textContent = 'Request failed: ' + e.message;
             }
           }
+          document.getElementById('fp').focus();
         </script>
         </body></html>
         """;

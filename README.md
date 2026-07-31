@@ -322,7 +322,12 @@ Open the bridge status page at [http://localhost:5741](http://localhost:5741) (l
 
 > **⚑ First node, or adding another?** On the bridge's **Soul** tab you choose one of two paths:
 > - **Forge a new soul** — your first node. Generates a fresh ECDSA identity held only on this machine.
-> - **Join an existing soul** — *already running a bridge elsewhere and want to interconnect your nodes?* Copy the soul ID from your existing node and paste it here; **this machine becomes an additional device of the same soul**, sharing one identity across your nodes rather than creating a second one. See **[Multi-node Routing](docs/readme/multi-node.md)**.
+> - **Join an existing soul** — *already running a bridge elsewhere?* Paste the **Server Soul ID** from Aria.Web → Devices, click **JOIN**, then finish the join on this machine:
+>   1. Approve the pairing code in Aria.Web → **Devices** (from a browser that already trusts your primary).
+>   2. On the **primary** bridge Soul panel, click **⧉ COPY** next to the master-key fingerprint.
+>   3. Back on this machine, paste it into **JOIN · CONFIRM MASTER KEY** and confirm — that finishes joining.
+>
+> Until step 3, the new node is enrolled but will not honour approvals signed on your other devices (by design — the fingerprint is the out-of-band check that the server cannot forge). Full detail: **[Multi-node Routing → Joining a second node](docs/readme/multi-node.md#joining-a-second-node)**.
 >
 > Created a new soul but meant to join one? Go to the bridge's **Data** tab and **Wipe Soul** (this resets the identity — it also clears keys, cogitations, and the server link), then reload and choose **Join an existing soul** instead.
 
@@ -376,7 +381,7 @@ GuestAccess__Codes="FRIEND-CODE-1234:2026-12-31T00:00:00Z"
 | **[Architecture](docs/readme/architecture.md)** | <ul><li>Project layout</li><li>Agent tools</li><li>The Model Bridge (direct tunnel)</li><li>Soul identity & security guarantees</li></ul> |
 | **[Security](docs/readme/security.md)** | <ul><li>What each control does</li><li>What it stops</li><li>What you experience</li></ul> |
 | **[Security Hardening Plan](docs/security/hardening-plan.md)** | <ul><li>Technical threat model</li><li>Findings F-1–F-9</li><li>Remediation roadmap</li><li>Verification notes</li></ul> |
-| **[Multi-node Routing](docs/readme/multi-node.md)** | <ul><li>Channel↔bridge binding</li><li>Per-node key vaults + encrypted key sync</li><li>Path-routed terminal tools</li><li>Remote diagnostics</li></ul> |
+| **[Multi-node Routing](docs/readme/multi-node.md)** | <ul><li>Joining a second node (pairing code + fingerprint)</li><li>Channel↔bridge binding</li><li>Per-node key vaults + encrypted key sync</li><li>Path-routed terminal tools</li><li>Remote diagnostics</li></ul> |
 | **[Multi-bridge Debug Mode](docs/readme/multi-bridge-debug.md)** | <ul><li>`scripts/dev-fleet.sh`</li><li>Fake node profiles & ports</li><li>Auto-join, enroll & LM seeding</li><li>Troubleshooting</li></ul> |
 | **[Agent Harness](docs/readme/harness.md)** | <ul><li>The shared `Aria.Harness` orchestration layer</li><li>How Web/Console host it</li></ul> |
 | **[Reasoning Handler](docs/readme/reasoning.md)** | <ul><li>The universal SSE interceptor</li><li>Thinking + tool-call normalisation across every model</li></ul> |

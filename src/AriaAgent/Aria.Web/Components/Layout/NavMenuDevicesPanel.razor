@@ -60,9 +60,9 @@
                 else
                 {
                     <text>
-                        ⚠ SOUL KEY NOT CONFIRMED — seals approved elsewhere will not reach this device.
-                        On that machine open <strong>http://localhost:5741/soul/pin</strong> and enter the
-                        fingerprint from your primary bridge (Soul panel → <strong>SHOW FINGERPRINT</strong>).
+                        ⚠ JOIN NOT FINISHED — seals approved elsewhere will not reach this device yet.
+                        On that machine's bridge Soul panel, paste the fingerprint from your primary
+                        (Soul → <strong>⧉ COPY</strong>) and confirm the last join step.
                     </text>
                 }
             </div>
@@ -76,8 +76,9 @@
             <span class="dan-close" title="Dismiss"
                   @onclick="() => { Menu._justApprovedNodeId = null; Menu._justApprovedLabel = null; }">✕</span>
             ✓ Device @(string.IsNullOrWhiteSpace(Menu._justApprovedLabel) ? "" : $"\"{Menu._justApprovedLabel}\" ")approved.
-            It can take <strong>up to 5 minutes</strong> for it to reconnect and be detected by all
-            nodes — leave it running, no further action is needed. It will appear online above.
+            Finish joining on that machine: paste the primary bridge's master-key fingerprint
+            (primary bridge → Soul → <strong>⧉ COPY</strong>) into its last join step.
+            Reconnect can take <strong>up to 5 minutes</strong> — leave it running.
         </div>
     }
 
@@ -107,8 +108,8 @@
     }
     
     <div class="device-pairing-hint">
-        To add a machine: run Aria.Bridge there and join this soul. It appears above as a
-        pending device with a code to confirm.
+        To add a machine: run Aria.Bridge there and join this soul. Approve its code here, then
+        finish on that machine by pasting this primary's master-key fingerprint (Soul → ⧉ COPY).
     </div>
     @if (!string.IsNullOrEmpty(Menu._nodeError))
     {

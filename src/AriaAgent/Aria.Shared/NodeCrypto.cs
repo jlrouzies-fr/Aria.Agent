@@ -18,6 +18,27 @@ public static class NodeCrypto
             .Replace('+', '-').Replace('/', '_').TrimEnd('=')[..16];
     }
 
+    /// <summary>
+    /// Groups a thumbprint for humans (<c>abcd-efgh-ijkl-mnop</c>). Comparison code must strip
+    /// dashes/spaces first — see soul-key pinning <c>Normalize</c>.
+    /// </summary>
+    public static string GroupThumbprint(string thumbprint)
+    {
+        var raw = new string((thumbprint ?? "").Where(c => !char.IsWhiteSpace(c) && c != '-').ToArray());
+        if (raw.Length == 0) return "";
+        var sb = new StringBuilder(raw.Length + raw.Length / 4);
+        for (var i = 0; i < raw.Length; i++)
+        {
+            if (i > 0 && i % 4 == 0) sb.Append('-');
+            sb.Append(raw[i]);
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>Human-readable fingerprint of a public key (grouped thumbprint).</summary>
+    public static string FormatThumbprint(string publicKeyBase64) =>
+        GroupThumbprint(Thumbprint(publicKeyBase64));
+
     /// <summary>Verify an ECDSA signature over <paramref name="data"/> against a SubjectPublicKeyInfo key.</summary>
     public static bool Verify(string publicKeyBase64, byte[] data, string signatureBase64)
     {

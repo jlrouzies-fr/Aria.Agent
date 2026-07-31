@@ -181,26 +181,28 @@ The anchor has to come from outside that channel, so it comes from the human:
 - `Souls.SoulKeyPinnedAt` records that a human at *that machine* confirmed the key. A joined node
   treats `PublicKeyBase64` as untrusted while this is null — including values written by the earlier
   deriving build, which are deliberately not grandfathered in.
-- The primary serves its own fingerprint at `GET /soul/fingerprint`, straight off that machine's
-  bridge. The reference value never transits the server, which is what makes the comparison mean
-  something.
-- The joined node's ceremony (`GET /soul/pin`) asks the human to type that fingerprint and pins only
-  on a match, so a server presenting `R` fails the comparison. The page never displays the candidate:
-  showing it would let the human confirm the server's claim against itself.
+- The primary serves its own fingerprint at `GET /soul/fingerprint` and on the Soul panel
+  (**⧉ COPY**, grouped as `abcd-efgh-ijkl-mnop`), straight off that machine's bridge. The
+  reference value never transits the server, which is what makes the comparison mean something.
+- Confirming the fingerprint is the **last step of joining**, not a separate ceremony: after the
+  pairing code is approved, the joined node's Soul panel shows **JOIN · CONFIRM MASTER KEY**
+  (paste + confirm). `GET /soul/pin` remains as a deep link for the Devices warning. The page
+  never displays the server's candidate: showing it would let the human confirm the server's
+  claim against itself. Pin only on a match, so a server presenting `R` fails the comparison.
 - After pinning, a roster whose primary differs from the pin is refused wholesale
   (`SoulKeyTrust.PinMismatch`) rather than silently adopted, so the key cannot be swapped later.
 - None of `/soul/pin`, `/soul/pin-key`, `/soul/unpin-key`, `/soul/pin-status` are on
   `TunnelAllowlist`, so the server cannot drive the anchor it is being anchored against. A test
   asserts this.
 
-Cost: a joined node refuses sibling and primary-signed grants until someone pins it. That is the
-intended failure mode — fail closed, and say so in the log.
+Cost: a joined node refuses sibling and primary-signed grants until someone finishes the join
+fingerprint step. That is the intended failure mode — fail closed, and say so in the log.
 
 Failing closed silently is still a bad experience: from the chat side it reads as "seals stopped
 replicating to the Windows box", with nothing pointing at the cause. So each node reports its own pin
 state (`ok` / `unpinned` / `mismatch`, `Aria.Shared.SoulKeyPinState`) to the server on connect and on
-every 60-second knock, and Aria.Web pulses a red warning on that device's row in DEVICES with the
-`/soul/pin` URL to open on that machine.
+every 60-second knock, and Aria.Web pulses a red **JOIN NOT FINISHED** warning on that device's
+row in DEVICES, pointing at the last join step on that machine.
 
 That report is a **node self-assertion the server cannot verify, and it is display-only**. Nothing may
 branch on it for trust, and nothing does: a node claiming `ok` while unpinned still refuses grants,

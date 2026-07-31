@@ -36,7 +36,8 @@ one, stop and raise it with a human instead of working around it.
 1. **Grant-accepting keys come only from locally-held or human-confirmed material.**
    `ContextGrantStore.AcceptableKeysAsync` may include the soul key (primary holds the private half),
    this node's own node key, and siblings verified against those. Never a key the server supplied.
-   A joined node has no soul key until a human pins one — see `SoulPinEndpoints` and
+   A joined node has no soul key until a human pins one as the last join step (Soul panel →
+   **JOIN · CONFIRM MASTER KEY**, or `SoulPinEndpoints`) — see
    `SiblingRoster.ResolveSoulMasterPublicKey`.
 2. **New bridge endpoints are local-only by default.** `Aria.Shared.TunnelAllowlist` is an explicit
    opt-in list of what the server may reach. Adding a path there is a security decision, not

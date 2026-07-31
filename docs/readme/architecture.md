@@ -142,6 +142,7 @@ Full structure with key files:
 | `│       ├── CogitationEndpoints.cs` | Local cogitation + message storage |
 | `│       ├── ContactEndpoints.cs` | Local contact storage |
 | `│       ├── NodeEndpoints.cs` | Node enrollment attestation, join/session codes, `/soul/join` |
+| `│       ├── SoulPinEndpoints.cs` | Last join step — primary fingerprint + pin ceremony (`/soul/fingerprint`, `/soul/pin-key`); off tunnel allowlist |
 | `│       ├── ToolEndpoints.cs` | MCP server `/tools/list` and `/tools/call`, plus read-only `/tools/preview` (prospective diffs) |
 | `│       ├── ProjectFileEndpoints.cs` | Local project file listing + reading |
 | `│       ├── StatusEndpoints.cs` | `/`, `/status`, `/logs`, `/metrics` — status dashboard + live bridge performance metrics |
