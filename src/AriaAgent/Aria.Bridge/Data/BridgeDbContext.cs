@@ -662,10 +662,13 @@ public class NoosphereConfig
     // Same override for extraction: without this, extraction silently always uses whichever model
     // happens to be first in the channel's model list, with no way to pick a different one.
     public string? ExtractionModel         { get; set; }
-    // Opt-in built-in MiniLM + LFM2.5 on this node (downloaded into app-data). When enabled and both
-    // models are verified on disk, Extractor/Embedder short-circuit past HTTP channels.
+    // Opt-in built-in MiniLM + LFM GGUF on this node (downloaded into app-data). When enabled and
+    // the selected extract variant + embed are verified on disk, Extractor/Embedder short-circuit
+    // past HTTP channels.
     public bool       BuiltinEnabled            { get; set; }
     public DateTime?  BuiltinLicenseAcceptedAt  { get; set; }
+    // Catalog id from NoosphereBuiltinCatalog.ExtractVariants (e.g. lfm2-2.6b-q5km). Null → default.
+    public string?    BuiltinExtractModelId     { get; set; }
 }
 
 /// <summary>

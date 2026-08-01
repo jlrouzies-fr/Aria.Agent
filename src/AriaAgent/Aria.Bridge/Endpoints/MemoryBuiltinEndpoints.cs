@@ -15,41 +15,72 @@ public static class MemoryBuiltinEndpoints
         app.MapGet("/memory/builtin/status", async (NoosphereConfigService cfg, NoosphereBuiltinRuntime runtime, CancellationToken ct) =>
         {
             var config = await cfg.GetConfigAsync(ct);
-            return Results.Ok(runtime.Status(config.BuiltinEnabled, config.BuiltinLicenseAcceptedAt));
+            return Results.Ok(runtime.Status(
+                config.BuiltinEnabled,
+                config.BuiltinLicenseAcceptedAt,
+                cfg.ResolveBuiltinExtractModelId(config)));
         });
 
-        app.MapPut("/memory/builtin/config", async (HttpRequest req, SaveBuiltinConfigRequest dto, NoosphereConfigService cfg, CancellationToken ct) =>
+        app.MapPut("/memory/builtin/config", async (
+            HttpRequest req, SaveBuiltinConfigRequest dto, NoosphereConfigService cfg,
+            NoosphereBuiltinRuntime runtime, CancellationToken ct) =>
         {
             if (!LocalRequestGuard.IsLocalOrigin(req))
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
 
-            await cfg.SaveBuiltinConfigAsync(new NoosphereConfigService.SaveBuiltinRequest(dto.Enabled, dto.AcceptLicense), ct);
-            return Results.Ok(new { ok = true });
+            try
+            {
+                var before = await cfg.GetConfigAsync(ct);
+                var beforeId = cfg.ResolveBuiltinExtractModelId(before);
+                await cfg.SaveBuiltinConfigAsync(
+                    new NoosphereConfigService.SaveBuiltinRequest(dto.Enabled, dto.AcceptLicense, dto.ExtractModelId), ct);
+                var after = await cfg.GetConfigAsync(ct);
+                var afterId = cfg.ResolveBuiltinExtractModelId(after);
+                // Switching active extract while another variant is in RAM — drop it so the next
+                // Inscribe loads the newly selected weights.
+                if (!string.Equals(beforeId, afterId, StringComparison.OrdinalIgnoreCase)
+                    && runtime.LoadedExtractModelId != null
+                    && !string.Equals(runtime.LoadedExtractModelId, afterId, StringComparison.OrdinalIgnoreCase))
+                    runtime.UnloadModel(NoosphereBuiltinCatalog.RoleExtract);
+                return Results.Ok(new { ok = true });
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
         });
 
-        app.MapPost("/memory/builtin/download", async (HttpRequest req, string role, NoosphereConfigService cfg, NoosphereBuiltinRuntime runtime, CancellationToken ct) =>
+        app.MapPost("/memory/builtin/download", async (
+            HttpRequest req, string role, string? model, NoosphereConfigService cfg,
+            NoosphereBuiltinRuntime runtime, CancellationToken ct) =>
         {
             if (!LocalRequestGuard.IsLocalOrigin(req))
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
 
-            if (NoosphereBuiltinCatalog.Lookup(role) is null)
+            if (!NoosphereBuiltinCatalog.IsKnownRole(role) && !NoosphereBuiltinCatalog.IsKnownExtractId(role))
                 return Results.BadRequest(new { error = $"Unknown role '{role}'" });
 
             var config = await cfg.GetConfigAsync(ct);
-            var err = runtime.StartDownload(role, config.BuiltinLicenseAcceptedAt != null);
+            var extractId = model ?? cfg.ResolveBuiltinExtractModelId(config);
+            if (string.Equals(role, NoosphereBuiltinCatalog.RoleExtract, StringComparison.OrdinalIgnoreCase)
+                && !NoosphereBuiltinCatalog.IsKnownExtractId(extractId))
+                return Results.BadRequest(new { error = $"Unknown extract model '{extractId}'" });
+
+            var err = runtime.StartDownload(role, config.BuiltinLicenseAcceptedAt != null, extractId);
             if (err != null) return Results.BadRequest(new { error = err });
             return Results.Ok(new { started = true });
         });
 
-        app.MapDelete("/memory/builtin/model", (HttpRequest req, string role, NoosphereBuiltinRuntime runtime) =>
+        app.MapDelete("/memory/builtin/model", (
+            HttpRequest req, string role, string? model, NoosphereBuiltinRuntime runtime) =>
         {
             if (!LocalRequestGuard.IsLocalOrigin(req))
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
 
-            if (NoosphereBuiltinCatalog.Lookup(role) is null)
+            if (!NoosphereBuiltinCatalog.IsKnownRole(role) && !NoosphereBuiltinCatalog.IsKnownExtractId(role))
                 return Results.BadRequest(new { error = $"Unknown role '{role}'" });
 
-            return Results.Ok(new { deleted = runtime.DeleteModel(role) });
+            return Results.Ok(new { deleted = runtime.DeleteModel(role, model) });
         });
 
         // Free RAM only — files stay on disk. role omitted → unload both.
@@ -64,7 +95,7 @@ public static class MemoryBuiltinEndpoints
                 return Results.Ok(new { unloaded = true, role = (string?)null });
             }
 
-            if (NoosphereBuiltinCatalog.Lookup(role) is null)
+            if (!NoosphereBuiltinCatalog.IsKnownRole(role) && !NoosphereBuiltinCatalog.IsKnownExtractId(role))
                 return Results.BadRequest(new { error = $"Unknown role '{role}'" });
 
             return Results.Ok(new { unloaded = runtime.UnloadModel(role), role });
@@ -72,4 +103,4 @@ public static class MemoryBuiltinEndpoints
     }
 }
 
-public record SaveBuiltinConfigRequest(bool Enabled, bool AcceptLicense = false);
+public record SaveBuiltinConfigRequest(bool Enabled, bool AcceptLicense = false, string? ExtractModelId = null);

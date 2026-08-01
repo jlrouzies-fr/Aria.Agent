@@ -166,6 +166,21 @@ public static partial class BridgeStatusPage
           opacity: 0;
           transition: opacity 0.12s;
         }
+        /* Failure / alert variant — data-tip-variant="warn" (matches Aria.Web tooltip.css). */
+        #aria-tip.aria-tip-warn {
+          max-width: 300px;
+          padding: 7px 11px 7px 10px;
+          border-color: #d04040;
+          border-left: 2px solid #d04040;
+          color: #f0c0c0;
+          background: color-mix(in srgb, var(--bg-panel) 88%, #d04040);
+          box-shadow: 0 0 8px rgba(208, 64, 64, 0.45), 0 2px 8px rgba(0, 0, 0, 0.6);
+          animation: ariaTipWarnPulse 1.4s ease-in-out infinite;
+        }
+        @keyframes ariaTipWarnPulse {
+          0%, 100% { box-shadow: 0 0 8px rgba(208, 64, 64, 0.45), 0 2px 8px rgba(0, 0, 0, 0.6); }
+          50%       { box-shadow: 0 0 14px rgba(208, 64, 64, 0.75), 0 2px 8px rgba(0, 0, 0, 0.6); }
+        }
         /* main content — full-width scroll container so the scrollbar sits at the viewport's
            right edge; the content itself is centered via the constrained children below. */
         .main {

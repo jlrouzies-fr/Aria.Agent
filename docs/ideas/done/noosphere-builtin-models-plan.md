@@ -12,8 +12,10 @@ memory fails silently from the agent's POV (async worker). Users who do not want
 inference app can opt into small on-node models.
 
 **User decisions (fixed):**
-- Sweet-spot extraction: `LFM2.5-1.2B-Instruct` Q4_K_M GGUF (~731 MB) via LLamaSharp / llama.cpp.
-- Embeddings: `all-MiniLM-L6-v2` ONNX (quantized ~23 MB + vocab) via ONNX Runtime.
+- Extract choice: LiquidAI LFM family (same ChatML-like template) — **LFM2.5-1.2B** and **LFM2-2.6B**,
+  each as Q4_K_M / Q5_K_M / Q6_K (six independently downloadable GGUFs). Recommended: 2.6B Q5_K_M.
+  1.2B rows show a warn tooltip (weak at kinds/relations even at higher quants).
+- Embeddings: `all-MiniLM-L6-v2` ONNX (quantized ~23 MB + vocab) via ONNX Runtime (not choosable).
 - Opt-in only; download from the bridge Memory tab (Whisper pattern). Not shipped in the installer.
 - External channels remain available when built-in is off or models are missing.
 - No Aria.Web control surface in v1.
@@ -32,10 +34,17 @@ inference app can opt into small on-node models.
 
 ## Models (pinned catalog)
 
-| Role | File(s) | Approx | SHA256 (pinned in code) |
+See `NoosphereBuiltinCatalog.ExtractVariants` for full URL + SHA256 pins.
+
+| Id | File | Approx | UI |
 |---|---|---|---|
-| extract | `LFM2.5-1.2B-Instruct-Q4_K_M.gguf` | 731 MB | `b1b3de11…` (LiquidAI HF) |
-| embed | `all-MiniLM-L6-v2-quantized.onnx` + `vocab.txt` | ~23 MB + 226 KB | Xenova HF |
+| `lfm25-1.2b-q4km` | `LFM2.5-1.2B-Instruct-Q4_K_M.gguf` | ~731 MB | default (existing installs); warn |
+| `lfm25-1.2b-q5km` | `LFM2.5-1.2B-Instruct-Q5_K_M.gguf` | ~843 MB | warn |
+| `lfm25-1.2b-q6k` | `LFM2.5-1.2B-Instruct-Q6_K.gguf` | ~963 MB | warn |
+| `lfm2-2.6b-q4km` | `LFM2-2.6B-Q4_K_M.gguf` | ~1.56 GB | |
+| `lfm2-2.6b-q5km` | `LFM2-2.6B-Q5_K_M.gguf` | ~1.83 GB | **recommended** |
+| `lfm2-2.6b-q6k` | `LFM2-2.6B-Q6_K.gguf` | ~2.11 GB | highest quality |
+| embed | `all-MiniLM-L6-v2-quantized.onnx` + `vocab.txt` | ~23 MB | |
 
 Store under `%AppData%/aria-bridge/noosphere-models/`. Refuse load on hash mismatch.
 
@@ -56,28 +65,29 @@ No fake localhost OpenAI server.
 ### Config columns on `NoosphereConfig`
 - `BuiltinEnabled` INTEGER NOT NULL DEFAULT 0
 - `BuiltinLicenseAcceptedAt` TEXT NULL (ISO UTC)
+- `BuiltinExtractModelId` TEXT NULL (catalog id; null → `lfm25-1.2b-q4km`)
 
 ### Runtime API
-- `Status()` — per-role downloaded / progress / error / licenseAccepted / enabled / ready
-- `StartDownload(role)` — background; extract requires license accepted
-- `DeleteModel(role)` — unload + delete files
-- `SetEnabled` / `AcceptLicense` via config save or dedicated endpoints
-- `EmbedBatchAsync` / `CompleteChatAsync` — lazy-load ONNX session / LLamaSharp weights
+- `Status(enabled, license, selectedExtractId)` — `extractVariants[]` + embed role, ready for selection
+- `StartDownload(role, license, extractModelId?)` — background; extract requires license accepted
+- `DeleteModel(role, extractModelId?)` — unload + delete files for that variant
+- `EmbedBatchAsync` / `CompleteChatAsync(..., extractModelId)` — lazy-load ONNX / selected GGUF
 
 ### Endpoints (local-origin mutate; **not** tunnel-reachable)
 | Route | Notes |
 |---|---|
-| `GET /memory/builtin/status` | Poll UI (includes per-role `loaded` / `anyLoaded`) |
-| `POST /memory/builtin/download?role=` | extract \| embed |
+| `GET /memory/builtin/status` | Poll UI (`extractVariants`, `selectedExtractModelId`, embed `roles`) |
+| `POST /memory/builtin/download?role=&model=` | extract (+ model id) \| embed |
 | `POST /memory/builtin/unload?role=` | free RAM (role optional → both); files stay |
-| `DELETE /memory/builtin/model?role=` | reclaim disk |
-| `PUT /memory/builtin/config` | `{ enabled, acceptLicense? }` local-origin |
+| `DELETE /memory/builtin/model?role=&model=` | reclaim disk for one variant |
+| `PUT /memory/builtin/config` | `{ enabled, acceptLicense?, extractModelId? }` local-origin |
 
 `TunnelAllowlist`: deny `/memory/builtin` (and subpaths) even though `/memory/` is a prefix.
 
 ### UI
-Bridge Memory tab card **// Built-in models** above channel dropdowns: enable toggle, license
-checkbox, per-role download/progress/delete, status when ready.
+Bridge Memory tab card **// Built-in models**: enable toggle, license checkbox, six extract rows
+(radio = active, warn tip on 1.2B, recommended on 2.6B Q5), MiniLM embed row, per-row
+download/progress/delete/unload.
 
 ### Resolution
 1. `BuiltinEnabled` and **both** roles verified on disk → builtin for extract + embed.

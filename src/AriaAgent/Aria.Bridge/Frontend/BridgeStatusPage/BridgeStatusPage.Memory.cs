@@ -17,12 +17,11 @@ public static partial class BridgeStatusPage
             <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
               <div style="font-size:11px;color:var(--text-dead)">
                 Optional on-node models so Noosphere works without a third-party inference engine
-                (LM Studio, Ollama, …). Downloads stay in this machine's app data (~810&nbsp;MB:
-                ~731&nbsp;MB extract + ~23&nbsp;MB embed). Expected RAM when loaded: ~1.0–1.5&nbsp;GB for
-                extraction (LFM2.5-1.2B Q4) and ~100–200&nbsp;MB for embeddings (MiniLM) — roughly
-                ~1.2–1.7&nbsp;GB together while both are warm. Models load into RAM on first use; Unload
-                frees that RAM (files stay on disk). When built-in is on, the channel pickers are hidden —
-                turn it off to configure an external inference channel again.
+                (LM Studio, Ollama, …). Pick an LFM extract GGUF (1.2B or 2.6B, Q4/Q5/Q6) plus MiniLM
+                embeddings (~23&nbsp;MB). Each extract quant downloads separately; only the selected
+                one loads into RAM on first Inscribe/Probe. Unload frees RAM (files stay on disk).
+                When built-in is on, the channel pickers are hidden — turn it off to configure an
+                external inference channel again.
               </div>
               <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 <input type="checkbox" id="noosphere-builtin-enabled" style="accent-color:var(--accent)">
@@ -31,7 +30,7 @@ public static partial class BridgeStatusPage
               </div>
               <label style="display:flex;align-items:flex-start;gap:8px;font-size:11px;color:var(--text-muted);cursor:pointer">
                 <input type="checkbox" id="noosphere-builtin-license" style="accent-color:var(--accent);margin-top:2px">
-                <span>I accept the LFM Open License for the extraction model (LiquidAI LFM2.5-1.2B-Instruct). Embeddings use Apache-2.0 MiniLM.</span>
+                <span>I accept the LFM Open License for LiquidAI extract models (LFM2.5-1.2B-Instruct / LFM2-2.6B). Embeddings use Apache-2.0 MiniLM.</span>
               </label>
               <div id="noosphere-builtin-roles" style="display:flex;flex-direction:column;gap:10px"></div>
               <div id="noosphere-builtin-status" style="font-size:11px;color:var(--text-muted);min-height:16px"></div>

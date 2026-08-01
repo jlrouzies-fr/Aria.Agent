@@ -150,6 +150,7 @@ public static class MemoryEndpoints
                 // (which may SHA-verify large GGUFs on a cold cache).
                 builtinEnabled = config.BuiltinEnabled,
                 builtinLicenseAccepted = config.BuiltinLicenseAcceptedAt != null,
+                builtinExtractModelId = cfg.ResolveBuiltinExtractModelId(config),
                 channels
             });
         });

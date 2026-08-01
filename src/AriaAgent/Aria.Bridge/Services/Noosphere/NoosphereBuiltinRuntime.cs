@@ -12,7 +12,7 @@ using Microsoft.ML.Tokenizers;
 namespace Aria.Bridge.Services.Noosphere;
 
 /// <summary>
-/// Opt-in on-node Noosphere models (MiniLM ONNX embeddings + LFM2.5 GGUF extraction). Mirrors
+/// Opt-in on-node Noosphere models (MiniLM ONNX embeddings + LFM GGUF extraction variants). Mirrors
 /// <see cref="Speech.LocalWhisperService"/>: catalog download into app-data, progress poll, SHA256
 /// verify, lazy load. Never involves Aria.Web.
 /// </summary>
@@ -20,7 +20,7 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
 {
     private readonly ConcurrentDictionary<string, int> _progress = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _errors = new(StringComparer.OrdinalIgnoreCase);
-    // SHA256 of a ~731 MB GGUF is multi-second — cache by (path, length, mtime) so Status polls and
+    // SHA256 of a multi-GB GGUF is multi-second — cache by (path, length, mtime) so Status polls and
     // IsBuiltinActive checks don't re-hash on every Memory-tab open / 2.5s loaded poll.
     private readonly ConcurrentDictionary<string, (long Length, DateTime MtimeUtc)> _verifiedCache = new(StringComparer.Ordinal);
     private static readonly HttpClient Http = new() { Timeout = Timeout.InfiniteTimeSpan };
@@ -31,6 +31,7 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
 
     private LLamaWeights? _extractWeights;
     private ModelParams? _extractParams;
+    private string? _loadedExtractModelId;
     private InferenceSession? _embedSession;
     private BertTokenizer? _embedTokenizer;
 
@@ -79,93 +80,168 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
         return true;
     }
 
-    public bool IsRoleOnDisk(string role)
+    public bool IsExtractOnDisk(string? extractModelId)
     {
-        var info = NoosphereBuiltinCatalog.Lookup(role);
-        if (info == null) return false;
-        return info.Files.All(IsFileVerified);
+        var v = NoosphereBuiltinCatalog.LookupExtract(NoosphereBuiltinCatalog.ResolveExtractId(extractModelId));
+        return v != null && v.Files.All(IsFileVerified);
     }
 
-    public bool IsReady =>
-        IsRoleOnDisk(NoosphereBuiltinCatalog.RoleExtract)
-        && IsRoleOnDisk(NoosphereBuiltinCatalog.RoleEmbed);
+    public bool IsEmbedOnDisk() => NoosphereBuiltinCatalog.Embed.Files.All(IsFileVerified);
+
+    /// <summary>
+    /// Legacy role check: extract uses the default variant id; prefer
+    /// <see cref="IsExtractOnDisk"/> / <see cref="IsEmbedOnDisk"/>.
+    /// </summary>
+    public bool IsRoleOnDisk(string role)
+    {
+        if (string.Equals(role, NoosphereBuiltinCatalog.RoleEmbed, StringComparison.OrdinalIgnoreCase))
+            return IsEmbedOnDisk();
+        if (string.Equals(role, NoosphereBuiltinCatalog.RoleExtract, StringComparison.OrdinalIgnoreCase))
+            return IsExtractOnDisk(NoosphereBuiltinCatalog.DefaultExtractModelId);
+        if (NoosphereBuiltinCatalog.IsKnownExtractId(role))
+            return IsExtractOnDisk(role);
+        return false;
+    }
+
+    public bool IsReady(string? extractModelId = null) =>
+        IsExtractOnDisk(extractModelId) && IsEmbedOnDisk();
 
     /// <summary>True when the role's weights/session are resident in process memory.</summary>
     public bool IsRoleLoaded(string role)
     {
-        if (string.Equals(role, NoosphereBuiltinCatalog.RoleExtract, StringComparison.OrdinalIgnoreCase))
-            return _extractWeights != null;
+        if (string.Equals(role, NoosphereBuiltinCatalog.RoleExtract, StringComparison.OrdinalIgnoreCase)
+            || NoosphereBuiltinCatalog.IsKnownExtractId(role))
+            return _extractWeights != null
+                   && (string.IsNullOrEmpty(role)
+                       || string.Equals(role, NoosphereBuiltinCatalog.RoleExtract, StringComparison.OrdinalIgnoreCase)
+                       || string.Equals(role, _loadedExtractModelId, StringComparison.OrdinalIgnoreCase));
         if (string.Equals(role, NoosphereBuiltinCatalog.RoleEmbed, StringComparison.OrdinalIgnoreCase))
             return _embedSession != null && _embedTokenizer != null;
         return false;
     }
 
-    public object Status(bool enabled, DateTime? licenseAcceptedAt) => new
+    public string? LoadedExtractModelId => _loadedExtractModelId;
+
+    public object Status(bool enabled, DateTime? licenseAcceptedAt, string? selectedExtractModelId)
     {
-        enabled,
-        licenseAccepted = licenseAcceptedAt != null,
-        licenseAcceptedAt,
-        ready = enabled && IsReady,
-        anyLoaded = IsRoleLoaded(NoosphereBuiltinCatalog.RoleExtract)
-            || IsRoleLoaded(NoosphereBuiltinCatalog.RoleEmbed),
-        roles = NoosphereBuiltinCatalog.Roles.Select(r =>
+        var selected = NoosphereBuiltinCatalog.ResolveExtractId(selectedExtractModelId);
+        var ready = enabled && IsReady(selected);
+
+        var extractVariants = NoosphereBuiltinCatalog.ExtractVariants.Select(v =>
         {
-            _progress.TryGetValue(r.Role, out var pct);
-            _errors.TryGetValue(r.Role, out var err);
-            var files = r.Files.Select(f =>
-            {
-                var present = File.Exists(PathFor(f));
-                return new
-                {
-                    fileName = f.FileName,
-                    present,
-                    verified = present && IsFileVerified(f)
-                };
-            }).ToArray();
-            var onDisk = files.Length > 0 && files.All(x => x.verified);
+            var key = NoosphereBuiltinCatalog.ProgressKey(NoosphereBuiltinCatalog.RoleExtract, v.Id);
+            _progress.TryGetValue(key, out var pct);
+            _errors.TryGetValue(key, out var err);
+            var onDisk = v.Files.All(IsFileVerified);
+            var loaded = _extractWeights != null
+                         && string.Equals(_loadedExtractModelId, v.Id, StringComparison.OrdinalIgnoreCase);
             return new
             {
-                role = r.Role,
-                label = r.Label,
-                license = r.License,
-                approxBytes = r.Files.Sum(f => f.ApproxBytes),
+                id = v.Id,
+                label = v.Label,
+                license = v.License,
+                approxBytes = v.Files.Sum(f => f.ApproxBytes),
                 downloaded = onDisk,
-                loaded = IsRoleLoaded(r.Role),
-                downloading = _progress.ContainsKey(r.Role),
+                loaded,
+                selected = string.Equals(v.Id, selected, StringComparison.OrdinalIgnoreCase),
+                downloading = _progress.ContainsKey(key),
                 progress = pct,
                 error = err,
-                files
+                warnTip = v.WarnTip,
+                recommended = v.Recommended,
+                files = v.Files.Select(f => new
+                {
+                    fileName = f.FileName,
+                    present = File.Exists(PathFor(f)),
+                    verified = File.Exists(PathFor(f)) && IsFileVerified(f)
+                }).ToArray()
             };
-        }).ToArray()
-    };
+        }).ToArray();
 
-    public string? StartDownload(string role, bool licenseAccepted)
-    {
-        var info = NoosphereBuiltinCatalog.Lookup(role);
-        if (info == null) return $"Unknown role '{role}'";
-        if (string.Equals(role, NoosphereBuiltinCatalog.RoleExtract, StringComparison.OrdinalIgnoreCase)
-            && !licenseAccepted)
-            return "Accept the LFM Open License before downloading the extraction model.";
-        if (IsRoleOnDisk(role)) return null;
-        if (!_progress.TryAdd(info.Role, 0)) return null; // already in flight
-        _errors.TryRemove(info.Role, out _);
-        _ = Task.Run(() => DownloadRoleAsync(info));
-        return null;
+        var embed = NoosphereBuiltinCatalog.Embed;
+        _progress.TryGetValue(NoosphereBuiltinCatalog.RoleEmbed, out var embedPct);
+        _errors.TryGetValue(NoosphereBuiltinCatalog.RoleEmbed, out var embedErr);
+        var embedOnDisk = embed.Files.All(IsFileVerified);
+
+        return new
+        {
+            enabled,
+            licenseAccepted = licenseAcceptedAt != null,
+            licenseAcceptedAt,
+            selectedExtractModelId = selected,
+            ready,
+            anyLoaded = _extractWeights != null || (_embedSession != null && _embedTokenizer != null),
+            extractVariants,
+            roles = new object[]
+            {
+                new
+                {
+                    role = NoosphereBuiltinCatalog.RoleEmbed,
+                    label = embed.Label,
+                    license = embed.License,
+                    approxBytes = embed.Files.Sum(f => f.ApproxBytes),
+                    downloaded = embedOnDisk,
+                    loaded = IsRoleLoaded(NoosphereBuiltinCatalog.RoleEmbed),
+                    downloading = _progress.ContainsKey(NoosphereBuiltinCatalog.RoleEmbed),
+                    progress = embedPct,
+                    error = embedErr,
+                    files = embed.Files.Select(f => new
+                    {
+                        fileName = f.FileName,
+                        present = File.Exists(PathFor(f)),
+                        verified = File.Exists(PathFor(f)) && IsFileVerified(f)
+                    }).ToArray()
+                }
+            }
+        };
     }
 
-    private async Task DownloadRoleAsync(NoosphereBuiltinCatalog.RoleInfo role)
+    public string? StartDownload(string role, bool licenseAccepted, string? extractModelId = null)
+    {
+        if (string.Equals(role, NoosphereBuiltinCatalog.RoleEmbed, StringComparison.OrdinalIgnoreCase))
+        {
+            if (IsEmbedOnDisk()) return null;
+            var key = NoosphereBuiltinCatalog.RoleEmbed;
+            if (!_progress.TryAdd(key, 0)) return null;
+            _errors.TryRemove(key, out _);
+            _ = Task.Run(() => DownloadFilesAsync(key, NoosphereBuiltinCatalog.Embed.Label, NoosphereBuiltinCatalog.Embed.Files));
+            return null;
+        }
+
+        if (string.Equals(role, NoosphereBuiltinCatalog.RoleExtract, StringComparison.OrdinalIgnoreCase)
+            || NoosphereBuiltinCatalog.IsKnownExtractId(role))
+        {
+            if (!licenseAccepted)
+                return "Accept the LFM Open License before downloading the extraction model.";
+            var id = NoosphereBuiltinCatalog.IsKnownExtractId(role)
+                ? role
+                : NoosphereBuiltinCatalog.ResolveExtractId(extractModelId);
+            var variant = NoosphereBuiltinCatalog.LookupExtract(id);
+            if (variant == null) return $"Unknown extract model '{id}'";
+            if (IsExtractOnDisk(id)) return null;
+            var key = NoosphereBuiltinCatalog.ProgressKey(NoosphereBuiltinCatalog.RoleExtract, id);
+            if (!_progress.TryAdd(key, 0)) return null;
+            _errors.TryRemove(key, out _);
+            _ = Task.Run(() => DownloadFilesAsync(key, variant.Label, variant.Files));
+            return null;
+        }
+
+        return $"Unknown role '{role}'";
+    }
+
+    private async Task DownloadFilesAsync(string progressKey, string label, IReadOnlyList<NoosphereBuiltinCatalog.ModelFile> files)
     {
         try
         {
-            var totalApprox = role.Files.Sum(f => f.ApproxBytes);
+            var totalApprox = files.Sum(f => f.ApproxBytes);
             long doneBytes = 0;
-            foreach (var file in role.Files)
+            foreach (var file in files)
             {
                 var finalPath = PathFor(file);
                 if (File.Exists(finalPath) && VerifyFileSha256(finalPath, file.Sha256Hex))
                 {
                     doneBytes += file.ApproxBytes;
-                    _progress[role.Role] = (int)Math.Min(100, doneBytes * 100 / Math.Max(1, totalApprox));
+                    _progress[progressKey] = (int)Math.Min(100, doneBytes * 100 / Math.Max(1, totalApprox));
                     continue;
                 }
 
@@ -184,9 +260,8 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
                     {
                         await dst.WriteAsync(buffer.AsMemory(0, n));
                         read += n;
-                        // Scale this file's contribution by approx size so multi-file roles report smoothly.
                         var scaled = doneBytes + (long)(read * (double)file.ApproxBytes / Math.Max(1, total));
-                        _progress[role.Role] = (int)Math.Min(99, scaled * 100 / Math.Max(1, totalApprox));
+                        _progress[progressKey] = (int)Math.Min(99, scaled * 100 / Math.Max(1, totalApprox));
                     }
                 }
 
@@ -198,35 +273,53 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
                 }
 
                 File.Move(tmpPath, finalPath, overwrite: true);
-                // We just verified the .part — seed the cache so the next Status poll is instant.
                 var fi = new FileInfo(finalPath);
                 _verifiedCache[finalPath] = (fi.Length, fi.LastWriteTimeUtc);
                 doneBytes += file.ApproxBytes;
-                _progress[role.Role] = (int)Math.Min(100, doneBytes * 100 / Math.Max(1, totalApprox));
+                _progress[progressKey] = (int)Math.Min(100, doneBytes * 100 / Math.Max(1, totalApprox));
             }
 
-            BridgeLogger.Log("INFO", $"Noosphere builtin '{role.Role}' downloaded ({role.Label}).");
+            BridgeLogger.Log("INFO", $"Noosphere builtin '{progressKey}' downloaded ({label}).");
         }
         catch (Exception ex)
         {
-            _errors[role.Role] = ex.Message;
-            BridgeLogger.Log("ERROR", $"Noosphere builtin '{role.Role}' download failed: {ex.Message}");
+            _errors[progressKey] = ex.Message;
+            BridgeLogger.Log("ERROR", $"Noosphere builtin '{progressKey}' download failed: {ex.Message}");
         }
         finally
         {
-            _progress.TryRemove(role.Role, out _);
+            _progress.TryRemove(progressKey, out _);
         }
     }
 
-    public bool DeleteModel(string role)
+    public bool DeleteModel(string role, string? extractModelId = null)
     {
-        var info = NoosphereBuiltinCatalog.Lookup(role);
-        if (info == null) return false;
+        if (string.Equals(role, NoosphereBuiltinCatalog.RoleEmbed, StringComparison.OrdinalIgnoreCase))
+        {
+            UnloadModel(NoosphereBuiltinCatalog.RoleEmbed);
+            return DeleteFiles(NoosphereBuiltinCatalog.Embed.Files);
+        }
 
-        UnloadModel(role);
+        if (string.Equals(role, NoosphereBuiltinCatalog.RoleExtract, StringComparison.OrdinalIgnoreCase)
+            || NoosphereBuiltinCatalog.IsKnownExtractId(role))
+        {
+            var id = NoosphereBuiltinCatalog.IsKnownExtractId(role)
+                ? role
+                : NoosphereBuiltinCatalog.ResolveExtractId(extractModelId);
+            var variant = NoosphereBuiltinCatalog.LookupExtract(id);
+            if (variant == null) return false;
+            if (string.Equals(_loadedExtractModelId, id, StringComparison.OrdinalIgnoreCase))
+                UnloadModel(NoosphereBuiltinCatalog.RoleExtract);
+            return DeleteFiles(variant.Files);
+        }
 
+        return false;
+    }
+
+    private bool DeleteFiles(IReadOnlyList<NoosphereBuiltinCatalog.ModelFile> files)
+    {
         var deleted = false;
-        foreach (var f in info.Files)
+        foreach (var f in files)
         {
             var path = PathFor(f);
             _verifiedCache.TryRemove(path, out _);
@@ -242,7 +335,8 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
     /// </summary>
     public bool UnloadModel(string role)
     {
-        if (string.Equals(role, NoosphereBuiltinCatalog.RoleExtract, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(role, NoosphereBuiltinCatalog.RoleExtract, StringComparison.OrdinalIgnoreCase)
+            || NoosphereBuiltinCatalog.IsKnownExtractId(role))
         {
             _extractLock.Wait();
             try
@@ -289,24 +383,25 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
     // ── Inference ────────────────────────────────────────────────────────────
 
     /// <param name="prefillJsonObject">
-    /// When true, seeds the assistant turn with <c>{</c> so a 1.2B model stays on a JSON object
+    /// When true, seeds the assistant turn with <c>{</c> so a small model stays on a JSON object
     /// (Liquid's recommended structured-output prefill). Caller must treat the returned text as a
     /// full object (leading brace is restored).
     /// </param>
     public async Task<(string? Text, string? Error)> CompleteChatAsync(
         string systemPrompt, string userContent, double temperature, int maxTokens, CancellationToken ct,
-        bool prefillJsonObject = false)
+        bool prefillJsonObject = false, string? extractModelId = null)
     {
-        if (!IsRoleOnDisk(NoosphereBuiltinCatalog.RoleExtract))
+        var id = NoosphereBuiltinCatalog.ResolveExtractId(extractModelId);
+        if (!IsExtractOnDisk(id))
             return (null, "Built-in extraction model is not downloaded on this node.");
 
         try
         {
-            await EnsureExtractLoadedAsync(ct);
+            await EnsureExtractLoadedAsync(id, ct);
             var weights = _extractWeights!;
             var modelParams = _extractParams!;
 
-            // LFM2.5 requires <|startoftext|> before the first turn — omitting it degrades instruct
+            // LFM requires <|startoftext|> before the first turn — omitting it degrades instruct
             // following (we saw valid-looking JSON with no usable facts).
             var prompt =
                 "<|startoftext|><|im_start|>system\n" + systemPrompt + "<|im_end|>\n" +
@@ -334,7 +429,6 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
         }
         catch (Exception ex)
         {
-            // NoosphereExtractor.Fail logs the Event Log line; keep this return for the call chain.
             return (null, ex.Message);
         }
     }
@@ -342,7 +436,7 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
     public async Task<(List<float[]>? Vectors, string? Error)> EmbedBatchAsync(
         IReadOnlyList<string> texts, CancellationToken ct)
     {
-        if (!IsRoleOnDisk(NoosphereBuiltinCatalog.RoleEmbed))
+        if (!IsEmbedOnDisk())
             return (null, "Built-in embedding model is not downloaded on this node.");
         if (texts.Count == 0) return ([], null);
 
@@ -361,21 +455,31 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
         }
         catch (Exception ex)
         {
-            // NoosphereEmbedder.Fail logs the Event Log line; keep this return for the call chain.
             return (null, ex.Message);
         }
     }
 
-    private async Task EnsureExtractLoadedAsync(CancellationToken ct)
+    private async Task EnsureExtractLoadedAsync(string extractModelId, CancellationToken ct)
     {
-        if (_extractWeights != null) return;
+        var id = NoosphereBuiltinCatalog.ResolveExtractId(extractModelId);
+        if (_extractWeights != null
+            && string.Equals(_loadedExtractModelId, id, StringComparison.OrdinalIgnoreCase))
+            return;
+
         await _extractLock.WaitAsync(ct);
         try
         {
-            if (_extractWeights != null) return;
-            var info = NoosphereBuiltinCatalog.Lookup(NoosphereBuiltinCatalog.RoleExtract)!;
-            var path = PathFor(info.Files[0]);
-            if (!IsFileVerified(info.Files[0]))
+            if (_extractWeights != null
+                && string.Equals(_loadedExtractModelId, id, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            if (_extractWeights != null)
+                UnloadExtract();
+
+            var variant = NoosphereBuiltinCatalog.LookupExtract(id)
+                          ?? throw new InvalidOperationException($"Unknown extract model '{id}'.");
+            var path = PathFor(variant.Files[0]);
+            if (!IsFileVerified(variant.Files[0]))
                 throw new InvalidOperationException("Built-in extraction model failed SHA256 verification.");
 
             var parameters = new ModelParams(path)
@@ -385,7 +489,8 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
             };
             _extractWeights = await Task.Run(() => LLamaWeights.LoadFromFile(parameters), ct);
             _extractParams = parameters;
-            BridgeLogger.Log("INFO", "Noosphere builtin extraction model loaded.");
+            _loadedExtractModelId = id;
+            BridgeLogger.Log("INFO", $"Noosphere builtin extraction model loaded ({variant.Label}).");
         }
         finally { _extractLock.Release(); }
     }
@@ -397,7 +502,7 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
         try
         {
             if (_embedSession != null && _embedTokenizer != null) return;
-            var info = NoosphereBuiltinCatalog.Lookup(NoosphereBuiltinCatalog.RoleEmbed)!;
+            var info = NoosphereBuiltinCatalog.Embed;
             var onnx = info.Files.First(f => f.FileName.EndsWith(".onnx", StringComparison.OrdinalIgnoreCase));
             var vocab = info.Files.First(f => f.FileName.Equals("vocab.txt", StringComparison.OrdinalIgnoreCase));
             if (!IsFileVerified(onnx) || !IsFileVerified(vocab))
@@ -421,7 +526,6 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
     private static float[] EmbedOne(InferenceSession session, BertTokenizer tokenizer, string text)
     {
         const int maxLen = 256;
-        // Encode without specials, then wrap with [CLS]/[SEP] so length stays ≤ maxLen.
         var body = tokenizer.EncodeToIds(text, maxLen - 2, out _, out _).ToList();
         var ids = tokenizer.BuildInputsWithSpecialTokens(body).ToArray();
         if (ids.Length == 0)
@@ -447,9 +551,7 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
 
         using var results = session.Run(inputs);
         var output = results.First().AsTensor<float>();
-        // Mean-pool token embeddings (skip padding — all positions are real tokens here) then L2-norm.
         var dims = output.Dimensions.ToArray();
-        // [1, seq, hidden] or [seq, hidden]
         int hidden;
         float[] pooled;
         if (dims.Length == 3)
@@ -484,6 +586,7 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
         _extractWeights?.Dispose();
         _extractWeights = null;
         _extractParams = null;
+        _loadedExtractModelId = null;
     }
 
     private void UnloadEmbed()

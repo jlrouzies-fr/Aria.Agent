@@ -13,7 +13,7 @@ namespace Aria.Bridge.Services.Noosphere;
 public sealed class NoosphereConfigService(IServiceScopeFactory scopeFactory)
 {
     public record SaveRequest(string? ExtractionChannelName, string? EmbeddingsChannelName, bool EmbeddingsEnabled, string? EmbeddingsModel = null, string? ExtractionModel = null);
-    public record SaveBuiltinRequest(bool Enabled, bool AcceptLicense = false);
+    public record SaveBuiltinRequest(bool Enabled, bool AcceptLicense = false, string? ExtractModelId = null);
 
     public async Task<NoosphereConfig> GetConfigAsync(CancellationToken ct)
     {
@@ -59,16 +59,28 @@ public sealed class NoosphereConfigService(IServiceScopeFactory scopeFactory)
         config.BuiltinEnabled = req.Enabled;
         if (req.AcceptLicense && config.BuiltinLicenseAcceptedAt == null)
             config.BuiltinLicenseAcceptedAt = DateTime.UtcNow;
+        if (req.ExtractModelId != null)
+        {
+            if (!NoosphereBuiltinCatalog.IsKnownExtractId(req.ExtractModelId)
+                && !string.IsNullOrWhiteSpace(req.ExtractModelId))
+                throw new ArgumentException($"Unknown extract model '{req.ExtractModelId}'");
+            config.BuiltinExtractModelId = string.IsNullOrWhiteSpace(req.ExtractModelId)
+                ? null
+                : NoosphereBuiltinCatalog.ResolveExtractId(req.ExtractModelId);
+        }
         await db.SaveChangesAsync(ct);
         BridgeLogger.Log("INFO",
-            $"Noosphere builtin config saved: enabled={config.BuiltinEnabled}, licenseAccepted={config.BuiltinLicenseAcceptedAt != null}");
+            $"Noosphere builtin config saved: enabled={config.BuiltinEnabled}, extract={config.BuiltinExtractModelId ?? NoosphereBuiltinCatalog.DefaultExtractModelId}, licenseAccepted={config.BuiltinLicenseAcceptedAt != null}");
     }
+
+    public string ResolveBuiltinExtractModelId(NoosphereConfig config) =>
+        NoosphereBuiltinCatalog.ResolveExtractId(config.BuiltinExtractModelId);
 
     /// <summary>True when the node should use in-process models instead of HTTP channels.</summary>
     public async Task<bool> IsBuiltinActiveAsync(NoosphereBuiltinRuntime runtime, CancellationToken ct)
     {
         var config = await GetConfigAsync(ct);
-        return config.BuiltinEnabled && runtime.IsReady;
+        return config.BuiltinEnabled && runtime.IsReady(ResolveBuiltinExtractModelId(config));
     }
 
     /// <summary>

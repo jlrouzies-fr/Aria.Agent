@@ -330,7 +330,8 @@ public static class MemoryGraphLayout
         "thing"   => "#7ac47a", // green
         "event"   => "#e07070", // red
         "project" => "#e0a050", // orange
-        _         => "#888888",
+        "other"   => "#a89878", // khaki — explicit other (not missing)
+        _         => "#888888", // null / unknown
     };
 
     public static string KindGlyph(string? kind) => kind switch
@@ -342,6 +343,7 @@ public static class MemoryGraphLayout
         "thing"   => "▣",
         "event"   => "✦",
         "project" => "◉",
+        "other"   => "◌",
         _         => "○",
     };
 }

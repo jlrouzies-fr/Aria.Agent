@@ -355,7 +355,8 @@ public static class BridgeDatabaseInitializer
                      ("EmbeddingsModel", "TEXT"),
                      ("ExtractionModel", "TEXT"),
                      ("BuiltinEnabled", "INTEGER NOT NULL DEFAULT 0"),
-                     ("BuiltinLicenseAcceptedAt", "TEXT")
+                     ("BuiltinLicenseAcceptedAt", "TEXT"),
+                     ("BuiltinExtractModelId", "TEXT")
                  })
         {
             await using var chk = dbConn.CreateCommand();

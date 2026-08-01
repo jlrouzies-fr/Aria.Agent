@@ -130,6 +130,7 @@ public class NoosphereService(
                     {
                         var canonical = ent.Name.Trim().ToLowerInvariant();
                         if (canonical.Length == 0) continue;
+                        var resolvedKind = NoosphereExtractor.ResolveEntityKind(ent.Name, ent.Kind);
                         if (!entityCache.TryGetValue(canonical, out var entity))
                         {
                             entity = await db.MemoryEntities.FirstOrDefaultAsync(
@@ -139,11 +140,20 @@ public class NoosphereService(
                                 entity = new MemoryEntity
                                 {
                                     SoulId = ingest.SoulId, Bank = ingest.Bank,
-                                    Name = ent.Name.Trim(), CanonicalName = canonical, Kind = ent.Kind
+                                    Name = ent.Name.Trim(), CanonicalName = canonical, Kind = resolvedKind
                                 };
                                 db.MemoryEntities.Add(entity);
                             }
+                            else if (string.IsNullOrWhiteSpace(entity.Kind))
+                            {
+                                // Builtin extracts often created the row without a kind; backfill on revisit.
+                                entity.Kind = resolvedKind;
+                            }
                             entityCache[canonical] = entity;
+                        }
+                        else if (string.IsNullOrWhiteSpace(entity.Kind))
+                        {
+                            entity.Kind = resolvedKind;
                         }
                         db.EngramEntities.Add(new EngramEntity { EngramId = engram.Id, EntityId = entity.Id });
                     }
@@ -721,6 +731,10 @@ public class NoosphereService(
         var db = scope.ServiceProvider.GetRequiredService<BridgeDbContext>();
         var soulId = await GetActiveSoulIdAsync(db, ct);
 
+        // Builtin extracts left many rows with Kind=null; repair in place so the canvas picks
+        // up inferred kinds without requiring a re-Inscribe.
+        await RepairUntypedEntityKindsAsync(db, soulId, bank, ct);
+
         var entities = await db.MemoryEntities.AsNoTracking()
             .Where(e => e.SoulId == soulId && e.Bank == bank)
             .Select(e => new { e.Id, e.Name, e.Kind })
@@ -774,6 +788,28 @@ public class NoosphereService(
             .ToList();
 
         return new GraphResult(nodes, edges);
+    }
+
+    /// <summary>
+    /// Persist inferred kinds for entities the builtin model stored without one. Idempotent.
+    /// </summary>
+    private static async Task RepairUntypedEntityKindsAsync(
+        BridgeDbContext db, string soulId, string bank, CancellationToken ct)
+    {
+        var untyped = await db.MemoryEntities
+            .Where(e => e.SoulId == soulId && e.Bank == bank && (e.Kind == null || e.Kind == ""))
+            .ToListAsync(ct);
+        if (untyped.Count == 0) return;
+
+        var dirty = false;
+        foreach (var e in untyped)
+        {
+            var inferred = NoosphereExtractor.ResolveEntityKind(e.Name, null);
+            if (string.IsNullOrWhiteSpace(inferred)) continue;
+            e.Kind = inferred;
+            dirty = true;
+        }
+        if (dirty) await db.SaveChangesAsync(ct);
     }
 
     // Greedy modularity maximization (Clauset-Newman-Moore style): every entity starts as its own

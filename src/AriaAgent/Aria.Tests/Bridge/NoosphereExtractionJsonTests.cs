@@ -86,17 +86,33 @@ public class NoosphereExtractionJsonTests
     }
 
     [Fact]
-    public void ParseFacts_AcceptsBareStringEntities()
+    public void ParseFacts_AcceptsBareStringEntities_InfersKind()
     {
         var facts = NoosphereExtractor.ParseFacts(
-            """{"facts":[{"content":"Spectra.MLX runs locally","entities":["Spectra.MLX","Apple Silicon"],"relations":[]}]}""");
+            """{"facts":[{"content":"Spectra.MLX runs locally","entities":["Spectra.MLX","AGENTS.md","8001","data-repo"],"relations":[]}]}""");
 
         Assert.NotNull(facts);
         Assert.Single(facts!);
-        Assert.Equal(2, facts[0].Entities.Count);
+        Assert.Equal(4, facts[0].Entities.Count);
         Assert.Equal("Spectra.MLX", facts[0].Entities[0].Name);
-        Assert.Null(facts[0].Entities[0].Kind);
+        // Dotted product name without a file-like extension → other; files/ports/slugs infer.
+        Assert.Equal("other", facts[0].Entities[0].Kind);
+        Assert.Equal("thing", facts[0].Entities[1].Kind);   // AGENTS.md
+        Assert.Equal("concept", facts[0].Entities[2].Kind); // 8001
+        Assert.Equal("project", facts[0].Entities[3].Kind); // data-repo
     }
+
+    [Theory]
+    [InlineData("server.py", null, "thing")]
+    [InlineData("AGENTS.md", null, "thing")]
+    [InlineData("8001", null, "concept")]
+    [InlineData("data-repo", null, "project")]
+    [InlineData("Alex", "person", "person")]
+    [InlineData("Alex", "PERSON", "person")]
+    [InlineData("X", "person|place", "person")]
+    [InlineData("mystery", null, "other")]
+    public void ResolveEntityKind_InfersOrNormalizes(string name, string? kind, string expected)
+        => Assert.Equal(expected, NoosphereExtractor.ResolveEntityKind(name, kind));
 
     [Fact]
     public void SoftRepairJson_QuotesBareKindEnumsAndStripsTrailingCommas()
@@ -106,6 +122,6 @@ public class NoosphereExtractionJsonTests
         var facts = NoosphereExtractor.ParseFacts(repaired);
         Assert.NotNull(facts);
         Assert.Single(facts!);
-        Assert.Equal("person|place", facts[0].Entities[0].Kind);
+        Assert.Equal("person", facts[0].Entities[0].Kind);
     }
 }

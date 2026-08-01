@@ -123,6 +123,9 @@ public static partial class BridgeStatusPage
             if (!text) return;
             cur = el;
             tip.textContent = text;
+            tip.className = '';
+            const variant = el.getAttribute('data-tip-variant');
+            if (variant) tip.classList.add('aria-tip-' + variant);
             tip.style.opacity = '1';
           });
           document.addEventListener('mousemove', e => {
@@ -137,7 +140,12 @@ public static partial class BridgeStatusPage
           document.addEventListener('mouseout', e => {
             if (cur && (!e.relatedTarget || !cur.contains(e.relatedTarget))) {
               const gone = e.target.closest('[data-tip]');
-              if (gone === cur) { cur = null; tip.style.opacity = '0'; tip.style.left = '-9999px'; }
+              if (gone === cur) {
+                cur = null;
+                tip.style.opacity = '0';
+                tip.style.left = '-9999px';
+                tip.className = '';
+              }
             }
           });
         })();

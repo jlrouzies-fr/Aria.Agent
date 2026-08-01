@@ -51,13 +51,15 @@ public class NoosphereExtractor(
 
         if (builtin)
         {
-            // One retry — 1.2B Q4 occasionally emits broken JSON; a second draw is cheap vs raw fallback.
+            var extractId = configService.ResolveBuiltinExtractModelId(await configService.GetConfigAsync(ct));
+            // One retry — small Quants occasionally emit broken JSON; a second draw is cheap vs raw fallback.
             // First failure sets LastError so the Memory nav/banner lights up during the retry window;
             // success clears it (a recovered attempt is not a sticky fault).
             for (var attempt = 0; attempt < 2; attempt++)
             {
                 (raw, error) = await builtinRuntime.CompleteChatAsync(
-                    system, content, temperature: 0.1, maxTokens: 2048, ct, prefillJsonObject: true);
+                    system, content, temperature: 0.1, maxTokens: 2048, ct,
+                    prefillJsonObject: true, extractModelId: extractId);
                 if (error != null) { Fail(error); return null; }
                 var parsed = TryParseFacts(raw, sourceLabel, out var failReason);
                 if (parsed is { Count: > 0 })
@@ -147,7 +149,9 @@ public class NoosphereExtractor(
         string? error;
         if (await configService.IsBuiltinActiveAsync(builtinRuntime, ct))
         {
-            (text, error) = await builtinRuntime.CompleteChatAsync(system, user, temperature: 0.3, maxTokens: 1024, ct);
+            var extractId = configService.ResolveBuiltinExtractModelId(await configService.GetConfigAsync(ct));
+            (text, error) = await builtinRuntime.CompleteChatAsync(
+                system, user, temperature: 0.3, maxTokens: 1024, ct, extractModelId: extractId);
         }
         else
         {
@@ -279,13 +283,17 @@ public class NoosphereExtractor(
                 {
                     var bare = e.GetString();
                     if (!string.IsNullOrWhiteSpace(bare))
-                        entities.Add(new ExtractedEntity(bare.Trim(), null));
+                    {
+                        var trimmed = bare.Trim();
+                        entities.Add(new ExtractedEntity(trimmed, ResolveEntityKind(trimmed, null)));
+                    }
                     continue;
                 }
                 var name = GetStringIgnoreCase(e, "name") ?? GetStringIgnoreCase(e, "entity");
                 if (string.IsNullOrWhiteSpace(name)) continue;
+                var trimmedName = name.Trim();
                 var kind = GetStringIgnoreCase(e, "kind");
-                entities.Add(new ExtractedEntity(name.Trim(), string.IsNullOrWhiteSpace(kind) ? null : kind));
+                entities.Add(new ExtractedEntity(trimmedName, ResolveEntityKind(trimmedName, kind)));
             }
 
         var relations = new List<ExtractedRelation>();
@@ -470,6 +478,73 @@ public class NoosphereExtractor(
         if (string.IsNullOrEmpty(s)) return "(empty)";
         var t = s.Replace('\r', ' ').Replace('\n', ' ').Trim();
         return t.Length <= 180 ? t : t[..180] + "…";
+    }
+
+    private static readonly HashSet<string> KnownKinds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "person", "place", "org", "concept", "thing", "event", "project", "other"
+    };
+
+    // Common file suffixes the 1.2B model names as bare strings without a kind.
+    private static readonly HashSet<string> FileLikeExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "md", "txt", "py", "cs", "ts", "tsx", "js", "jsx", "json", "yaml", "yml", "toml",
+        "rs", "go", "java", "kt", "rb", "php", "html", "css", "scss", "sql", "sh", "bash",
+        "bat", "ps1", "gguf", "onnx", "dll", "exe", "so", "dylib", "png", "jpg", "jpeg",
+        "svg", "pdf", "xml", "csv", "lock", "gradle", "swift", "m", "mm", "c", "h", "hpp",
+        "cpp", "cc", "vue", "svelte", "wasm", "bin"
+    };
+
+    /// <summary>
+    /// Normalize a model-supplied kind, or infer one from the entity name when the builtin
+    /// 1.2B extract emits bare strings / omits kind. Always returns a known kind so the
+    /// Memory canvas does not strand nodes in the untyped grey bucket.
+    /// </summary>
+    public static string ResolveEntityKind(string name, string? kind)
+    {
+        var normalized = NormalizeKind(kind);
+        if (normalized != null) return normalized;
+
+        var n = name.Trim();
+        if (n.Length == 0) return "other";
+
+        // Paths / filenames → thing (AGENTS.md, server.py, src/foo).
+        if (n.Contains('/') || n.Contains('\\'))
+            return "thing";
+        var dot = n.LastIndexOf('.');
+        if (dot > 0 && dot < n.Length - 1)
+        {
+            var ext = n[(dot + 1)..];
+            if (FileLikeExtensions.Contains(ext))
+                return "thing";
+        }
+
+        // Bare ports / numeric ids → concept (8001, 5741).
+        if (n.Length is >= 2 and <= 5 && n.All(char.IsDigit))
+            return "concept";
+
+        // Kebab / snake slugs → project (data-repo, aria_agent). Skip sentence fragments.
+        if (!n.Contains(' ')
+            && n.Count(c => c is '-' or '_') is >= 1 and <= 4
+            && n.All(c => char.IsLetterOrDigit(c) || c is '-' or '_'))
+            return "project";
+
+        return "other";
+    }
+
+    private static string? NormalizeKind(string? kind)
+    {
+        if (string.IsNullOrWhiteSpace(kind)) return null;
+        var k = kind.Trim();
+        // SoftRepair may quote model enum unions: "person|place" → take the first known token.
+        foreach (var part in k.Split('|', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (KnownKinds.Contains(part))
+                return part.ToLowerInvariant();
+        }
+        if (KnownKinds.Contains(k))
+            return k.ToLowerInvariant();
+        return null;
     }
 
     /// <summary>

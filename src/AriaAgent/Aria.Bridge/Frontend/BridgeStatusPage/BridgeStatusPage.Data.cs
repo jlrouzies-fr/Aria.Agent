@@ -244,15 +244,61 @@ public static partial class BridgeStatusPage
 
         let _builtinPollTimer = null;
         let _builtinPollMs = 0;
-        // Roles with a download already kicked off this session — disables the button immediately
+        // Download keys (extract:<id> or embed) already kicked off — disables the button immediately
         // (before the first status poll reports downloading) so a double-click can't re-fire.
         const _builtinDownloadStarted = new Set();
+        let _selectedExtractModelId = 'lfm25-1.2b-q4km';
 
         function formatBytes(n) {
           if (n >= 1e9) return (n / 1e9).toFixed(1) + ' GB';
           if (n >= 1e6) return (n / 1e6).toFixed(0) + ' MB';
           if (n >= 1e3) return (n / 1e3).toFixed(0) + ' KB';
           return n + ' B';
+        }
+
+        function builtinDlKey(role, model) {
+          return role === 'extract' ? ('extract:' + model) : role;
+        }
+
+        function renderBuiltinRow(opts) {
+          const { key, label, meta, downloaded, loaded, downloading, progress, error, downloadFn, deleteFn, unloadFn, warnTip, recommended, selectedRadio } = opts;
+          const pct = downloading ? (progress || 0) : (downloaded ? 100 : 0);
+          const bar = downloading
+            ? `<div style="height:4px;background:#2a2418;border-radius:2px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${pct}%;background:var(--border-glow);transition:width .2s linear"></div></div>`
+            : '';
+          const err = error ? `<div style="color:#d04040;margin-top:4px">${error}</div>` : '';
+          const state = loaded
+            ? '<span style="color:var(--success)">● in RAM</span>'
+            : (downloaded ? '✓ on disk' : (downloading ? `↓ ${pct}%` : 'not downloaded'));
+          const unloadBtn = loaded
+            ? `<button type="button" onclick="${unloadFn}" style="background:var(--bg-surface);border:1px solid var(--border-glow);color:var(--text-title);padding:3px 8px;cursor:pointer;font-family:monospace;font-size:10px">UNLOAD</button>`
+            : '';
+          const actions = downloaded
+            ? `<div style="display:flex;gap:6px;align-items:center">${unloadBtn}<button onclick="${deleteFn}" style="background:none;border:1px solid var(--border-dim);color:var(--text-muted);padding:3px 8px;cursor:pointer;font-family:monospace;font-size:10px">DELETE</button></div>`
+            : downloading
+              ? `<button type="button" disabled style="background:var(--bg-surface);border:1px solid var(--border-dim);color:var(--text-dead);padding:3px 8px;cursor:default;font-family:monospace;font-size:10px;opacity:.55;pointer-events:none">DOWNLOADING…</button>`
+              : `<button type="button" onclick="${downloadFn}" style="background:var(--bg-surface);border:1px solid var(--border-glow);color:var(--text-title);padding:3px 8px;cursor:pointer;font-family:monospace;font-size:10px">DOWNLOAD</button>`;
+          const warn = warnTip
+            ? ` <span data-tip="${warnTip.replace(/"/g, '&quot;')}" data-tip-variant="warn" style="color:#d04040;font-weight:700">⚠</span>`
+            : '';
+          const rec = recommended
+            ? ' <span style="font-size:9px;color:var(--success);letter-spacing:.06em;border:1px solid var(--success);padding:1px 5px;margin-left:4px">RECOMMENDED</span>'
+            : '';
+          const radio = selectedRadio != null
+            ? `<input type="radio" name="noosphere-extract-select" value="${key}" ${selectedRadio ? 'checked' : ''} onchange="selectNoosphereExtract('${key}')" style="accent-color:var(--accent);margin:0 8px 0 0">`
+            : '';
+          return `<div style="border:1px solid var(--border-dim);padding:8px 10px${loaded ? ';border-color:var(--border-glow)' : ''}${selectedRadio ? ';border-color:var(--border-glow)' : ''}">
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
+              <div style="display:flex;align-items:flex-start;min-width:0;flex:1">
+                ${radio}
+                <div>
+                  <div style="font-size:12px;color:var(--text-normal)">${label}${warn}${rec}</div>
+                  <div style="font-size:10px;color:var(--text-dead)">${meta} · ${state}</div>
+                </div>
+              </div>
+              ${actions}
+            </div>${bar}${err}
+          </div>`;
         }
 
         async function refreshNoosphereBuiltin() {
@@ -267,62 +313,87 @@ public static partial class BridgeStatusPage
             const d = await r.json();
             enabledBox.checked = !!d.enabled;
             if (d.licenseAccepted) licenseBox.checked = true;
-            host.innerHTML = (d.roles || []).map(role => {
-              // Local set covers the gap before the server reports downloading=true.
-              const downloading = !!(role.downloading || _builtinDownloadStarted.has(role.role));
-              if (role.downloaded || (!role.downloading && role.error))
-                _builtinDownloadStarted.delete(role.role);
-              const pct = downloading ? (role.progress || 0) : (role.downloaded ? 100 : 0);
-              // Use --border-glow (defined on this page) — --accent is not in the bridge theme, so
-              // a fill keyed to it stayed invisible while the "↓ N%" text still updated.
-              const bar = downloading
-                ? `<div style="height:4px;background:#2a2418;border-radius:2px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${pct}%;background:var(--border-glow);transition:width .2s linear"></div></div>`
-                : '';
-              const err = role.error ? `<div style="color:#d04040;margin-top:4px">${role.error}</div>` : '';
-              // Distinguish disk vs RAM — download ≠ load; load happens on first Inscribe/Probe.
-              const state = role.loaded
-                ? '<span style="color:var(--success)">● in RAM</span>'
-                : (role.downloaded ? '✓ on disk' : (downloading ? `↓ ${pct}%` : 'not downloaded'));
-              const unloadBtn = role.loaded
-                ? `<button type="button" onclick="unloadNoosphereBuiltin('${role.role}')" style="background:var(--bg-surface);border:1px solid var(--border-glow);color:var(--text-title);padding:3px 8px;cursor:pointer;font-family:monospace;font-size:10px">UNLOAD</button>`
-                : '';
-              const actions = role.downloaded
-                ? `<div style="display:flex;gap:6px;align-items:center">${unloadBtn}<button onclick="deleteNoosphereBuiltin('${role.role}')" style="background:none;border:1px solid var(--border-dim);color:var(--text-muted);padding:3px 8px;cursor:pointer;font-family:monospace;font-size:10px">DELETE</button></div>`
-                : downloading
-                  ? `<button type="button" disabled style="background:var(--bg-surface);border:1px solid var(--border-dim);color:var(--text-dead);padding:3px 8px;cursor:default;font-family:monospace;font-size:10px;opacity:.55;pointer-events:none">DOWNLOADING…</button>`
-                  : `<button type="button" onclick="downloadNoosphereBuiltin('${role.role}')" style="background:var(--bg-surface);border:1px solid var(--border-glow);color:var(--text-title);padding:3px 8px;cursor:pointer;font-family:monospace;font-size:10px">DOWNLOAD</button>`;
-              return `<div style="border:1px solid var(--border-dim);padding:8px 10px${role.loaded ? ';border-color:var(--border-glow)' : ''}">
-                <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
-                  <div>
-                    <div style="font-size:12px;color:var(--text-normal)">${role.label}</div>
-                    <div style="font-size:10px;color:var(--text-dead)">${formatBytes(role.approxBytes)} · ${role.license} · ${state}</div>
-                  </div>
-                  ${actions}
-                </div>${bar}${err}
-              </div>`;
+            if (d.selectedExtractModelId) _selectedExtractModelId = d.selectedExtractModelId;
+
+            const variants = d.extractVariants || [];
+            const embedRoles = d.roles || [];
+            let html = '';
+            html += '<div style="font-size:10px;color:var(--text-dead);letter-spacing:.08em;margin-bottom:4px">EXTRACT — select active · download any</div>';
+            html += variants.map(v => {
+              const key = builtinDlKey('extract', v.id);
+              const downloading = !!(v.downloading || _builtinDownloadStarted.has(key));
+              if (v.downloaded || (!v.downloading && v.error)) _builtinDownloadStarted.delete(key);
+              return renderBuiltinRow({
+                key: v.id,
+                label: v.label,
+                meta: formatBytes(v.approxBytes) + ' · ' + v.license,
+                downloaded: v.downloaded,
+                loaded: v.loaded,
+                downloading,
+                progress: v.progress,
+                error: v.error,
+                downloadFn: `downloadNoosphereBuiltin('extract','${v.id}')`,
+                deleteFn: `deleteNoosphereBuiltin('extract','${v.id}')`,
+                unloadFn: `unloadNoosphereBuiltin('extract')`,
+                warnTip: v.warnTip || '',
+                recommended: !!v.recommended,
+                selectedRadio: !!v.selected
+              });
             }).join('');
+            html += '<div style="font-size:10px;color:var(--text-dead);letter-spacing:.08em;margin:12px 0 4px">EMBEDDINGS</div>';
+            html += embedRoles.map(role => {
+              const key = builtinDlKey(role.role);
+              const downloading = !!(role.downloading || _builtinDownloadStarted.has(key));
+              if (role.downloaded || (!role.downloading && role.error)) _builtinDownloadStarted.delete(key);
+              return renderBuiltinRow({
+                key: role.role,
+                label: role.label,
+                meta: formatBytes(role.approxBytes) + ' · ' + role.license,
+                downloaded: role.downloaded,
+                loaded: role.loaded,
+                downloading,
+                progress: role.progress,
+                error: role.error,
+                downloadFn: `downloadNoosphereBuiltin('embed')`,
+                deleteFn: `deleteNoosphereBuiltin('embed')`,
+                unloadFn: `unloadNoosphereBuiltin('embed')`,
+                warnTip: '',
+                recommended: false,
+                selectedRadio: null
+              });
+            }).join('');
+            host.innerHTML = html;
+
             const channelsCard = document.getElementById('noosphere-channels-card');
             if (channelsCard) channelsCard.style.display = d.enabled ? 'none' : '';
+            const selected = variants.find(v => v.selected);
+            const embed = embedRoles[0];
+            const extractLoaded = variants.some(v => v.loaded);
+            const embedLoaded = !!(embed && embed.loaded);
             if (d.ready) {
-              const loadedRoles = (d.roles || []).filter(x => x.loaded);
               status.style.color = 'var(--success)';
-              if (loadedRoles.length === 2) {
-                status.textContent = '✓ Built-in active — both models loaded in RAM (no third-party inference engine needed).';
-              } else if (loadedRoles.length === 1) {
-                status.textContent = '✓ Built-in ready — ' + loadedRoles[0].label + ' in RAM; the other loads on first use.';
+              if (extractLoaded && embedLoaded) {
+                status.textContent = '✓ Built-in active — selected extract + embeddings in RAM (no third-party inference engine needed).';
+              } else if (extractLoaded || embedLoaded) {
+                status.textContent = '✓ Built-in ready — one model in RAM; the other loads on first use.';
               } else {
                 status.textContent = '✓ Extraction + embeddings via built-in (no third-party inference engine needed). Models load into RAM on first Inscribe/Probe.';
               }
             } else if (d.enabled) {
               status.style.color = '#c09050';
-              status.textContent = 'Built-in enabled — download both models above. Until then Inscribe falls back to raw storage.';
+              const needExtract = !(selected && selected.downloaded);
+              const needEmbed = !(embed && embed.downloaded);
+              status.textContent = 'Built-in enabled — download '
+                + (needExtract ? 'the selected extract' : '')
+                + (needExtract && needEmbed ? ' and ' : '')
+                + (needEmbed ? 'embeddings' : '')
+                + '. Until then Inscribe falls back to raw storage.';
             } else {
               status.style.color = 'var(--text-muted)';
               status.textContent = '';
             }
-            // Poll while downloading OR while any model is in RAM so Unload/load state stays current
-            // after Inscribe/Probe warms them without a manual refresh.
-            const anyDownloading = (d.roles || []).some(x => x.downloading || _builtinDownloadStarted.has(x.role));
+            const anyDownloading = variants.some(v => v.downloading || _builtinDownloadStarted.has(builtinDlKey('extract', v.id)))
+              || embedRoles.some(x => x.downloading || _builtinDownloadStarted.has(builtinDlKey(x.role)));
             const shouldPoll = anyDownloading || !!d.anyLoaded;
             const pollMs = anyDownloading ? 800 : 2500;
             if (shouldPoll && (_builtinPollTimer == null || _builtinPollMs !== pollMs)) {
@@ -341,6 +412,26 @@ public static partial class BridgeStatusPage
           }
         }
 
+        async function selectNoosphereExtract(id) {
+          _selectedExtractModelId = id;
+          const status = document.getElementById('noosphere-builtin-status');
+          try {
+            const r = await fetch('/memory/builtin/config', {
+              method: 'PUT', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                enabled: document.getElementById('noosphere-builtin-enabled').checked,
+                acceptLicense: document.getElementById('noosphere-builtin-license').checked,
+                extractModelId: id
+              })
+            });
+            if (!r.ok) {
+              const d = await r.json().catch(() => ({}));
+              throw new Error(d.error || await r.text());
+            }
+            await refreshNoosphereBuiltin();
+          } catch (e) { status.textContent = 'Error: ' + e.message; }
+        }
+
         async function saveNoosphereBuiltinConfig() {
           const enabled = document.getElementById('noosphere-builtin-enabled').checked;
           const acceptLicense = document.getElementById('noosphere-builtin-license').checked;
@@ -349,47 +440,55 @@ public static partial class BridgeStatusPage
           try {
             const r = await fetch('/memory/builtin/config', {
               method: 'PUT', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ enabled, acceptLicense })
+              body: JSON.stringify({ enabled, acceptLicense, extractModelId: _selectedExtractModelId })
             });
-            if (!r.ok) throw new Error(await r.text());
+            if (!r.ok) {
+              const d = await r.json().catch(() => ({}));
+              throw new Error(d.error || await r.text());
+            }
             await refreshNoosphereBuiltin();
           } catch (e) { status.textContent = 'Error: ' + e.message; }
         }
 
-        async function downloadNoosphereBuiltin(role) {
-          if (_builtinDownloadStarted.has(role)) return;
-          _builtinDownloadStarted.add(role);
+        async function downloadNoosphereBuiltin(role, model) {
+          const key = builtinDlKey(role, model);
+          if (_builtinDownloadStarted.has(key)) return;
+          _builtinDownloadStarted.add(key);
           const status = document.getElementById('noosphere-builtin-status');
-          // Flip the button to DOWNLOADING… immediately so it isn't clickable while the POST is in flight.
           await refreshNoosphereBuiltin();
-          // Persist license accept before extract download if the box is checked.
-          if (document.getElementById('noosphere-builtin-license').checked) {
+          if (role === 'extract' && document.getElementById('noosphere-builtin-license').checked) {
             await fetch('/memory/builtin/config', {
               method: 'PUT', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 enabled: document.getElementById('noosphere-builtin-enabled').checked,
-                acceptLicense: true
+                acceptLicense: true,
+                extractModelId: model || _selectedExtractModelId
               })
             });
           }
           try {
-            const r = await fetch('/memory/builtin/download?role=' + encodeURIComponent(role), { method: 'POST' });
+            let url = '/memory/builtin/download?role=' + encodeURIComponent(role);
+            if (model) url += '&model=' + encodeURIComponent(model);
+            const r = await fetch(url, { method: 'POST' });
             const d = await r.json().catch(() => ({}));
             if (!r.ok) {
-              _builtinDownloadStarted.delete(role);
+              _builtinDownloadStarted.delete(key);
               throw new Error(d.error || 'download failed');
             }
             await refreshNoosphereBuiltin();
           } catch (e) {
-            _builtinDownloadStarted.delete(role);
+            _builtinDownloadStarted.delete(key);
             status.textContent = 'Error: ' + e.message;
             await refreshNoosphereBuiltin();
           }
         }
 
-        async function deleteNoosphereBuiltin(role) {
-          if (!await ariaConfirm('Delete the built-in ' + role + ' model from this node?', true)) return;
-          await fetch('/memory/builtin/model?role=' + encodeURIComponent(role), { method: 'DELETE' });
+        async function deleteNoosphereBuiltin(role, model) {
+          const label = model || role;
+          if (!await ariaConfirm('Delete the built-in ' + label + ' model from this node?', true)) return;
+          let url = '/memory/builtin/model?role=' + encodeURIComponent(role);
+          if (model) url += '&model=' + encodeURIComponent(model);
+          await fetch(url, { method: 'DELETE' });
           await refreshNoosphereBuiltin();
         }
 
@@ -423,6 +522,7 @@ public static partial class BridgeStatusPage
               if (channelsCard) channelsCard.style.display = d.builtinEnabled ? 'none' : '';
             }
             if (licenseBox && d.builtinLicenseAccepted) licenseBox.checked = true;
+            if (d.builtinExtractModelId) _selectedExtractModelId = d.builtinExtractModelId;
 
             buildNoosphereDropdown('extraction', _noosphereChannels, d.extractionChannelName);
             buildNoosphereDropdown('embeddings', _noosphereChannels, d.embeddingsChannelName);
