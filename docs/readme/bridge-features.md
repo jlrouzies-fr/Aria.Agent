@@ -35,6 +35,9 @@ The status page opens automatically at [http://localhost:5741](http://localhost:
 }
 ```
 
+On Windows and macOS the node also shows a tray / menu-bar icon (Open status page / Quit) so a
+background or LaunchAgent run stays discoverable. Disable with `"TrayIcon": false` under `Bridge`.
+
 ## Soul identity
 
 A **soul** is an ECDSA P-256 keypair generated and stored only by the node. The private key never leaves your machine. The server stores only the public key, and the node proves possession by signing server challenges over the direct tunnel. Until the node proves it, the web terminal stays locked.

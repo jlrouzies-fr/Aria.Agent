@@ -32,3 +32,9 @@ Suggested order: edit diff feedback first (smallest diff, reuses existing code),
 verify nudge (the edit → verify → fix loop), then context-window discovery and turn checkpoints
 (safety/observability), then the strategic bets: distillation, symbol index, worktree swarms.
 Persistent shell and mid-turn steering are independent and can land any time.
+
+## Bridge UX
+
+| Plan | One-liner |
+|---|---|
+| [macOS menu-bar icon](done/macos-menu-bar-icon-plan.md) | ✅ `NSStatusItem` twin of `WindowsTrayIcon` — Open status page / Quit, gated by `Bridge:TrayIcon` |

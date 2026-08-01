@@ -24,8 +24,9 @@ public static class BridgeLifetimeEvents
                 catch { /* no browser available — URL already printed above */ }
             }
 
-            // The installer runs the daemon with -WindowStyle Hidden on Windows — give it a
-            // notification-area icon so the user can find, open, and quit it.
+            // Windows: installer runs with -WindowStyle Hidden — notification-area icon so the
+            // user can find, open, and quit it. macOS menu-bar is owned by MacMenuBarIcon's
+            // RunWebHostWithMenuBar (main-thread AppKit) from Program.cs instead.
             if (OperatingSystem.IsWindows() &&
                 app.Configuration.GetValue("Bridge:TrayIcon", defaultValue: true))
             {
@@ -36,6 +37,7 @@ public static class BridgeLifetimeEvents
         app.Lifetime.ApplicationStopping.Register(() =>
         {
             if (OperatingSystem.IsWindows()) WindowsTrayIcon.Stop();
+            else if (OperatingSystem.IsMacOS()) MacMenuBarIcon.Stop();
         });
 
         return app;

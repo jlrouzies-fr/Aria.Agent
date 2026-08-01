@@ -46,6 +46,11 @@
     </ItemGroup>
 
     <ItemGroup>
+      <!-- Template (white-on-transparent) glyph for MacMenuBarIcon; mirrored from aria-bridge.ico. -->
+      <EmbeddedResource Include="Assets/aria-bridge-menubar.png" LogicalName="Aria.Bridge.Assets.aria-bridge-menubar.png" />
+    </ItemGroup>
+
+    <ItemGroup>
       <Compile Update="BuiltinTools\BuiltinTools.CommandsIndex.cs">
         <DependentUpon>BuiltinTools.cs</DependentUpon>
       </Compile>
