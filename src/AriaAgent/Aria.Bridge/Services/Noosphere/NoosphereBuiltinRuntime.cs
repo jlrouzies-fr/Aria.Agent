@@ -4,6 +4,7 @@ using System.Text;
 using Aria.Bridge.Services.Logging;
 using LLama;
 using LLama.Common;
+using LLama.Exceptions;
 using LLama.Sampling;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
@@ -18,6 +19,12 @@ namespace Aria.Bridge.Services.Noosphere;
 /// </summary>
 public sealed class NoosphereBuiltinRuntime : IDisposable
 {
+    // LFM GGUFs support far more; 8k keeps RAM reasonable on CPU while fitting compact extract prompts
+    // + a long Inscribe body. LLamaSharp defaults to ThrowException on overflow — we opt into truncate.
+    internal const uint ExtractContextSize = 8192;
+    // Rough char budget for the user turn (~3–4 chars/token) so the *initial* prefill fits; generation
+    // uses TruncateAndReprefill if the reply still presses the window.
+    internal const int MaxExtractUserChars = 14_000;
     private readonly ConcurrentDictionary<string, int> _progress = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _errors = new(StringComparer.OrdinalIgnoreCase);
     // SHA256 of a multi-GB GGUF is multi-second — cache by (path, length, mtime) so Status polls and
@@ -401,19 +408,25 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
             var weights = _extractWeights!;
             var modelParams = _extractParams!;
 
+            var user = TruncateForExtractContext(userContent);
             // LFM requires <|startoftext|> before the first turn — omitting it degrades instruct
             // following (we saw valid-looking JSON with no usable facts).
             var prompt =
                 "<|startoftext|><|im_start|>system\n" + systemPrompt + "<|im_end|>\n" +
-                "<|im_start|>user\n" + userContent + "<|im_end|>\n" +
+                "<|im_start|>user\n" + user + "<|im_end|>\n" +
                 "<|im_start|>assistant\n" + (prefillJsonObject ? "{" : "");
 
+            // Cap completion so prompt+reply has headroom inside ExtractContextSize; LLamaSharp's
+            // default ThrowException surfaces as a sticky Memory warning otherwise.
+            var cappedMax = Math.Clamp(maxTokens, 64, 1536);
             var executor = new StatelessExecutor(weights, modelParams);
             var inf = new InferenceParams
             {
-                MaxTokens = maxTokens,
+                MaxTokens = cappedMax,
                 AntiPrompts = ["<|im_end|>", "<|startoftext|>"],
-                SamplingPipeline = new DefaultSamplingPipeline { Temperature = (float)temperature }
+                SamplingPipeline = new DefaultSamplingPipeline { Temperature = (float)temperature },
+                OverflowStrategy = ContextOverflowStrategy.TruncateAndReprefill,
+                ContextTruncationPercentage = 0.2f
             };
 
             var sb = new StringBuilder();
@@ -427,10 +440,26 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
                 text = "{" + text;
             return (text, null);
         }
+        catch (ContextOverflowException)
+        {
+            return (null,
+                "Built-in extract context full — Inscribe text too long for the local model window. Shorten the content or unload/reload after updating the bridge.");
+        }
         catch (Exception ex)
         {
+            // Older LLamaSharp builds / wrapped messages still carry the ThrowException wording.
+            if (ex.Message.Contains("context window is full", StringComparison.OrdinalIgnoreCase))
+                return (null,
+                    "Built-in extract context full — Inscribe text too long for the local model window. Shorten the content or unload/reload after updating the bridge.");
             return (null, ex.Message);
         }
+    }
+
+    internal static string TruncateForExtractContext(string userContent)
+    {
+        if (string.IsNullOrEmpty(userContent) || userContent.Length <= MaxExtractUserChars)
+            return userContent;
+        return userContent[..MaxExtractUserChars] + "\n…[truncated for built-in extract context]";
     }
 
     public async Task<(List<float[]>? Vectors, string? Error)> EmbedBatchAsync(
@@ -459,19 +488,21 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
         }
     }
 
+    private bool IsExtractWarm(string id) =>
+        _extractWeights != null
+        && string.Equals(_loadedExtractModelId, id, StringComparison.OrdinalIgnoreCase)
+        && _extractParams != null
+        && _extractParams.ContextSize == ExtractContextSize;
+
     private async Task EnsureExtractLoadedAsync(string extractModelId, CancellationToken ct)
     {
         var id = NoosphereBuiltinCatalog.ResolveExtractId(extractModelId);
-        if (_extractWeights != null
-            && string.Equals(_loadedExtractModelId, id, StringComparison.OrdinalIgnoreCase))
-            return;
+        if (IsExtractWarm(id)) return;
 
         await _extractLock.WaitAsync(ct);
         try
         {
-            if (_extractWeights != null
-                && string.Equals(_loadedExtractModelId, id, StringComparison.OrdinalIgnoreCase))
-                return;
+            if (IsExtractWarm(id)) return;
 
             if (_extractWeights != null)
                 UnloadExtract();
@@ -484,13 +515,14 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
 
             var parameters = new ModelParams(path)
             {
-                ContextSize = 4096,
+                ContextSize = ExtractContextSize,
                 GpuLayerCount = 0
             };
             _extractWeights = await Task.Run(() => LLamaWeights.LoadFromFile(parameters), ct);
             _extractParams = parameters;
             _loadedExtractModelId = id;
-            BridgeLogger.Log("INFO", $"Noosphere builtin extraction model loaded ({variant.Label}).");
+            BridgeLogger.Log("INFO",
+                $"Noosphere builtin extraction model loaded ({variant.Label}, ctx={ExtractContextSize}).");
         }
         finally { _extractLock.Release(); }
     }

@@ -104,6 +104,23 @@ public class NoosphereBuiltinCatalogTests
     }
 
     [Fact]
+    public void TruncateForExtractContext_LeavesShortTextAlone()
+    {
+        var shortText = new string('a', 100);
+        Assert.Equal(shortText, NoosphereBuiltinRuntime.TruncateForExtractContext(shortText));
+    }
+
+    [Fact]
+    public void TruncateForExtractContext_CapsLongInscribeBodies()
+    {
+        var longText = new string('x', NoosphereBuiltinRuntime.MaxExtractUserChars + 500);
+        var truncated = NoosphereBuiltinRuntime.TruncateForExtractContext(longText);
+        Assert.True(truncated.Length < longText.Length);
+        Assert.EndsWith("[truncated for built-in extract context]", truncated);
+        Assert.StartsWith(new string('x', 64), truncated);
+    }
+
+    [Fact]
     public void Status_ReportsPerVariantDiskState()
     {
         var dir = Path.Combine(Path.GetTempPath(), "aria-builtin-" + Guid.NewGuid().ToString("N"));

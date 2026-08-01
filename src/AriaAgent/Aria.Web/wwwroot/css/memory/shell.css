@@ -125,6 +125,39 @@
     background: currentColor;
     box-shadow: 0 0 5px currentColor;
 }
+/* Gold blink while that node's Inscribe queue is non-empty — mirrors the sidebar brain icon so a
+   multi-bridge setup shows *which* vault is still extracting. */
+.mem-node-pill--processing {
+    color: #f0d060;
+    border-color: rgba(240, 208, 96, 0.55);
+    animation: mem-node-pill-blink 0.9s ease-in-out infinite;
+}
+.mem-node-pill--processing.mem-node-pill--active {
+    background: rgba(240, 208, 96, 0.12);
+}
+.mem-node-busy {
+    font-size: 9px;
+    letter-spacing: 0;
+    opacity: 0.9;
+}
+@keyframes mem-node-pill-blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.45; }
+}
+/* Sticky extraction failure on that node (LM Studio down, etc.) — independent of the gold blink. */
+.mem-node-pill--warn:not(.mem-node-pill--processing) {
+    color: #e07070;
+    border-color: rgba(208, 64, 64, 0.55);
+}
+.mem-node-fail {
+    font-size: 10px;
+    color: #e07070;
+    animation: mem-node-fail-pulse 1.4s ease-in-out infinite;
+}
+@keyframes mem-node-fail-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.35; }
+}
 .mem-node-bar-hint {
     font-size: 10px;
     letter-spacing: 0.5px;

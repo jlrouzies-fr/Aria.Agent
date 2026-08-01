@@ -34,9 +34,24 @@
             @foreach (var node in _nodes)
             {
                 var active = _selectedNodeId == node.NodeId;
-                <button class="mem-node-pill @(active ? "mem-node-pill--active" : "")"
+                var processing = _processingNodeIds.Contains(node.NodeId);
+                var failed = _errorNodeTips.ContainsKey(node.NodeId);
+                var tip = processing
+                    ? $"// EXTRACTING on {node.Label} — Inscribe queue still draining…"
+                    : (failed ? _errorNodeTips[node.NodeId] : null);
+                <button class="mem-node-pill @(active ? "mem-node-pill--active" : "") @(processing ? "mem-node-pill--processing" : "") @(failed ? "mem-node-pill--warn" : "")"
+                        data-tip="@tip"
+                        data-tip-variant="@(failed && !processing ? "warn" : null)"
                         @onclick="() => SelectNodeAsync(node.NodeId)">
                     <span class="mem-node-dot"></span>@node.Label
+                    @if (processing)
+                    {
+                        <span class="mem-node-busy" aria-hidden="true">◉</span>
+                    }
+                    else if (failed)
+                    {
+                        <span class="mem-node-fail" aria-hidden="true">⚠</span>
+                    }
                 </button>
             }
             <span class="mem-node-bar-hint">memory is per-node — nodes don't share engrams</span>

@@ -80,4 +80,22 @@ public class MemoryNavHealthTests
         Assert.True(health.Processing);
         Assert.Equal("connection refused", health.ExtractionError);
     }
+
+    [Fact]
+    public void MemoryNodeHealth_ExposesProcessingAndErrorIndependently()
+    {
+        var busy = new MemoryNodeHealth("n1", "WIN", Stats(pending: 2));
+        var failed = new MemoryNodeHealth("n2", "MAC", Stats(err: "refused", at: DateTime.UtcNow));
+        var both = new MemoryNodeHealth("n3", "BOX", Stats(pending: 1, err: "refused", at: DateTime.UtcNow));
+        var idle = new MemoryNodeHealth("n4", "IDLE", Stats());
+
+        Assert.True(busy.Processing);
+        Assert.False(busy.HasExtractionError);
+        Assert.False(failed.Processing);
+        Assert.True(failed.HasExtractionError);
+        Assert.True(both.Processing);
+        Assert.True(both.HasExtractionError);
+        Assert.False(idle.Processing);
+        Assert.False(idle.HasExtractionError);
+    }
 }

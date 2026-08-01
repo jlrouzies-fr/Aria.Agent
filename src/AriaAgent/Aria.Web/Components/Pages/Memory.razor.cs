@@ -20,6 +20,10 @@ public partial class Memory : IDisposable
     // to one node at a time. Null = fall through to whichever node answers (the single-node default).
     internal List<(string NodeId, string Label)> _nodes = [];
     internal string? _selectedNodeId;
+    // Per-node Inscribe queue / sticky extract failure — drives gold blink / red warn on the node bar
+    // so a multi-bridge setup shows *which* vault matches the sidebar brain blink.
+    internal HashSet<string> _processingNodeIds = [];
+    internal Dictionary<string, string> _errorNodeTips = new(StringComparer.Ordinal);
 
     internal MemoryStatsDto?           _stats;
     internal MemoryGraphDto            _graph = new([], []);
@@ -40,6 +44,7 @@ public partial class Memory : IDisposable
     // Set when the world we're painting changed under the canvas (node switch): the JS pan/zoom state
     // survives the re-render, so it has to be told to re-centre on the new world.
     private bool _canvasRecenterPending;
+    private Timer? _nodeHealthTimer;
 
     // Empty-world defaults, mirrored from MemoryGraphLayout's fallback so a node with no engrams
     // paints a clean canvas instead of the previous node's world box.
@@ -50,6 +55,13 @@ public partial class Memory : IDisposable
         SessionState.OnChange += OnSessionChanged;
         if (SessionState.CurrentUser != null)
             await RefreshAsync();
+        // Same cadence as the sidebar Noosphere poll — Inscribe is fire-and-forget so the page has
+        // to ask each bridge which vaults still have a draining queue.
+        _nodeHealthTimer = new Timer(async _ =>
+        {
+            try { await RefreshNodeHealthAsync(); }
+            catch { /* best-effort */ }
+        }, null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -69,9 +81,52 @@ public partial class Memory : IDisposable
         }
     }
 
-    public void Dispose() => SessionState.OnChange -= OnSessionChanged;
+    public void Dispose()
+    {
+        SessionState.OnChange -= OnSessionChanged;
+        _nodeHealthTimer?.Dispose();
+        _nodeHealthTimer = null;
+    }
 
     private async void OnSessionChanged() => await InvokeAsync(RefreshAsync);
+
+    /// <summary>Poll every connected bridge's /memory/stats and paint per-node busy/warn on the bar.</summary>
+    private async Task RefreshNodeHealthAsync()
+    {
+        if (SessionState.CurrentUser == null) return;
+        var userId = SessionState.CurrentUser.Id.ToString();
+        var health = await MemoryClient.GetPerNodeHealthAsync(userId);
+
+        var processing = health.Where(h => h.Processing && !string.IsNullOrEmpty(h.NodeId))
+            .Select(h => h.NodeId).ToHashSet(StringComparer.Ordinal);
+        var errors = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var h in health)
+        {
+            if (string.IsNullOrEmpty(h.NodeId) || !h.HasExtractionError) continue;
+            var msg = h.Stats!.LastExtractionError!;
+            errors[h.NodeId] = $"// EXTRACTION FAILING · {h.Label} — {msg}";
+        }
+
+        // Selected vault just finished draining — reload graph so new entities appear without a manual switch.
+        var selectedWasBusy = _selectedNodeId != null && _processingNodeIds.Contains(_selectedNodeId);
+        var selectedStillBusy = _selectedNodeId != null && processing.Contains(_selectedNodeId);
+
+        var changed = !processing.SetEquals(_processingNodeIds)
+                      || !errors.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(_errorNodeTips.Keys)
+                      || errors.Any(kv => !_errorNodeTips.TryGetValue(kv.Key, out var prev) || prev != kv.Value);
+
+        _processingNodeIds = processing;
+        _errorNodeTips = errors;
+
+        if (selectedWasBusy && !selectedStillBusy)
+        {
+            await InvokeAsync(RefreshAsync);
+            return;
+        }
+
+        if (changed)
+            await InvokeAsync(StateHasChanged);
+    }
 
     /// <summary>Refresh the connected-node roster and keep the current selection valid. Called before
     /// every load so the switcher tracks nodes coming and going.</summary>
@@ -134,7 +189,14 @@ public partial class Memory : IDisposable
         }
 
         _loading = false;
+        // Seed pill blinks from the stats we already fetched for the selected node, then fill in
+        // siblings via the background poll (avoids a full multi-node round-trip on every refresh).
+        if (_selectedNodeId != null && _stats is { PendingIngests: > 0 })
+            _processingNodeIds.Add(_selectedNodeId);
+        else if (_selectedNodeId != null)
+            _processingNodeIds.Remove(_selectedNodeId);
         StateHasChanged();
+        _ = RefreshNodeHealthAsync();
     }
 
     internal async Task SelectEntityAsync(string entityId)

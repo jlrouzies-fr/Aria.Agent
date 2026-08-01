@@ -23,22 +23,32 @@ public class BridgeMemoryClient(ModelBridgeRegistry registry)
     /// </summary>
     public async Task<MemoryNavHealth> GetNavHealthAsync(string userId)
     {
+        var perNode = await GetPerNodeHealthAsync(userId);
+        return AggregateNavHealth(perNode.Select(n => ((MemoryStatsDto?)n.Stats, (string?)n.Label)).ToList());
+    }
+
+    /// <summary>
+    /// Per-bridge stats for the Noosphere page node bar — which vaults still have pending ingests
+    /// (gold blink) or a sticky extraction failure (red warn).
+    /// </summary>
+    public async Task<IReadOnlyList<MemoryNodeHealth>> GetPerNodeHealthAsync(string userId)
+    {
         var nodes = registry.GetNodes(userId).ToList();
         if (nodes.Count == 0)
         {
             var lone = await GetStatsAsync(userId);
-            return AggregateNavHealth([(lone, null)]);
+            return [new MemoryNodeHealth("", "", lone)];
         }
 
-        var samples = new List<(MemoryStatsDto? Stats, string? NodeLabel)>(nodes.Count);
+        var list = new List<MemoryNodeHealth>(nodes.Count);
         foreach (var n in nodes)
         {
             var label = !string.IsNullOrWhiteSpace(n.Label) ? n.Label
                 : !string.IsNullOrWhiteSpace(n.Platform) ? n.Platform
                 : n.NodeId;
-            samples.Add((await GetStatsAsync(userId, n.NodeId), label));
+            list.Add(new MemoryNodeHealth(n.NodeId, label, await GetStatsAsync(userId, n.NodeId)));
         }
-        return AggregateNavHealth(samples);
+        return list;
     }
 
     /// <summary>Pure fold of per-node stats into the sidebar indicator. Prefers the most recent failure.</summary>
@@ -166,6 +176,13 @@ public record MemoryStatsDto(
 /// <summary>Sidebar Noosphere indicator — pending queue and/or a live extraction-channel failure.</summary>
 public record MemoryNavHealth(
     bool Processing, string? ExtractionError, DateTime? ExtractionErrorAt, string? ErrorNodeLabel);
+
+/// <summary>One bridge's Noosphere vault health — drives per-node pills on /memory.</summary>
+public record MemoryNodeHealth(string NodeId, string Label, MemoryStatsDto? Stats)
+{
+    public bool Processing => Stats is { PendingIngests: > 0 };
+    public bool HasExtractionError => !string.IsNullOrEmpty(Stats?.LastExtractionError);
+}
 
 public record EngramDto(
     string Id, string Content, string? TimeAnchor, DateTime CreatedAt,
