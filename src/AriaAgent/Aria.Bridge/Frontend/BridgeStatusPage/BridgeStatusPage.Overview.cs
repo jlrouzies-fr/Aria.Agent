@@ -130,7 +130,7 @@ public static partial class BridgeStatusPage
           }
           setNavBadge('soul', !soulDone);
           setNavBadge('channels', soulDone && !channelDone);
-          setNavBadge('memory', await memoryModelMissing());
+          await refreshMemoryHealth();
         }
 
         // Explanatory tooltip per onboarding badge (rendered via the shared #aria-tip element).
@@ -140,18 +140,22 @@ public static partial class BridgeStatusPage
           memory:   'Noosphere has no embedding model set — configure one to enable semantic recall.'
         };
 
-        function setNavBadge(section, show) {
+        // tip/warn optional — warn=true uses the red pulse (runtime failures); tip overrides the default.
+        function setNavBadge(section, show, tip, warn) {
           const item = document.querySelector('.nav-item[data-section="' + section + '"]');
           if (!item) return;
           let b = item.querySelector('.nav-badge');
-          if (show && !b) {
-            b = document.createElement('span');
-            b.className = 'nav-badge';
-            b.textContent = '!';
-            b.setAttribute('data-tip', NAV_BADGE_TIPS[section] || 'This step still needs your attention.');
-            b.setAttribute('aria-label', b.getAttribute('data-tip'));
-            item.appendChild(b);
-          } else if (!show && b) {
+          if (show) {
+            if (!b) {
+              b = document.createElement('span');
+              b.textContent = '!';
+              item.appendChild(b);
+            }
+            b.className = warn ? 'nav-badge nav-badge-warn' : 'nav-badge';
+            const t = tip || NAV_BADGE_TIPS[section] || 'This step still needs your attention.';
+            b.setAttribute('data-tip', t);
+            b.setAttribute('aria-label', t);
+          } else if (b) {
             b.remove();
           }
         }

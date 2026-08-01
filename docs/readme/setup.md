@@ -112,22 +112,29 @@ The key is stored **on your cogitator node**, never on the Aria server. A stored
 
 ## Memory (Noosphere)
 
-Aria now uses **Noosphere**, a native bridge-local memory system. There is no external service to install and no Docker container to run.
+Aria uses **Noosphere**, a native bridge-local memory system. There is no external memory service to install and no Docker container to run.
 
 How it works:
 
 - The agent can call memory tools (`Inscribe`, `Probe`, `Contemplate`) to save facts, recall them, and synthesise answers from stored engrams.
 - Engrams, entities, and their relationships are stored in the cogitator node's SQLite vault.
-- Embeddings are generated locally by a small model you configure, or you can disable embeddings and rely on full-text/graph recall.
+- Extraction (turning chat text into structured engrams) and embeddings (vector recall) run on the node — either from **built-in models** or from a channel you configure (LM Studio, Ollama, cloud). You can also disable embeddings and rely on full-text/graph recall.
 
-**Setup:**
+**Setup — built-in models (recommended if you do not want a third-party inference engine for memory):**
 
-1. Make sure you have at least one channel configured on the bridge (LM Studio, Ollama, etc. — see [LLM channels](#llm-channels-machine-spirits)).
-2. Open the bridge status page ([http://localhost:5741](http://localhost:5741)) → **Memory** tab — this is the only place extraction/embeddings channels are configured; it's not exposed anywhere in `Aria.Web`.
-3. Pick an **extraction channel** (the model that turns chat text into memory engrams) and an optional **embeddings channel** (the model that produces vector embeddings) → **SAVE**.
+1. Open the bridge status page ([http://localhost:5741](http://localhost:5741)) → **Memory** tab.
+2. Under **// Built-in models**, accept the LFM Open License, download both roles (~810&nbsp;MB total: LFM2.5-1.2B extract + MiniLM embeddings), enable built-in, and **APPLY**.
+3. Expected RAM while both models are loaded: roughly **~1.2–1.7&nbsp;GB** (~1.0–1.5&nbsp;GB extract + ~100–200&nbsp;MB embed). Channel pickers are hidden while built-in is on.
 4. Enable **Memory (Noosphere)** in `Aria.Web`'s `// TOOLS` section.
 
-In `Aria.Web`, the `// NOOSPHERE` sidebar item opens a **browse/query page** for stored engrams — it shows an "AUGUR ARRAY OFFLINE" banner if no embeddings channel is configured yet, but has no settings of its own. No API keys leave your machine, and no CORS is required because the node talks to the embedding/extraction endpoint directly.
+**Setup — external channels (LM Studio / Ollama / cloud):**
+
+1. Configure at least one channel on the bridge (see [LLM channels](#llm-channels-machine-spirits)).
+2. Open the bridge **Memory** tab with built-in **off** — this is the only place extraction/embeddings channels are configured; it is not exposed in `Aria.Web`.
+3. Pick an **extraction channel** and an optional **embeddings channel** → **SAVE**.
+4. Enable **Memory (Noosphere)** in `Aria.Web`'s `// TOOLS` section.
+
+In `Aria.Web`, the `// NOOSPHERE` sidebar item opens a **browse/query page** for stored engrams — it shows an "AUGUR ARRAY OFFLINE" banner if embeddings are unavailable, but has no settings of its own. A red warning tip on that nav item appears when the node's last extraction failed (e.g. LM Studio down). No API keys leave your machine; the node talks to built-in models or your local/cloud endpoint directly.
 
 > **Note:** Aria previously used the external [Hindsight](https://github.com/whoiskatrin/hindsight) service. That integration has been removed; the old setup steps are preserved in [archived/hindsight.md](archived/hindsight.md) for reference only.
 

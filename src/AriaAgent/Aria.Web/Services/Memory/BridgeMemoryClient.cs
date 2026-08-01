@@ -160,7 +160,8 @@ public class BridgeMemoryClient(ModelBridgeRegistry registry)
 public record MemoryStatsDto(
     int Engrams, int Entities, int Links, int PendingIngests, int EmbeddedCount,
     bool EmbeddingsConfigured, bool ExtractionConfigured,
-    string? LastExtractionError = null, DateTime? LastExtractionErrorAt = null);
+    string? LastExtractionError = null, DateTime? LastExtractionErrorAt = null,
+    string? LastEmbeddingError = null, DateTime? LastEmbeddingErrorAt = null);
 
 /// <summary>Sidebar Noosphere indicator — pending queue and/or a live extraction-channel failure.</summary>
 public record MemoryNavHealth(

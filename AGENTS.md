@@ -83,6 +83,11 @@ the attacker have chosen it?* If the answer is the server, it is not an anchor.
   it is the only documentation most readers (human or model) will ever see.
 - Bridge status page UI lives in `Aria.Bridge/Frontend/BridgeStatusPage/*.cs` as C# raw string
   literals, not separate asset files.
+- **Aria.Web tooltips use `[data-tip]`, never bare `title=`.** The shared cursor-following tip is
+  `#aria-tip` in `wwwroot/css/theme/tooltip.css` + the handler at the top of
+  `wwwroot/aria-interop.js`. Native browser tooltips look wrong and are easy to ship by accident.
+  Opt into a variant with `data-tip-variant` when the state needs chrome (`loading`, `action`,
+  `warn`). New hover copy on icons, badges, and status dots must use this system.
 
 ## Reference
 

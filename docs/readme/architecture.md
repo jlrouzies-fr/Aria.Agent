@@ -120,7 +120,7 @@ Full structure with key files:
 | `│   │   ├── Llm/LlmKeyStore.cs` | Cloud API key storage |
 | `│   │   ├── Diagnostics/EgressLog.cs` | Ring buffer of recent LLM egress (`/debug/llm-log`) |
 | `│   │   ├── Metrics/` | `BridgeMetricsCollector`, `BridgeMetricsHostedService`, `PowermetricsTelemetrySource` |
-| `│   │   ├── Noosphere/` | Memory engine: `NoosphereService`, embedder, extractor, ingest worker, config, channel resolver, capabilities, options |
+| `│   │   ├── Noosphere/` | Memory engine: `NoosphereService`, embedder, extractor, ingest worker, config, channel resolver, capabilities, options, `NoosphereBuiltinRuntime` (opt-in MiniLM ONNX + LFM2.5 GGUF) |
 | `│   │   ├── Security/SecurityAuditLog.cs` | Node security audit trail |
 | `│   │   ├── Trust/SiblingRoster.cs` | Sibling-node trust roster (multi-node mesh) |
 | `│   │   └── Vault/` | F-7 value encryption: `VaultEncryption`, `AesGcmHelper`, `EncryptedValueConverter`, per-OS protectors (DPAPI / Keychain / Secret Service) |
@@ -132,6 +132,7 @@ Full structure with key files:
 | `│       ├── LocalWhisperEndpoints.cs` | On-device Whisper: `/transcribe/local` + model status/download/delete |
 | `│       ├── ChannelEndpoints.cs` | `/channels` — node-authoritative channel CRUD |
 | `│       ├── MemoryEndpoints.cs` | `/memory/*` — inscribe/probe/contemplate/synthesize + engram CRUD |
+| `│       ├── MemoryBuiltinEndpoints.cs` | `/memory/builtin/*` — opt-in model download/enable (local-origin only; not tunnel-allowlisted) |
 | `│       ├── McpEndpoints.cs` | `/mcps` CRUD + probe |
 | `│       ├── OAuthEndpoints.cs` | `/oauth/{provider}/connect|callback`, `/oauth-config` |
 | `│       ├── SealEndpoints.cs` | `/seal/*` — Inquisitorial Seal request/poll/approve/reject |

@@ -82,6 +82,14 @@ public class TunnelAllowlistTests
     [InlineData("/soul/pin-key")]
     [InlineData("/soul/unpin-key")]
     [InlineData("/soul/pin-status")]
+    // Built-in Noosphere model download/enable must stay node-local — /memory/ prefix must not
+    // smuggle multi-hundred-MB downloads through a compromised server.
+    [InlineData("/memory/builtin")]
+    [InlineData("/memory/builtin/status")]
+    [InlineData("/memory/builtin/download")]
+    [InlineData("/memory/builtin/model")]
+    [InlineData("/memory/builtin/config")]
+    [InlineData("/memory/builtin/unload")]
     public void LocalHumanOnlyPaths_AreBlocked(string path)
         => Assert.False(TunnelAllowlist.IsAllowed(path));
 

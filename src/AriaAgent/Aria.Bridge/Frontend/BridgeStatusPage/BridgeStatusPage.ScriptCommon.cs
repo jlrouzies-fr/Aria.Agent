@@ -74,6 +74,9 @@ public static partial class BridgeStatusPage
           try {
             await refreshAudit();
           } catch {}
+          try {
+            await refreshMemoryHealth();
+          } catch {}
           // keep the overview status tiles live while that panel is open
           if (document.getElementById('panel-overview').style.display !== 'none') refreshOverview();
         }

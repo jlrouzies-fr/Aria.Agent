@@ -65,4 +65,19 @@ public class MemoryNavHealthTests
         Assert.True(health.Processing);
         Assert.Null(health.ExtractionError);
     }
+
+    [Fact]
+    public void PendingAndStickyFailure_BothSurface()
+    {
+        // Sidebar shows gold blink (pending) and red warn (sticky error) together — AggregateNavHealth
+        // must not clear Processing just because LastExtractionError is still set.
+        var at = new DateTime(2026, 8, 1, 10, 0, 0, DateTimeKind.Utc);
+        var health = BridgeMemoryClient.AggregateNavHealth(
+        [
+            (Stats(pending: 1, err: "connection refused", at: at), "DESKTOP-47OJQSG"),
+        ]);
+
+        Assert.True(health.Processing);
+        Assert.Equal("connection refused", health.ExtractionError);
+    }
 }

@@ -13,6 +13,7 @@ namespace Aria.Bridge.Services.Noosphere;
 public sealed class NoosphereConfigService(IServiceScopeFactory scopeFactory)
 {
     public record SaveRequest(string? ExtractionChannelName, string? EmbeddingsChannelName, bool EmbeddingsEnabled, string? EmbeddingsModel = null, string? ExtractionModel = null);
+    public record SaveBuiltinRequest(bool Enabled, bool AcceptLicense = false);
 
     public async Task<NoosphereConfig> GetConfigAsync(CancellationToken ct)
     {
@@ -43,6 +44,31 @@ public sealed class NoosphereConfigService(IServiceScopeFactory scopeFactory)
         config.ExtractionModel = string.IsNullOrWhiteSpace(req.ExtractionModel) ? null : req.ExtractionModel.Trim();
         await db.SaveChangesAsync(ct);
         BridgeLogger.Log("INFO", $"Noosphere config saved: extraction={config.ExtractionChannelName ?? "auto"} model={config.ExtractionModel ?? "auto"}, embeddings={config.EmbeddingsChannelName ?? "auto"} model={config.EmbeddingsModel ?? "auto"} (enabled={config.EmbeddingsEnabled})");
+    }
+
+    public async Task SaveBuiltinConfigAsync(SaveBuiltinRequest req, CancellationToken ct)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BridgeDbContext>();
+        var config = await db.NoosphereConfigs.FirstOrDefaultAsync(ct);
+        if (config == null)
+        {
+            config = new NoosphereConfig { EmbeddingsEnabled = true };
+            db.NoosphereConfigs.Add(config);
+        }
+        config.BuiltinEnabled = req.Enabled;
+        if (req.AcceptLicense && config.BuiltinLicenseAcceptedAt == null)
+            config.BuiltinLicenseAcceptedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        BridgeLogger.Log("INFO",
+            $"Noosphere builtin config saved: enabled={config.BuiltinEnabled}, licenseAccepted={config.BuiltinLicenseAcceptedAt != null}");
+    }
+
+    /// <summary>True when the node should use in-process models instead of HTTP channels.</summary>
+    public async Task<bool> IsBuiltinActiveAsync(NoosphereBuiltinRuntime runtime, CancellationToken ct)
+    {
+        var config = await GetConfigAsync(ct);
+        return config.BuiltinEnabled && runtime.IsReady;
     }
 
     /// <summary>
@@ -82,9 +108,16 @@ public sealed class NoosphereConfigService(IServiceScopeFactory scopeFactory)
 
     public async Task<bool> IsExtractionConfiguredAsync(CancellationToken ct)
     {
+        // Caller without runtime: channel path only. StatsAsync uses the overload with runtime.
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeDbContext>();
         return await NoosphereChannelResolver.ResolveAsync(await GetExtractionOptionsAsync(ct), db, ct) is not null;
+    }
+
+    public async Task<bool> IsExtractionConfiguredAsync(NoosphereBuiltinRuntime runtime, CancellationToken ct)
+    {
+        if (await IsBuiltinActiveAsync(runtime, ct)) return true;
+        return await IsExtractionConfiguredAsync(ct);
     }
 
     public async Task<bool> IsEmbeddingsConfiguredAsync(CancellationToken ct)
@@ -94,6 +127,14 @@ public sealed class NoosphereConfigService(IServiceScopeFactory scopeFactory)
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeDbContext>();
         return await NoosphereChannelResolver.ResolveAsync(opts, db, ct) is not null;
+    }
+
+    public async Task<bool> IsEmbeddingsConfiguredAsync(NoosphereBuiltinRuntime runtime, CancellationToken ct)
+    {
+        var opts = await GetEmbeddingOptionsAsync(ct);
+        if (!opts.Enabled) return false;
+        if (await IsBuiltinActiveAsync(runtime, ct)) return true;
+        return await IsEmbeddingsConfiguredAsync(ct);
     }
 
     private async Task<NoosphereChannelOptions> ResolveOptionsAsync(bool extraction, CancellationToken ct)

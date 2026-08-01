@@ -31,9 +31,9 @@ public partial class NavMenu
         var processing = health.Processing;
         var failed = !string.IsNullOrEmpty(health.ExtractionError);
         var tip = failed
-            ? "Noosphere extraction failing"
-              + (string.IsNullOrEmpty(health.ErrorNodeLabel) ? "" : $" on \"{health.ErrorNodeLabel}\"")
-              + $": {health.ExtractionError}. Open Noosphere / the bridge Memory tab — structured recall will stay broken until the local model is reachable again."
+            ? "// EXTRACTION FAILING"
+              + (string.IsNullOrEmpty(health.ErrorNodeLabel) ? "" : $" · {health.ErrorNodeLabel}")
+              + $" — {health.ExtractionError}. Open Noosphere / the bridge Memory tab; structured recall stays broken until the local model is reachable again."
             : null;
 
         if (processing == _memoryProcessing

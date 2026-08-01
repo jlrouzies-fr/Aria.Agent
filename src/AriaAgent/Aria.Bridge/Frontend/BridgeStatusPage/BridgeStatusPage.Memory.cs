@@ -2,16 +2,42 @@ namespace Aria.Bridge;
 
 public static partial class BridgeStatusPage
 {
-// NOTE: this panel's JS (refreshMemoryConfig, buildNoosphereDropdown, saveNoosphereConfig,
-// and the generic custom-select helpers it shares with the MCP transport picker) lives in
-// BridgeStatusPage.Data.cs's ScriptDataAndMemory — it's interleaved there with Data-panel wipe
-// actions in the original source, and splitting it further risked breaking JS declaration order
+// NOTE: this panel's JS (refreshMemoryConfig, refreshNoosphereBuiltin, buildNoosphereDropdown,
+// saveNoosphereConfig, and the generic custom-select helpers it shares with the MCP transport picker)
+// lives in BridgeStatusPage.Data.cs's ScriptDataAndMemory — it's interleaved there with Data-panel
+// wipe actions in the original source, and splitting it further risked breaking JS declaration order
 // (see ScriptSoul/ScriptChannels notes in BridgeStatusPage.cs about duplicate function names).
     internal const string PanelMemory = """
         <!-- ── MEMORY TAB ─────────────────────────────────────────────── -->
         <div id="panel-memory" style="display:none">
           <div class="section-head"><div class="section-title">// Memory</div></div>
+          <div id="noosphere-runtime-error" style="display:none;font-size:11px;color:#e07070;border:1px solid rgba(208,64,64,0.55);background:rgba(208,64,64,0.10);padding:10px 12px;margin-bottom:14px;line-height:1.5"></div>
           <div class="card">
+            <div class="card-header">// Built-in models</div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+              <div style="font-size:11px;color:var(--text-dead)">
+                Optional on-node models so Noosphere works without a third-party inference engine
+                (LM Studio, Ollama, …). Downloads stay in this machine's app data (~810&nbsp;MB:
+                ~731&nbsp;MB extract + ~23&nbsp;MB embed). Expected RAM when loaded: ~1.0–1.5&nbsp;GB for
+                extraction (LFM2.5-1.2B Q4) and ~100–200&nbsp;MB for embeddings (MiniLM) — roughly
+                ~1.2–1.7&nbsp;GB together while both are warm. Models load into RAM on first use; Unload
+                frees that RAM (files stay on disk). When built-in is on, the channel pickers are hidden —
+                turn it off to configure an external inference channel again.
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <input type="checkbox" id="noosphere-builtin-enabled" style="accent-color:var(--accent)">
+                <label for="noosphere-builtin-enabled" style="font-size:12px;color:var(--text-normal);cursor:pointer">Use built-in Noosphere models</label>
+                <button onclick="saveNoosphereBuiltinConfig()" style="background:var(--bg-surface);border:1px solid var(--border-glow);color:var(--text-title);padding:4px 12px;cursor:pointer;font-family:monospace;font-size:10px;letter-spacing:.08em">▶ APPLY</button>
+              </div>
+              <label style="display:flex;align-items:flex-start;gap:8px;font-size:11px;color:var(--text-muted);cursor:pointer">
+                <input type="checkbox" id="noosphere-builtin-license" style="accent-color:var(--accent);margin-top:2px">
+                <span>I accept the LFM Open License for the extraction model (LiquidAI LFM2.5-1.2B-Instruct). Embeddings use Apache-2.0 MiniLM.</span>
+              </label>
+              <div id="noosphere-builtin-roles" style="display:flex;flex-direction:column;gap:10px"></div>
+              <div id="noosphere-builtin-status" style="font-size:11px;color:var(--text-muted);min-height:16px"></div>
+            </div>
+          </div>
+          <div class="card" id="noosphere-channels-card">
             <div class="card-header">// Noosphere Channels</div>
             <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
               <div style="font-size:11px;color:var(--text-dead)">

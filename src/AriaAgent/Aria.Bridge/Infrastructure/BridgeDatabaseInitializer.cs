@@ -349,7 +349,14 @@ public static class BridgeDatabaseInitializer
         }
 
         // Embeddings/extraction model: free-text, independent of the channel's own chat-model list.
-        foreach (var col in new[] { ("EmbeddingsModel", "TEXT"), ("ExtractionModel", "TEXT") })
+        // Builtin*: opt-in on-node models (see docs/ideas/noosphere-builtin-models-plan.md).
+        foreach (var col in new[]
+                 {
+                     ("EmbeddingsModel", "TEXT"),
+                     ("ExtractionModel", "TEXT"),
+                     ("BuiltinEnabled", "INTEGER NOT NULL DEFAULT 0"),
+                     ("BuiltinLicenseAcceptedAt", "TEXT")
+                 })
         {
             await using var chk = dbConn.CreateCommand();
             chk.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('NoosphereConfig') WHERE name='{col.Item1}'";

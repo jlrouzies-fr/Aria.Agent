@@ -120,7 +120,10 @@
 </div>
 
 <div class="sidebar-nav-item @(IsMemoryPageActive ? "active" : "")" @onclick="OpenMemoryPage">
-    <span class="nav-icon @(_memoryProcessing && !_memoryExtractionFailed ? "mem-icon-processing" : "")" title="@(_memoryProcessing && !_memoryExtractionFailed ? "Noosphere is extracting a new memory…" : null)">
+    @* Gold blink = pending ingest queue; red warn icon = sticky extraction fault. Independent —
+       a prior LM-Studio-down error must not suppress the blink on the next Inscribe. *@
+    <span class="nav-icon @(_memoryProcessing ? "mem-icon-processing" : "")"
+          data-tip="@(_memoryProcessing ? "Noosphere is extracting a new memory…" : null)">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/>
             <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>
@@ -130,7 +133,10 @@
     <span class="nav-item-label">// NOOSPHERE <span class="nav-sub-label">(memory)</span></span>
     @if (_memoryExtractionFailed)
     {
-        <span class="mem-fail-warn" title="@_memoryExtractionFailTip" aria-label="Noosphere extraction failing">
+        <span class="mem-fail-warn"
+              data-tip="@_memoryExtractionFailTip"
+              data-tip-variant="warn"
+              aria-label="Noosphere extraction failing">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
                 <line x1="12" y1="9" x2="12" y2="13"/>

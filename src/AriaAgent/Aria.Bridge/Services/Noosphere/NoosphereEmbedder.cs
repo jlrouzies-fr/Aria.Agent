@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using Aria.Bridge.Data;
+using Aria.Bridge.Services.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -12,6 +13,7 @@ namespace Aria.Bridge.Services.Noosphere;
 // SQLite (durable storage only — see NoosphereService for the in-memory SIMD cosine search).
 public class NoosphereEmbedder(
     NoosphereConfigService configService,
+    NoosphereBuiltinRuntime builtinRuntime,
     IOptions<NoosphereOptions> legacyOptions,
     IServiceScopeFactory scopeFactory,
     ILogger<NoosphereEmbedder> logger)
@@ -34,6 +36,19 @@ public class NoosphereEmbedder(
     {
         var opts = await GetEmbeddingOptionsAsync(ct);
         if (!opts.Enabled || texts.Count == 0) return null;
+
+        if (await configService.IsBuiltinActiveAsync(builtinRuntime, ct))
+        {
+            var (vectors, error) = await builtinRuntime.EmbedBatchAsync(texts, ct);
+            if (error != null || vectors == null)
+            {
+                Fail(error ?? "Built-in embeddings failed.");
+                logger.LogWarning("Built-in embeddings failed: {Error}. Falling back to FTS/graph-only probe.", error);
+                return null;
+            }
+            LastError = null;
+            return new EmbedResult(vectors, NoosphereBuiltinCatalog.ModelIdFor(NoosphereBuiltinCatalog.RoleEmbed));
+        }
 
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeDbContext>();
@@ -101,7 +116,13 @@ public class NoosphereEmbedder(
         }
     }
 
-    private void Fail(string reason) { LastError = reason; LastErrorAt = DateTime.UtcNow; }
+    private void Fail(string reason)
+    {
+        LastError = reason;
+        LastErrorAt = DateTime.UtcNow;
+        // WARN — probe still works via FTS/graph; Event Log must still show why vectors failed.
+        BridgeLogger.Log("WARN", $"Noosphere embeddings: {reason}");
+    }
 
     private async Task<NoosphereEmbeddingOptions> GetEmbeddingOptionsAsync(CancellationToken ct)
     {

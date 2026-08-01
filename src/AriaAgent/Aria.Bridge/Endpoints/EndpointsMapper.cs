@@ -24,6 +24,7 @@ public static class EndpointsMapper
         app.MapContextEndpoints();
         app.MapOAuthEndpoints();
         app.MapMemoryEndpoints();
+        app.MapMemoryBuiltinEndpoints();
         app.MapTerminalEndpoints();
         app.MapChannelEndpoints();
 #if DEBUG
