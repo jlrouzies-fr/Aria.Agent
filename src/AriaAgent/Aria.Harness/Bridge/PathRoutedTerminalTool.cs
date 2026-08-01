@@ -12,13 +12,13 @@ namespace Aria.Harness.Bridge;
 /// argument of the call (longest normalized prefix wins). Calls with no recognizable path go to the
 /// default candidate (the LLM node's group when present, else the first).
 /// </summary>
-public sealed class PathRoutedTerminalTool : AIFunction
+public sealed class PathRoutedTerminalTool : AIFunction, IDiffPreviewTool
 {
     /// <summary>One node's implementation of the tool plus the project paths that select it.</summary>
     public sealed record Candidate(AIFunction Tool, string[] PathPrefixes, string? NodeId);
 
     // Argument keys that can carry an absolute path, by convention of the builtin terminal tools.
-    private static readonly string[] PathArgKeys = ["path", "working_dir", "base_dir", "pattern"];
+    private static readonly string[] PathArgKeys = ["path", "working_dir", "base_dir", "pattern", "cwd"];
 
     private readonly string _name;
     private readonly string _description;
@@ -67,6 +67,22 @@ public sealed class PathRoutedTerminalTool : AIFunction
         _nodeLabels != null && _nodeLabels.TryGetValue(nodeId, out var label) && !string.IsNullOrWhiteSpace(label)
             ? label
             : nodeId.Length > 8 ? nodeId[..8] : nodeId;
+
+    /// <summary>
+    /// Routes a prospective-diff fetch to the SAME node the real call would run on — a sibling
+    /// node holding different content at the same path would produce a misleading approval diff.
+    /// </summary>
+    public async Task<string?> FetchDiffPreviewAsync(Dictionary<string, JsonElement> args, CancellationToken ct)
+    {
+        var paths = PathArgKeys
+            .Select(k => args.TryGetValue(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => Normalize(s!))
+            .ToList();
+        return ResolveCandidate(paths).Tool is IDiffPreviewTool previewable
+            ? await previewable.FetchDiffPreviewAsync(args, ct)
+            : null;
+    }
 
     protected override async ValueTask<object?> InvokeCoreAsync(
         AIFunctionArguments arguments, CancellationToken cancellationToken)

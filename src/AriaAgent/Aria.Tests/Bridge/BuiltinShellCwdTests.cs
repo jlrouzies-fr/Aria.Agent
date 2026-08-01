@@ -11,6 +11,10 @@ namespace Aria.Tests.Bridge;
 /// bridge's own CWD), remembers a bare "cd" across calls, validates cd targets against the
 /// policy, and always prefers an explicit working_dir.
 /// </summary>
+// Session cwd is process-wide static state shared with bash_exec / run_background callers.
+// BuiltinBackgroundJobs already serializes those; join it so BareCd_PersistsAcrossCalls can't
+// lose its directory to a parallel ResetSessionCwd or a sibling bash_exec.
+[Collection("BuiltinBackgroundJobs")]
 public class BuiltinShellCwdTests : IDisposable
 {
     private readonly string _root;

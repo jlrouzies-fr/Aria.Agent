@@ -35,6 +35,9 @@ The status page opens automatically at [http://localhost:5741](http://localhost:
 }
 ```
 
+On Windows and macOS the node also shows a tray / menu-bar icon (Open status page / Quit) so a
+background or LaunchAgent run stays discoverable. Disable with `"TrayIcon": false` under `Bridge`.
+
 ## Soul identity
 
 A **soul** is an ECDSA P-256 keypair generated and stored only by the node. The private key never leaves your machine. The server stores only the public key, and the node proves possession by signing server challenges over the direct tunnel. Until the node proves it, the web terminal stays locked.
@@ -103,6 +106,7 @@ The node exposes native shell, file, command-index, datetime, and web-search too
 | `system_info` | Read-only environment recon: OS/arch, shell, CPU/RAM, disk free, available package managers and runtimes |
 | `multi_edit` | Batch of exact-string edits to one file in a single call (unique-at-apply-time, atomic, one undo entry) |
 | `undo_file` | Restore the most recent undo snapshot for a file (stack semantics; itself undoable) |
+| `/rewind` support | Bridge stores per-turn checkpoints on `FileUndo` rows so the web chat can revert a whole mutating turn atomically, with per-file skip reporting when hashes no longer match |
 | `process_list` / `process_output` / `process_kill` | Manage background jobs started by `bash_exec background:true` (kill only works on registry-tracked pids) |
 | `run_background` | Start a long-running process (dev server, watcher) — returns immediately with pid/log; same command gate as `bash_exec` |
 | `wait_for` | Wait for a TCP port, a URL to respond, or a background job's log to match a pattern (readiness probe) |

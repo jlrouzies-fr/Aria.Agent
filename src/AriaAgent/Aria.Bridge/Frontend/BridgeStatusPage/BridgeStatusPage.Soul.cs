@@ -11,6 +11,8 @@ public static partial class BridgeStatusPage
             <div class="card-body">
               <div id="join-code-banner" style="display:none;margin-bottom:12px;padding:8px 12px;border:1px solid var(--border-glow);background:rgba(192,174,130,0.08);font-family:monospace;font-size:11px;letter-spacing:.06em;color:var(--text-normal)"></div>
               <div id="session-code-banner" style="display:none;margin-bottom:12px;padding:8px 12px;border:1px solid var(--border-glow);background:rgba(224,123,57,0.08);font-family:monospace;font-size:11px;letter-spacing:.06em;color:var(--text-normal)"></div>
+              <div id="soul-pin-banner" style="display:none;margin-bottom:12px;padding:8px 12px;border:1px solid #b09040;background:rgba(212,160,32,0.10);font-family:monospace;font-size:11px;letter-spacing:.06em;color:var(--text-normal)"></div>
+              <div id="soul-fingerprint-banner" style="display:none;margin-bottom:12px;padding:8px 12px;border:1px solid var(--border-glow);background:rgba(192,174,130,0.08);font-family:monospace;font-size:11px;letter-spacing:.06em;color:var(--text-normal)"></div>
               <div id="soul-section" style="font-size:12px;color:var(--text-muted)">Loading…</div>
             </div>
           </div>
@@ -103,8 +105,9 @@ public static partial class BridgeStatusPage
                     <li>On your main computer, open Aria.Web in the browser and select the soul.</li>
                     <li>Open <strong>Devices</strong> in the sidebar and copy the <strong>Soul ID</strong> shown there.</li>
                     <li>On this machine, paste that ID above and click <strong>JOIN</strong>.</li>
-                    <li>This bridge will appear as a pending device. Note the pairing code shown below.</li>
-                    <li>Back on your main computer, in Aria.Web → Devices, enter the code and click <strong>APPROVE</strong>.</li>
+                    <li>Note the pairing code shown here, then in Aria.Web → Devices enter it and click <strong>APPROVE</strong>.</li>
+                    <li>On the <strong>primary</strong> bridge Soul panel, click <strong>▶ SHOW FINGERPRINT</strong>.</li>
+                    <li>Back here, paste it into the join step that appears and confirm — that finishes joining.</li>
                   </ol>
                 </div>
                 <div id="join-msg" style="margin-top:8px;font-size:11px;color:var(--text-muted)"></div>
@@ -318,7 +321,7 @@ public static partial class BridgeStatusPage
             const d = await r.json();
             if (!r.ok) { msg.textContent = 'Error: ' + (d.detail || JSON.stringify(d)); return; }
             msg.style.color = 'var(--success)';
-            msg.textContent = '✓ Joined. Awaiting approval — watch for the pairing code below.';
+            msg.textContent = '✓ Join started — approve the pairing code, then paste the primary fingerprint here.';
             await refreshSoul();
           } catch(e) { msg.textContent = 'Error: ' + e.message; }
         }
@@ -345,10 +348,115 @@ public static partial class BridgeStatusPage
             const d = await r.json();
             if (!r.ok) { msg.textContent = 'Error: ' + (d.detail || JSON.stringify(d)); return; }
             msg.style.color = 'var(--success)';
-            msg.textContent = '✓ Joined. Awaiting approval — watch for the pairing code banner above.';
+            msg.textContent = '✓ Join started — approve the pairing code, then paste the primary fingerprint here.';
             await refreshSoul();
             await refreshJoinCode();
           } catch(e) { msg.textContent = 'Error: ' + e.message; }
+        }
+
+        // Join continues after enrollment: a joined node refuses grants until a human pastes the
+        // primary's master-key fingerprint here (out of band). Shown as the next join step, not a
+        // separate warning. On the primary, offer SHOW FINGERPRINT — that is the out-of-band
+        // reference the joining machine needs.
+        async function refreshSoulPin() {
+          const pinBanner = document.getElementById('soul-pin-banner');
+          const fpBanner  = document.getElementById('soul-fingerprint-banner');
+          try {
+            const r = await fetch('/soul/pin-status');
+            const d = r.ok ? await r.json() : null;
+            if (pinBanner) {
+              if (d && d.joined && !d.pinned) {
+                pinBanner.style.display = 'block';
+                // Build the form once so polling does not wipe a half-pasted fingerprint.
+                if (pinBanner.dataset.form !== '1') {
+                  pinBanner.dataset.form = '1';
+                  pinBanner.innerHTML = `
+                    <div style="margin-bottom:8px">⛨ <strong style="color:#f0d060">JOIN · CONFIRM MASTER KEY</strong>
+                      <span style="color:var(--text-muted)"> — last step</span></div>
+                    <ol style="margin:0 0 10px 18px;padding:0;line-height:1.8;color:var(--text-muted)">
+                      <li>On the <strong style="color:var(--text-bright)">primary</strong> bridge → Soul, click <strong style="color:var(--text-bright)">▶ SHOW FINGERPRINT</strong>.</li>
+                      <li>Paste it below and confirm. Take it from that machine — never from Aria.Web.</li>
+                    </ol>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                      <input id="join-pin-fp" placeholder="paste abcd-efgh-ijkl-mnop" autocomplete="off" spellcheck="false"
+                             style="flex:1;min-width:220px;background:var(--bg-base);border:1px solid var(--border-glow);color:var(--text-title);padding:7px 10px;font-family:monospace;font-size:13px;letter-spacing:.12em">
+                      <button id="join-pin-btn" onclick="confirmJoinPin()"
+                              style="flex-shrink:0;background:var(--bg-surface);border:1px solid var(--border-glow);color:var(--text-title);padding:7px 14px;cursor:pointer;font-family:monospace;font-size:11px;letter-spacing:.08em">⛨ CONFIRM &amp; FINISH JOIN</button>
+                    </div>
+                    <div id="join-pin-hint" style="margin-top:8px;font-size:11px;color:var(--text-muted);line-height:1.5"></div>
+                    <div id="join-pin-msg" style="margin-top:6px;font-size:11px;min-height:14px"></div>`;
+                }
+                const hint = document.getElementById('join-pin-hint');
+                const btn  = document.getElementById('join-pin-btn');
+                if (hint) {
+                  hint.textContent = d.candidateAvailable
+                    ? 'Ready — paste the fingerprint from the primary and confirm.'
+                    : 'Waiting for this node to connect to the server first…';
+                }
+                if (btn) btn.disabled = !d.candidateAvailable;
+              } else {
+                pinBanner.style.display = 'none';
+                pinBanner.dataset.form = '';
+                pinBanner.innerHTML = '';
+              }
+            }
+            if (fpBanner) {
+              // Primary only (!joined): this machine holds the master key, so it can show the
+              // fingerprint a joining device needs. Joined nodes must not offer this — their
+              // PublicKeyBase64 is only a pin, not an authoritative reference.
+              if (d && !d.joined && soul && soul.hasKeypair) {
+                fpBanner.style.display = 'flex';
+                fpBanner.style.alignItems = 'center';
+                fpBanner.style.gap = '10px';
+                fpBanner.style.flexWrap = 'wrap';
+                fpBanner.innerHTML = `<span style="flex:1;line-height:1.6;color:var(--text-muted)">
+                    ⛨ <strong style="color:var(--text-title)">MASTER KEY FINGERPRINT</strong> —
+                    when a device is joining, open this and paste the value into that machine's last join step.
+                    Read it here — never from Aria.Web.
+                  </span>
+                  <a href="/soul/fingerprint" target="_blank" rel="noopener"
+                     style="flex-shrink:0;background:var(--bg-surface);border:1px solid var(--border-glow);color:var(--text-title);padding:6px 14px;cursor:pointer;font-family:monospace;font-size:11px;letter-spacing:.08em;text-decoration:none">▶ SHOW FINGERPRINT</a>`;
+              } else {
+                fpBanner.style.display = 'none';
+              }
+            }
+          } catch {
+            if (pinBanner) { pinBanner.style.display = 'none'; pinBanner.dataset.form = ''; }
+            if (fpBanner)  fpBanner.style.display = 'none';
+          }
+        }
+
+        async function confirmJoinPin() {
+          const input = document.getElementById('join-pin-fp');
+          const msg   = document.getElementById('join-pin-msg');
+          const btn   = document.getElementById('join-pin-btn');
+          if (!input || !msg) return;
+          msg.style.color = 'var(--text-muted)';
+          msg.textContent = 'Checking…';
+          if (btn) btn.disabled = true;
+          try {
+            const r = await fetch('/soul/pin-key', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ fingerprint: input.value })
+            });
+            const d = await r.json();
+            if (r.ok && d.ok) {
+              msg.style.color = 'var(--success)';
+              msg.textContent = '✓ Join complete (' + d.fingerprint + '). This node now accepts grants from your soul.';
+              const pinBanner = document.getElementById('soul-pin-banner');
+              if (pinBanner) pinBanner.dataset.form = '';
+              setTimeout(refreshSoulPin, 800);
+            } else {
+              msg.style.color = '#c05050';
+              msg.textContent = d.error || 'Confirmation failed.';
+              if (btn) btn.disabled = false;
+            }
+          } catch (e) {
+            msg.style.color = '#c05050';
+            msg.textContent = 'Request failed: ' + e.message;
+            if (btn) btn.disabled = false;
+          }
         }
 
         // Poll for the pairing code shown while this device awaits enrollment approval.
@@ -362,13 +470,13 @@ public static partial class BridgeStatusPage
               const server = soul && soul.serverUrl ? esc(soul.serverUrl) : 'your Aria.Web server';
               banner.style.display = 'block';
               banner.innerHTML = `
-                <div style="margin-bottom:6px">⟁ <strong style="color:var(--text-title)">AWAITING ENROLLMENT</strong> — this device must be approved from an already-enrolled device:</div>
+                <div style="margin-bottom:6px">⟁ <strong style="color:var(--text-title)">JOIN · STEP 1 — APPROVE THIS DEVICE</strong></div>
                 <ol style="margin:0 0 0 20px;padding:0;line-height:1.9">
                   <li>Go to the computer running your main bridge.</li>
-                  <li>Open the Aria.Web page there: <strong style="color:var(--text-title)">${server}</strong></li>
-                  <li>Open <strong style="color:var(--text-title)">DEVICES</strong> in the sidebar and enter this code: <strong style="color:var(--text-title);letter-spacing:.2em;font-size:14px">${d.display}</strong></li>
+                  <li>Open Aria.Web: <strong style="color:var(--text-title)">${server}</strong></li>
+                  <li>Open <strong style="color:var(--text-title)">DEVICES</strong> and enter this code: <strong style="color:var(--text-title);letter-spacing:.2em;font-size:14px">${d.display}</strong></li>
                 </ol>
-                <div style="margin-top:8px;padding-top:6px;border-top:1px dashed var(--border-dim);color:var(--text-muted)">⚠ Once approved, it can take <strong style="color:var(--text-title)">up to 5 minutes</strong> for this bridge to reconnect and be detected — leave it running. This banner disappears when the link is active.</div>`;
+                <div style="margin-top:8px;padding-top:6px;border-top:1px dashed var(--border-dim);color:var(--text-muted)">After approval, come back here — the next join step is pasting the primary's master-key fingerprint. Reconnect can take up to <strong style="color:var(--text-title)">5 minutes</strong>; leave this bridge running.</div>`;
             } else {
               banner.style.display = 'none';
             }

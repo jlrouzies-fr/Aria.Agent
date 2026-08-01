@@ -20,19 +20,52 @@ public static partial class BuiltinTools
     {
         if (_memoryService == null) return new("Noosphere is not available on this node.", true);
         var content = args.Str("content") ?? throw new ArgumentException("'content' is required");
+
+        // Still queue — never drop the user's content — but the ack the model sees depends on whether
+        // this node's extraction channel is currently healthy. A recent LM-Studio-down failure used to
+        // ride along as a soft NOTE under a success string, and the model cheerfully claimed the
+        // Archivum was sealed while the ingest fell back to opaque raw text (or sat broken).
         await _memoryService.EnqueueInscribeAsync(content, null, CancellationToken.None);
-        // Inscribe is fire-and-forget (extraction happens on a background worker after this call already
-        // returns), so THIS engram's own outcome isn't known yet. A recent extraction failure on the same
-        // channel is a strong signal the same thing is about to happen again — surface it as a heads-up
-        // rather than silently letting every inscribe look identically successful.
-        return new("Engram committed to the Noosphere. The Archivum shall preserve this truth." + RecentExtractionFailureNote(_memoryService), false);
+        var (text, isError) = FormatInscribeAck(
+            _memoryService.LastExtractionFailure.Error,
+            _memoryService.LastExtractionFailure.At,
+            Environment.MachineName,
+            DateTime.UtcNow);
+        return new(text, isError);
     }
 
-    private static string RecentExtractionFailureNote(NoosphereService svc)
+    /// <summary>
+    /// Builds the Inscribe tool's model-facing ack. Pure so tests can assert the failure path without
+    /// spinning up a bridge. A recent extraction failure elevates to <c>IsError</c> — the content was
+    /// still queued, but the model must NOT claim structured memory was preserved.
+    /// </summary>
+    internal static (string Text, bool IsError) FormatInscribeAck(
+        string? recentError, DateTime? recentErrorAt, string nodeLabel, DateTime utcNow)
     {
-        var (error, at) = svc.LastExtractionFailure;
-        if (error == null || at == null || DateTime.UtcNow - at.Value > TimeSpan.FromMinutes(5)) return "";
-        return $"\n\n// NOTE: the last extraction attempt on this node failed ({error}) — this engram may have been stored as unstructured raw text instead of parsed facts. Check the bridge's Memory tab.";
+        var node = string.IsNullOrWhiteSpace(nodeLabel) ? "this node" : nodeLabel.Trim();
+        var locality =
+            $" Memory stays on node \"{node}\" only — it is not replicated to other bridges. " +
+            "Open Noosphere for that device to verify.";
+
+        if (recentError != null && recentErrorAt != null
+            && utcNow - recentErrorAt.Value <= TimeSpan.FromMinutes(5))
+        {
+            return (
+                "INSCRIBE DEGRADED on node \"" + node + "\": content was queued, but this node's " +
+                "Noosphere extraction channel is currently failing (" + recentError + "). " +
+                "The engram will likely land as unstructured raw text without entities/relations " +
+                "until the extraction model is reachable again (e.g. start LM Studio / fix the URL " +
+                "in the bridge Memory tab). Do NOT tell the user the Archivum was sealed or that " +
+                "future sessions will recall this — tell them extraction is broken on this node and " +
+                "they should fix it, then retry." + locality,
+                true);
+        }
+
+        return (
+            "Engram queued on node \"" + node + "\" for Noosphere extraction. " +
+            "Structured facts appear after the local extraction model finishes — check that node's " +
+            "Memory tab if nothing shows up." + locality,
+            false);
     }
 
     // Embeddings can fail silently at the HTTP layer (a misconfigured/unreachable channel still returns

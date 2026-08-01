@@ -429,14 +429,19 @@
             <div id="explorer-viewer-resize-handle" class="explorer-resize-handle"></div>
         }
         <div class="messages-area" id="chatMessages">
+            @if (!string.IsNullOrEmpty(_contextWindowWarning))
+            {
+                <div class="context-window-warning">⚠ @_contextWindowWarning</div>
+            }
             @for (int i = 0; i < _messages.Count; i++)
             {
                 var msg = _messages[i];
+                var msgIdx = i;
                 @if (msg.IsCompactSummary)
                 {
                     <div class="compact-divider">⟲ COMPACTED — prior history summarized below</div>
                 }
-                <div class="msg @msg.Role @(msg.IsSoul ? "msg--soul" : "")" id="msg-@i">
+                <div class="msg @msg.Role @(msg.IsSoul ? "msg--soul" : "") @(_replayFromIndex == msgIdx ? "msg--editing" : "")" id="msg-@i">
                     <span class="msg-prefix">
                         @if (msg.Role == "user")
                         {
@@ -472,6 +477,10 @@
                             <span class="msg-screenshot-label">⛶ SCREENSHOT</span>
                         }
                     </span>
+                    @{
+                        // One REVERT TURN control per checkpoint in this message (not on every DiffCard).
+                        var rewindShownForMsg = new HashSet<string>(StringComparer.Ordinal);
+                    }
                     @foreach (var section in msg.Sections)
                     {
                         if (section.Type == MessageSection.SectionType.Thinking)
@@ -516,6 +525,9 @@
                                         {
                                             @if (fm != null)
                                             {
+                                                var showRewind = !fm.Reverted
+                                                    && !string.IsNullOrWhiteSpace(fm.Checkpoint)
+                                                    && rewindShownForMsg.Add(fm.Checkpoint!);
                                                 <DiffCard Path="@fm.Path"
                                                           Diff="@fm.Diff"
                                                           Adds="@fm.Adds"
@@ -524,8 +536,10 @@
                                                           Created="@fm.Created"
                                                           Deleted="@fm.Deleted"
                                                           Reverted="@fm.Reverted"
+                                                          ShowRewind="@showRewind"
                                                           OnOpen="@(() => OpenDiffFileAsync(fm.Path))"
-                                                          OnRevert="@(() => RevertDiffAsync(msg, tc))" />
+                                                          OnRevert="@(() => RevertDiffAsync(msg, tc))"
+                                                          OnRewind="@(() => RewindCheckpointAsync(fm.Checkpoint!))" />
                                             }
                                             else
                                             {
@@ -564,32 +578,104 @@
                              alt="captured screenshot" loading="lazy"
                              @onclick="() => OpenImageModal(msg.ImageMediaType, msg.ImageBase64)" />
                     }
-                    @if (msg.Role == "assistant" && msg.OutputTokens.HasValue && msg != _streamingMsg)
+                    @if ((msg.Role == "assistant" && msg != _streamingMsg && (msg.OutputTokens.HasValue || CanCopyAnswer(msg)))
+                         || (msg.Role == "user" && CanEditPrompt(msgIdx)))
                     {
-                        <div class="msg-tokens">
-                            @if (msg.InputTokens.HasValue)
+                        <div class="msg-footer">
+                            @if (msg.Role == "assistant" && msg.OutputTokens.HasValue && msg != _streamingMsg)
                             {
-                                <span class="tk-group">
-                                    <span>@msg.InputTokens</span>
-                                    <span class="tk-label" data-tip="Tokens consumed from context window (prompt + history)">tk:i</span>
-                                </span>
+                                <div class="msg-tokens">
+                                    @if (msg.InputTokens.HasValue)
+                                    {
+                                        <span class="tk-group">
+                                            <span>@msg.InputTokens</span>
+                                            <span class="tk-label" data-tip="Tokens consumed from context window (prompt + history)">tk:i</span>
+                                        </span>
+                                    }
+                                    <span class="tk-group">
+                                        <span>@msg.OutputTokens</span>
+                                        <span class="tk-label" data-tip="Tokens generated in the response">tk:o</span>
+                                    </span>
+                                    @if (msg.Tps.HasValue)
+                                    {
+                                        <span class="tk-group">
+                                            <span>@msg.Tps</span>
+                                            <span class="tk-label" data-tip="Output tokens per second — inference engine generation speed">tk/s</span>
+                                        </span>
+                                    }
+                                </div>
                             }
-                            <span class="tk-group">
-                                <span>@msg.OutputTokens</span>
-                                <span class="tk-label" data-tip="Tokens generated in the response">tk:o</span>
-                            </span>
-                            @if (msg.Tps.HasValue)
+                            else
                             {
-                                <span class="tk-group">
-                                    <span>@msg.Tps</span>
-                                    <span class="tk-label" data-tip="Output tokens per second — inference engine generation speed">tk/s</span>
-                                </span>
+                                <span class="msg-footer-spacer"></span>
+                            }
+                            @if (msg.Role == "assistant" && CanCopyAnswer(msg) && msg != _streamingMsg)
+                            {
+                                var plainCopied = _copyFeedbackIndex == msgIdx && _copyFeedbackKind == "plain";
+                                var mdCopied    = _copyFeedbackIndex == msgIdx && _copyFeedbackKind == "md";
+                                <div class="msg-actions">
+                                    <button type="button" class="msg-action-btn @(plainCopied ? "msg-action-btn--done" : "")"
+                                            data-tip="@(plainCopied ? "// COPIED — plain text" : "// COPY — plain text")"
+                                            data-tip-variant="action"
+                                            aria-label="Copy answer as plain text"
+                                            @onclick="() => CopyAnswerAsync(msgIdx, false)">
+                                        @if (plainCopied)
+                                        {
+                                            <svg class="msg-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                <polyline points="20 6 9 17 4 12"/>
+                                            </svg>
+                                        }
+                                        else
+                                        {
+                                            <svg class="msg-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                            </svg>
+                                        }
+                                    </button>
+                                    <button type="button" class="msg-action-btn @(mdCopied ? "msg-action-btn--done" : "")"
+                                            data-tip="@(mdCopied ? "// COPIED — markdown" : "// COPY — markdown source")"
+                                            data-tip-variant="action"
+                                            aria-label="Copy answer as markdown"
+                                            @onclick="() => CopyAnswerAsync(msgIdx, true)">
+                                        @if (mdCopied)
+                                        {
+                                            <svg class="msg-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                <polyline points="20 6 9 17 4 12"/>
+                                            </svg>
+                                        }
+                                        else
+                                        {
+                                            <svg class="msg-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                                <polyline points="14 2 14 8 20 8"/>
+                                                <path d="M10 13l-2 2 2 2"/>
+                                                <path d="M14 17l2-2-2-2"/>
+                                            </svg>
+                                        }
+                                    </button>
+                                </div>
+                            }
+                            @if (msg.Role == "user" && CanEditPrompt(msgIdx))
+                            {
+                                <div class="msg-actions">
+                                    <button type="button" class="msg-action-btn"
+                                            data-tip="// EDIT & REPLAY — discards later turns"
+                                            data-tip-variant="action"
+                                            aria-label="Edit and replay this prompt"
+                                            @onclick="() => BeginEditPrompt(msgIdx)">
+                                        <svg class="msg-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <path d="M12 20h9"/>
+                                            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                                        </svg>
+                                    </button>
+                                </div>
                             }
                         </div>
                     }
                 </div>
             }
-            @if (_isStreaming && _streamingMsg != null && !StreamingHasOutput(_streamingMsg))
+            @if (_isStreaming && _streamingMsg != null && ShouldShowStreamingCursor(_streamingMsg))
             {
                 <span class="streaming-cursor"></span>
             }
@@ -1004,7 +1090,23 @@
                         <span class="approval-tool">@appr.ToolName.ToUpperInvariant()</span>
                         <span class="approval-reason">@appr.Reason</span>
                     </div>
-                    <div class="approval-args">@appr.ArgsPreview</div>
+                    @if (!string.IsNullOrWhiteSpace(appr.Diff))
+                    {
+                        @* Prospective diff (bridge /tools/preview, read-only): the human approves the
+                           actual change, not a truncated args blob. Read-only card — nothing written yet. *@
+                        <div class="approval-args">// PROPOSED CHANGE — preview only, nothing written yet</div>
+                        <DiffCard Path="@(appr.TargetPath ?? "")"
+                                  Diff="@appr.Diff"
+                                  Adds="@CountDiffAdds(appr.Diff)"
+                                  Dels="@CountDiffDels(appr.Diff)"
+                                  UndoToken=""
+                                  ShowRevert="false"
+                                  ShowOpen="false" />
+                    }
+                    else
+                    {
+                        <div class="approval-args">@appr.ArgsPreview</div>
+                    }
                     @if (isSeal)
                     {
                         <div class="approval-seal-note">Confirm at your cogitator node — a window has opened on your machine. The terminal cannot grant this seal.</div>
@@ -1213,24 +1315,77 @@
                 </div>
             }
 
-        @if (!string.IsNullOrEmpty(_queuedInput))
+        @if (_pendingSteers.Count > 0)
         {
-            @* Queued message pinned above the composer (same visual family as the directive
-               manifest). Click the block (or press ↑ on an empty input) to recall it for editing. *@
-            <div class="queue-block">
-                <div class="queue-header" @onclick="RecallQueued" data-tip="Recall into the composer (↑)">
-                    <span class="queue-title">⧉ QUEUE</span>
-                    <span class="queue-hint">CLICK / ↑ TO EDIT</span>
-                    <button class="queue-cancel" @onclick="CancelQueued" @onclick:stopPropagation="true" data-tip="Discard queued message">✕</button>
+            @* Mid-turn steers waiting for the next tool-round drain — Claude Code style. Not in the
+               transcript yet; promoted to normal user messages once the agent takes them. *@
+            <div class="steer-pending-block">
+                <div class="steer-pending-header">
+                    <span class="steer-pending-title">↳ STEERING</span>
+                    <span class="steer-pending-count">@_pendingSteers.Count</span>
+                    <span class="steer-pending-hint">WAITING FOR AGENT</span>
                 </div>
-                <div class="queue-text" @onclick="RecallQueued">@_queuedInput</div>
+                @for (var si = 0; si < _pendingSteers.Count; si++)
+                {
+                    var sIdx = si;
+                    <div class="steer-pending-item">
+                        <div class="steer-pending-text">@_pendingSteers[sIdx]</div>
+                        <button type="button" class="queue-cancel" @onclick="() => CancelPendingSteer(sIdx)"
+                                data-tip="Cancel before agent takes this">✕</button>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_queuedMessages.Count > 0)
+        {
+            @* Queued follow-ups pinned above the composer (same visual family as the directive
+               manifest). Click a row (or press ↑ on an empty input) to recall it for editing;
+               STEER merges the whole queue into one mid-turn inject (Ctrl+↑); ✕ removes one slot.
+               FIFO — drained one turn at a time after each run completes if not steered. *@
+            <div class="queue-block">
+                <div class="queue-header">
+                    <span class="queue-title">⧉ QUEUE</span>
+                    <span class="queue-count">@_queuedMessages.Count</span>
+                    <span class="queue-hint">↑ EDIT</span>
+                    <button type="button" class="queue-steer" @onclick="SteerAllQueuedAsync"
+                            disabled="@(!_isStreaming)"
+                            data-tip="@(_isStreaming ? "Steer all queued as one mid-turn redirect (Ctrl+↑)" : "Steer when a turn is live")">↳ STEER</button>
+                </div>
+                @for (var qi = 0; qi < _queuedMessages.Count; qi++)
+                {
+                    var qIdx = qi;
+                    <div class="queue-item">
+                        <div class="queue-text" @onclick="() => RecallQueued(qIdx)" data-tip="Recall into the composer">@_queuedMessages[qIdx]</div>
+                        <button type="button" class="queue-cancel" @onclick="() => CancelQueued(qIdx)" @onclick:stopPropagation="true" data-tip="Discard queued message">✕</button>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_replayFromIndex != null)
+        {
+            <div class="replay-block">
+                <div class="replay-header">
+                    <span class="replay-title">✎ EDIT &amp; REPLAY</span>
+                    <span class="replay-hint">
+                        @(ReplayDiscardCount > 1
+                            ? $"SEND DISCARDS {ReplayDiscardCount} LATER TURNS"
+                            : "SEND REPLACES THIS TURN")
+                    </span>
+                    <button type="button" class="replay-cancel" @onclick="CancelEditPrompt" data-tip="Cancel edit">✕</button>
+                </div>
+                @if (ReplayHasAttachmentNote)
+                {
+                    <div class="replay-note">Attachment bytes are not re-sent — only the text below goes to the agent.</div>
+                }
             </div>
         }
 
         <div class="input-area">
             <DebouncedTextArea id="chatInput"
-                               class="@("chat-input " + (!string.IsNullOrEmpty(_queuedInput) ? "input-queued" : ""))"
-                               placeholder="@(_isStreaming ? "// Press Ctrl+Enter to queue next message…" : "// Transmit directive to Aria...")"
+                               class="@("chat-input " + (_queuedMessages.Count > 0 ? "input-queued" : "") + (_replayFromIndex != null ? " input-replay" : ""))"
+                               placeholder="@(_isStreaming ? "// Ctrl+Enter queue · Ctrl+↑ steer…" : (_replayFromIndex != null ? "// Edit prompt, then Ctrl+Enter to resend…" : "// Transmit directive to Aria..."))"
                                rows="1"
                                disabled="@(_agent == null || _cogitationOffline)"
                                Value="@_input"
@@ -1282,11 +1437,11 @@
                     }
                     else
                     {
-                        <button class="transmit-btn @(!string.IsNullOrEmpty(_queuedInput) ? "transmit-queued" : "")"
+                        <button class="transmit-btn @(_queuedMessages.Count > 0 ? "transmit-queued" : "") @(_replayFromIndex != null ? "transmit-replay" : "")"
                                 @onclick="SendAsync"
-                                title="Send (Ctrl+Enter)"
+                                title="@(_replayFromIndex != null ? "Resend edited prompt (Ctrl+Enter)" : "Send (Ctrl+Enter)")"
                                 disabled="@((string.IsNullOrWhiteSpace(_input) && _attachedFileName == null) || _agent == null || _cogitationOffline)">
-                            @(!string.IsNullOrEmpty(_queuedInput) ? "QUEUED ▶▶" : "TRANSMIT ▶▶")
+                            @(_replayFromIndex != null ? "REPLAY ▶▶" : _queuedMessages.Count > 0 ? "QUEUED ▶▶" : "TRANSMIT ▶▶")
                             <span class="transmit-hint">CTRL+Enter</span>
                         </button>
                     }

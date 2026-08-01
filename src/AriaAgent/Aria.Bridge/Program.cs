@@ -17,13 +17,25 @@ builder.AddBridgeServices();
 var app = builder.Build();
 
 BuiltinTools.ConfigureMemory(app.Services);
+BuiltinTools.ConfigureDiffFeedback(builder.Configuration);
 
 app.UseBridgePipeline();
 await app.InitializeBridgeDatabaseAsync();
 app.MapBridgeEndpoints();
 app.RegisterBridgeLifetimeEvents();
 
-app.Run();
+// macOS AppKit insists NSStatusItem is created on the main thread, so when the menu-bar icon
+// is enabled the host runs on a worker and main pumps -[NSApplication run]. Windows / Linux
+// (and macOS with Bridge:TrayIcon=false) keep the ordinary blocking Run().
+if (OperatingSystem.IsMacOS() &&
+    app.Configuration.GetValue("Bridge:TrayIcon", defaultValue: true))
+{
+    MacMenuBarIcon.RunWebHostWithMenuBar(app);
+}
+else
+{
+    app.Run();
+}
 
 namespace Aria.Bridge
 {

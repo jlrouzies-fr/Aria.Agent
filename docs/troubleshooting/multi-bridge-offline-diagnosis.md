@@ -26,19 +26,28 @@ The top bar button, chat placeholder, and soul-gated UI key off **circuit verifi
 3. Machine B's bridge connects to the server and fails auth (not enrolled yet).
    - `Aria.Web/Services/ModelBridge/ModelBridgeHub.cs` → `RegisterDirectBridge`
    - `Aria.Bridge/Infrastructure/DirectTunnel.cs` → `RegisterPendingEnrollmentAsync`
-   - The bridge registers as a **pending device** and shows a 6-digit join code.
+   - The bridge registers as a **pending device** and shows a 6-digit join code (**JOIN · STEP 1**).
 4. From a **verified browser session on machine A**, open Aria.Web → **Devices**, enter the join code, and approve.
    - `Aria.Web/Components/Layout/NavMenuDevicesPanel.razor`
    - `Aria.Web/Services/Node/NodeService.cs` → `ApprovePendingAsync`
    - The Mac bridge signs an enrollment certificate via `/node/sign-enrollment`.
    - Server adds machine B to `SoulNodeKeys`.
 5. Machine B reconnects and authenticates successfully.
-6. The browser on machine B then verifies via `http://localhost:5741/node/attest`.
+6. **Finish joining on machine B** — last join step, not optional for cross-device grants:
+   - On machine A’s bridge → **Soul**, click **▶ SHOW FINGERPRINT**.
+   - On machine B’s bridge → **Soul**, paste into **JOIN · CONFIRM MASTER KEY** and confirm
+     (`POST /soul/pin-key`). Until this succeeds, B reports `unpinned` and Devices shows
+     **JOIN NOT FINISHED**; seals approved on A will not be honoured on B.
+7. The browser on machine B then verifies via `http://localhost:5741/node/attest`.
+
+User-facing write-up: [Multi-node → Joining a second node](../readme/multi-node.md#joining-a-second-node).
 
 ## Common mistakes
 
 - Using **Link to server** on machine B instead of **Join existing soul**. `link-server` sends machine B's own soul public key to `register-soul`, which will either conflict with the existing primary key or overwrite it if the slot is empty.
 - Approving the pending device from machine B's own browser. Approval requires an already-verified session with an online bridge (usually machine A).
+- Stopping after approve and never pasting the primary fingerprint on B — B looks "online" but sibling grants / seal replication stay refused until the join fingerprint step completes.
+- Pasting a fingerprint shown by Aria.Web (or any server UI) instead of copying it from the **primary bridge** Soul panel. The server's value is not a valid reference.
 - Confusing the **soul name** (`MyCogitator`) with the **node label** (`MyWorkstation`, `Environment.MachineName`). The Devices panel shows machine names, not the soul name.
 - Copying the **local bridge Soul ID** from the bridge status page instead of the **Server Soul ID** from Aria.Web → Devices. The bridge status page no longer exposes the local ID for this reason; use the ID shown in Aria.Web.
 
@@ -132,6 +141,9 @@ Open the sidebar → **Devices**.
 - A filled dot `●` means the bridge is connected to the server (transport up).
 - An empty dot `○` means the node row exists but is not currently connected.
 - **Pending Devices** shows unapproved joined bridges waiting for a join code.
+- A pulsing red warning **JOIN NOT FINISHED** means the node is enrolled but has not yet
+  confirmed the primary's master-key fingerprint — finish that step on the joined machine's
+  Soul panel before expecting seals/grants to replicate.
 
 Relevant files:
 - `Aria.Web/Components/Layout/NavMenuDevicesPanel.razor`
@@ -228,7 +240,7 @@ When the bridge's **WIPE SOUL + ALL DATA** button is used (or `DELETE /db/soul`)
    - Drops any live bridge connections for those nodes.
    - Clears any pending enrollment requests.
 
-This ensures a wiped/re-registered soul cannot be silently rejoined by old device keys. If you need to add devices back after a wipe, run **Join existing soul** on each device and approve them again.
+This ensures a wiped/re-registered soul cannot be silently rejoined by old device keys. If you need to add devices back after a wipe, run **Join existing soul** on each device, approve them again, and finish with the master-key fingerprint step on each joined machine.
 
 Relevant files:
 - `Aria.Bridge/Endpoints/DbAdminEndpoints.cs` → `DELETE /db/soul`
@@ -243,4 +255,4 @@ If the primary bridge's key has been overwritten or corrupted:
 2. On any other machine, unlink (`POST /soul/unlink`) if needed.
 3. On the primary machine, re-import the backup if necessary.
 4. Re-link the primary bridge to the server (`POST /soul/link-server`).
-5. For each additional machine, use **Join existing soul**, then approve from the primary machine's verified browser session.
+5. For each additional machine, use **Join existing soul**, approve from the primary machine's verified browser session, then paste the primary's master-key fingerprint into that machine's **JOIN · CONFIRM MASTER KEY** step.

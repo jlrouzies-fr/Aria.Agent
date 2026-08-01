@@ -13,6 +13,7 @@ public sealed class GovernanceContext
     private IReadOnlyList<string> _scope = [];
     private int _toolCalls;
     private int _fileReads;
+    private int _mutations;
     private readonly LinkedList<string> _recent = new();
 
     /// <summary>The active policy. Re-applied each turn so a mode change takes effect on the existing
@@ -24,6 +25,20 @@ public sealed class GovernanceContext
     public IReadOnlyList<string> AllowedScope => _scope;
     public int ToolCallsThisTurn => _toolCalls;
     public int FileReadsThisTurn => _fileReads;
+
+    // ── Post-mutation verify nudge ──────────────────────────────────────────────────────────────
+    // Per-turn state for GovernedTool's nudge: successful file mutations counted on one side, a
+    // completed build/test verification on the other. While the first grows and the second stays
+    // false, the nudge appends a reminder to mutation results (at 1, then every 5).
+    public int  MutationsThisTurn => _mutations;
+    public bool VerificationRan   { get; private set; }
+
+    /// <summary>Record a successful file-mutation call and return the turn's running mutation
+    /// count — the caller uses it for the nudge thresholds.</summary>
+    public int RecordMutation() => ++_mutations;
+
+    /// <summary>Mark that a build/test verification ran this turn, silencing the verify nudge.</summary>
+    public void MarkVerificationRan() => VerificationRan = true;
 
     // ── Layer B seal pause ────────────────────────────────────────────────────────────────────
     // A sensitive tool hit the node gate with no live 8h grant. We can't let the exception bubble
@@ -47,6 +62,8 @@ public sealed class GovernanceContext
         _scope     = scope ?? [];
         _toolCalls = 0;
         _fileReads = 0;
+        _mutations = 0;
+        VerificationRan = false;
         _recent.Clear();
         ContextApprovalPending   = false;   // cleared so a retry (grant now live) runs clean
         ContextApprovalSessionId = null;

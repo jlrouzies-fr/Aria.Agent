@@ -516,9 +516,21 @@ public static partial class BridgeStatusPage
           box-shadow: 0 0 5px rgba(212, 160, 32, 0.30);
           animation: navBadgePulse 2.6s ease-in-out infinite;
         }
+        /* Runtime Noosphere extract/embed failure — red pulse, distinct from amber onboarding. */
+        .nav-item .nav-badge.nav-badge-warn {
+          color: #f07070;
+          background: rgba(208, 64, 64, 0.16);
+          border-color: rgba(208, 64, 64, 0.7);
+          box-shadow: 0 0 6px rgba(208, 64, 64, 0.4);
+          animation: navBadgeWarnPulse 1.15s ease-in-out infinite;
+        }
         @keyframes navBadgePulse {
           0%, 100% { box-shadow: 0 0 4px rgba(212, 160, 32, 0.22); opacity: 0.9; }
           50%      { box-shadow: 0 0 9px rgba(212, 160, 32, 0.55); opacity: 1; }
+        }
+        @keyframes navBadgeWarnPulse {
+          0%, 100% { box-shadow: 0 0 3px rgba(208, 64, 64, 0.25); opacity: 0.75; }
+          50%      { box-shadow: 0 0 11px rgba(208, 64, 64, 0.75); opacity: 1; }
         }
         @media (prefers-reduced-motion: reduce) {
           .nav-item .nav-badge { animation: none; }

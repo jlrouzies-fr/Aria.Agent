@@ -72,6 +72,7 @@ public static class BridgeServiceRegistration
         // local SQLite vault via NoosphereConfigService; appsettings is no longer the primary UI.
         builder.Services.Configure<NoosphereOptions>(builder.Configuration.GetSection(NoosphereOptions.SectionName));
         builder.Services.AddSingleton<NoosphereConfigService>();
+        builder.Services.AddSingleton<NoosphereBuiltinRuntime>();
         builder.Services.AddSingleton<NoosphereEmbedder>();
         builder.Services.AddSingleton<NoosphereExtractor>();
         builder.Services.AddSingleton<NoosphereService>();

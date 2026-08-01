@@ -132,4 +132,116 @@ public class SiblingRosterTests
 
         Assert.Null(trusted);
     }
+
+    [Fact]
+    public void JoinedNode_UsesPinnedSoulKey_WhenRosterPrimaryMatches()
+    {
+        var (soulPub, _) = NewKey();
+        var (nodePub, _) = NewKey();
+
+        var roster = new List<SoulNodeRosterEntry>
+        {
+            new(soulPub, null, null, "primary", 0, IsPrimary: true),
+        };
+        var joined = new BridgeSoul
+        {
+            ServerSoulId        = "soul-1",
+            NodePublicKeyBase64 = nodePub,
+            PublicKeyBase64     = soulPub,
+            SoulKeyPinnedAt     = DateTime.UtcNow,
+        };
+
+        var resolved = SiblingRoster.ResolveSoulMasterPublicKey(joined, roster, out var trust);
+
+        Assert.Equal(soulPub, resolved);
+        Assert.Equal(SiblingRoster.SoulKeyTrust.Trusted, trust);
+    }
+
+    [Fact]
+    public void JoinedNode_WithoutPin_RefusesToResolveAnyKey()
+    {
+        var (soulPub, soulKey) = NewKey();
+        var (nodePub, _) = NewKey();
+        var expiry = DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeSeconds();
+        // A perfectly genuine roster is still not an anchor — only a human at the node is.
+        var cert = SignEnrollment(soulKey, "soul-1", nodePub, "windows", expiry);
+
+        var roster = new List<SoulNodeRosterEntry>
+        {
+            new(soulPub, null, null, "primary", 0, IsPrimary: true),
+            new(nodePub, cert, soulPub, "windows", expiry, IsPrimary: false),
+        };
+        var joined = new BridgeSoul
+        {
+            ServerSoulId        = "soul-1",
+            NodePublicKeyBase64 = nodePub,
+        };
+
+        Assert.Null(SiblingRoster.ResolveSoulMasterPublicKey(joined, roster, out var trust));
+        Assert.Equal(SiblingRoster.SoulKeyTrust.NotPinned, trust);
+    }
+
+    [Fact]
+    public void JoinedNode_IgnoresKeyCachedByOlderBuildWithoutAPin()
+    {
+        var (soulPub, _) = NewKey();
+        var (nodePub, _) = NewKey();
+
+        var roster = new List<SoulNodeRosterEntry> { new(soulPub, null, null, "primary", 0, IsPrimary: true) };
+        // PublicKeyBase64 present but never human-confirmed: written by the roster-deriving build.
+        var joined = new BridgeSoul
+        {
+            ServerSoulId        = "soul-1",
+            NodePublicKeyBase64 = nodePub,
+            PublicKeyBase64     = soulPub,
+            SoulKeyPinnedAt     = null,
+        };
+
+        Assert.Null(SiblingRoster.ResolveSoulMasterPublicKey(joined, roster, out var trust));
+        Assert.Equal(SiblingRoster.SoulKeyTrust.NotPinned, trust);
+    }
+
+    /// <summary>
+    /// The attack the roster-deriving build was vulnerable to: a malicious server nominates its OWN
+    /// key as primary and self-signs the joined node's enrollment certificate under it, so the cert
+    /// and the claimed primary agree with each other. Only an out-of-band pin catches this.
+    /// </summary>
+    [Fact]
+    public void JoinedNode_RejectsServerSuppliedPrimary_WithSelfConsistentForgedCert()
+    {
+        var (soulPub, _) = NewKey();
+        var (nodePub, _) = NewKey();
+        var (roguePub, rogueKey) = NewKey();
+        var expiry = DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeSeconds();
+        // Server knows nodePub (the node registered it at /soul/join) and signs a cert over it with R.
+        var forgedCert = SignEnrollment(rogueKey, "soul-1", nodePub, "windows", expiry);
+
+        var roster = new List<SoulNodeRosterEntry>
+        {
+            new(roguePub, null, null, "primary", 0, IsPrimary: true),
+            new(nodePub, forgedCert, roguePub, "windows", expiry, IsPrimary: false),
+        };
+        var pinned = new BridgeSoul
+        {
+            ServerSoulId        = "soul-1",
+            NodePublicKeyBase64 = nodePub,
+            PublicKeyBase64     = soulPub,
+            SoulKeyPinnedAt     = DateTime.UtcNow,
+        };
+
+        Assert.Null(SiblingRoster.ResolveSoulMasterPublicKey(pinned, roster, out var trust));
+        Assert.Equal(SiblingRoster.SoulKeyTrust.PinMismatch, trust);
+    }
+
+    [Fact]
+    public void PrimaryNode_UsesItsOwnSoulKey_WithoutAPin()
+    {
+        var (soulPub, _) = NewKey();
+        var primary = new BridgeSoul { ServerSoulId = "soul-1", PublicKeyBase64 = soulPub };
+
+        var resolved = SiblingRoster.ResolveSoulMasterPublicKey(primary, [], out var trust);
+
+        Assert.Equal(soulPub, resolved);
+        Assert.Equal(SiblingRoster.SoulKeyTrust.Trusted, trust);
+    }
 }

@@ -17,4 +17,16 @@ public class ModelFormatCache
     /// silently keeps guessing. Cleared only by the "Re-detect format" action.
     /// </summary>
     public bool     Confirmed       { get; set; }
+
+    /// <summary>
+    /// Provider-discovered or user-overridden context-window size for this source+model, in tokens.
+    /// Null when unknown; today's default (100k) is stored with <see cref="ContextWindowAssumed"/> true.
+    /// </summary>
+    public int?     ContextWindowTokens { get; set; }
+
+    /// <summary>
+    /// True when <see cref="ContextWindowTokens"/> is the fallback assumption (100k), not an
+    /// authoritative value. Assumed windows must not change today's behaviour.
+    /// </summary>
+    public bool     ContextWindowAssumed { get; set; } = true;
 }

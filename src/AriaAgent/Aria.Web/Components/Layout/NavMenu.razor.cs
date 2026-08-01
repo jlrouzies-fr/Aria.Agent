@@ -90,6 +90,9 @@ public partial class NavMenu
             catch { }
         }
 
+        // Skills preview (and any other nav markdown) may contain .math fences.
+        try { await JS.InvokeVoidAsync("ariaInterop.typesetMath"); } catch { }
+
         if (firstRender)
         {
             _dotnetRef = DotNetObjectReference.Create(this);

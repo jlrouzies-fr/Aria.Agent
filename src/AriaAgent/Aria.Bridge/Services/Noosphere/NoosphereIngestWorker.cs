@@ -1,3 +1,4 @@
+using Aria.Bridge.Services.Logging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -18,18 +19,27 @@ public class NoosphereIngestWorker(NoosphereService service, ILogger<NoosphereIn
             foreach (var id in await service.GetEngramIdsNeedingEmbeddingAsync(stoppingToken))
             {
                 try { await service.BackfillEmbeddingAsync(id, stoppingToken); }
-                catch (Exception ex) { logger.LogWarning(ex, "[Noosphere] Embedding backfill failed for engram {Id}", id); }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "[Noosphere] Embedding backfill failed for engram {Id}", id);
+                    BridgeLogger.Log("WARN", $"Noosphere embedding backfill failed: {ex.Message}");
+                }
             }
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "[Noosphere] Startup sweep failed");
+            BridgeLogger.Log("WARN", $"Noosphere startup sweep failed: {ex.Message}");
         }
 
         await foreach (var ingestId in service.IngestReader.ReadAllAsync(stoppingToken))
         {
             try { await service.ProcessIngestAsync(ingestId, stoppingToken); }
-            catch (Exception ex) { logger.LogError(ex, "[Noosphere] Failed processing ingest {Id}", ingestId); }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "[Noosphere] Failed processing ingest {Id}", ingestId);
+                BridgeLogger.Log("ERROR", $"Noosphere ingest worker failed: {ex.Message}");
+            }
         }
     }
 }

@@ -85,12 +85,20 @@ public static class MemoryEndpoints
         app.MapGet("/memory/stats", async (string? bank, NoosphereService svc, CancellationToken ct) =>
         {
             var stats = await svc.StatsAsync(bank, ct);
+            // last*Error fields are in-process (cleared on the next success) — bridge Memory nav + web
+            // Noosphere nav poll them so a silent channel-down failure still lights a warning.
+            var (extractErr, extractAt) = svc.LastExtractionFailure;
+            var (embedErr, embedAt) = svc.LastEmbeddingFailure;
             return Results.Ok(new
             {
                 engrams = stats.Engrams, entities = stats.Entities, links = stats.Links,
                 pendingIngests = stats.PendingIngests, embeddedCount = stats.EmbeddedCount,
                 embeddingsConfigured = stats.EmbeddingsConfigured, extractionConfigured = stats.ExtractionConfigured,
-                rawIngests = stats.RawIngests
+                rawIngests = stats.RawIngests,
+                lastExtractionError = extractErr,
+                lastExtractionErrorAt = extractAt,
+                lastEmbeddingError = embedErr,
+                lastEmbeddingErrorAt = embedAt
             });
         });
 
@@ -138,6 +146,10 @@ public static class MemoryEndpoints
                 embeddingsEnabled = config.EmbeddingsEnabled,
                 embeddingsModel = config.EmbeddingsModel,
                 extractionModel = config.ExtractionModel,
+                // Fast path for the Memory-tab toggle — avoid waiting on /memory/builtin/status
+                // (which may SHA-verify large GGUFs on a cold cache).
+                builtinEnabled = config.BuiltinEnabled,
+                builtinLicenseAccepted = config.BuiltinLicenseAcceptedAt != null,
                 channels
             });
         });

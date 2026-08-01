@@ -15,14 +15,24 @@ public static class AutoCompaction
     /// <summary>Heuristic chars-per-token ratio used when a source reports no usage (~4 chars/token).</summary>
     public const int CharsPerToken = 4;
 
+    /// <summary>Floor for a derived threshold — thresholds below this would compact too eagerly.</summary>
+    public const int MinimumDerivedThresholdTokens = 4_096;
+
     /// <summary>Estimate a token count from a character count (chars/4, rounded up).</summary>
     public static long EstimateTokens(long chars) =>
         chars <= 0 ? 0 : (chars + CharsPerToken - 1) / CharsPerToken;
 
-    /// <summary>The effective threshold for a session: the override when set, else the default.
+    /// <summary>The effective threshold for a session: the override when set, else a value derived
+    /// from the known context window (window × 0.8, clamped to a sane floor), else the default 100k.
+    /// Assumed windows keep the current default — no behaviour change until we know better.
     /// A value &lt;= 0 disables auto-compaction (set via "/compact auto off").</summary>
-    public static int ResolveThreshold(int? sessionOverride) =>
-        sessionOverride ?? DefaultThresholdTokens;
+    public static int ResolveThreshold(int? sessionOverride, ContextWindow? window = null)
+    {
+        if (sessionOverride.HasValue) return sessionOverride.Value;
+        if (window is { Assumed: false })
+            return Math.Max(MinimumDerivedThresholdTokens, (int)(window.Tokens * 0.8));
+        return DefaultThresholdTokens;
+    }
 
     /// <summary>
     /// Should the conversation be compacted before the next turn?
@@ -31,9 +41,9 @@ public static class AutoCompaction
     /// size is estimated from <paramref name="transcriptChars"/>. A reported count always wins —
     /// it reflects the real context window, including tool results the transcript mirror may miss.
     /// </summary>
-    public static bool ShouldCompact(int? reportedInputTokens, long transcriptChars, int? thresholdOverride)
+    public static bool ShouldCompact(int? reportedInputTokens, long transcriptChars, int? thresholdOverride, ContextWindow? window = null)
     {
-        var threshold = ResolveThreshold(thresholdOverride);
+        var threshold = ResolveThreshold(thresholdOverride, window);
         if (threshold <= 0) return false;   // "/compact auto off"
 
         var tokens = reportedInputTokens ?? EstimateTokens(transcriptChars);

@@ -10,14 +10,15 @@ public sealed record ContextStatusSnapshot(
     long TranscriptChars,
     int? ThresholdOverride,
     int MessageCount,
-    int ToolCallCount);
+    int ToolCallCount,
+    ContextWindow? Window = null);
 
 /// <summary>
 /// Builds the <c>context_status</c> report: the last reported input-token count when the
 /// model source returned usage, a char-based transcript estimate, the effective auto-compact
-/// threshold, and how close the session is to it. The pressure percentage uses the reported
-/// count when available (it reflects the real context window), else the estimate — the same
-/// precedence <see cref="AutoCompaction.ShouldCompact"/> applies.
+/// threshold, how close the session is to it, and the resolved context window. The pressure
+/// percentage uses the reported count when available (it reflects the real context window),
+/// else the estimate — the same precedence <see cref="AutoCompaction.ShouldCompact"/> applies.
 /// </summary>
 public static class ContextStatusReport
 {
@@ -26,7 +27,7 @@ public static class ContextStatusReport
     public static string Build(ContextStatusSnapshot s)
     {
         var estimatedTokens = AutoCompaction.EstimateTokens(s.TranscriptChars);
-        var threshold       = AutoCompaction.ResolveThreshold(s.ThresholdOverride);
+        var threshold       = AutoCompaction.ResolveThreshold(s.ThresholdOverride, s.Window);
 
         var lines = new List<string>
         {
@@ -36,6 +37,20 @@ public static class ContextStatusReport
                 : "- Last reported input tokens: none yet (the model source has reported no usage this session)",
             Invariant($"- Estimated transcript tokens: ~{estimatedTokens:N0} (chars/{AutoCompaction.CharsPerToken} heuristic over {s.TranscriptChars:N0} chars)"),
         };
+
+        if (s.Window is { } window)
+        {
+            var currentForWindow = s.LastInputTokens ?? estimatedTokens;
+            var windowUsedPct = (double)currentForWindow / window.Tokens * 100;
+            var windowSource = s.LastInputTokens.HasValue ? "reported" : "estimated";
+            var knownLabel = window.Assumed ? "assumed" : "known";
+            lines.Add(Invariant($"- Context window: {window.Tokens:N0} tokens ({knownLabel})"));
+            lines.Add(Invariant($"- Context window usage: {windowUsedPct:F1}% of the {knownLabel} window used, based on the {windowSource} count"));
+        }
+        else
+        {
+            lines.Add("- Context window: unknown (using fallback assumption)");
+        }
 
         if (threshold <= 0)
         {
@@ -47,7 +62,7 @@ public static class ContextStatusReport
             var usedPct   = (double)current / threshold * 100;
             var source    = s.LastInputTokens.HasValue ? "reported" : "estimated";
             lines.Add(Invariant($"- Auto-compact threshold: {threshold:N0} tokens") +
-                      (s.ThresholdOverride.HasValue ? " (session override)" : " (default)"));
+                      (s.ThresholdOverride.HasValue ? " (session override)" : s.Window is { Assumed: false } ? " (derived from known window)" : " (default)"));
             lines.Add(Invariant($"- Context pressure: {usedPct:F1}% of the threshold used ({Math.Max(0, 100 - usedPct):F1}% headroom), based on the {source} count"));
         }
 

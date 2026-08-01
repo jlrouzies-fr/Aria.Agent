@@ -42,6 +42,8 @@ public static class LlmKeyStore
                 }
             }
 
+            if (keyB64 is null) return null;
+
             try
             {
                 return Encoding.UTF8.GetString(Convert.FromBase64String(keyB64));

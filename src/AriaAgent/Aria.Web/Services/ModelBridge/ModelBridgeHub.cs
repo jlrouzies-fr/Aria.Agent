@@ -174,6 +174,20 @@ public class ModelBridgeHub : Hub
     }
 
     /// <summary>
+    /// Called by the Aria.Bridge daemon at connect and on every knock: does that node hold a
+    /// human-confirmed soul master key? The value is stored on the live connection so the Devices
+    /// panel can name the machine whose pinning ceremony is still outstanding.
+    ///
+    /// A node self-assertion the server cannot verify, and deliberately not used for anything but
+    /// display — see <see cref="SoulKeyPinState"/>. Unknown values are folded to "unknown".
+    /// </summary>
+    public Task ReportSoulKeyState(string state)
+    {
+        _registry.SetNodeSoulKeyState(Context.ConnectionId, SoulKeyPinState.Sanitize(state));
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// Called by a freshly-enrolled bridge after it connects, to fetch the sync DEK that the approving
     /// node wrapped to its public key at enrollment (§11). Returns the opaque wrapped blob (or null if
     /// none stored yet); only the holder of the node private key can unwrap it, so the server relaying

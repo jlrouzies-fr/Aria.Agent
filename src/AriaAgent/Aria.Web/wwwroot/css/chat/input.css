@@ -109,7 +109,56 @@
 .chat-input:disabled { opacity: 0.4; cursor: not-allowed; }
 .chat-input.input-queued { border-color: var(--gold-dim); color: var(--gold-bright); }
 
-/* ── Queued message block (pinned above the composer, same family as the directive manifest) ── */
+/* ── Mid-turn steers waiting to be drained (above queue / composer) ── */
+.steer-pending-block {
+    border: 1px solid var(--border-normal);
+    border-left: 2px solid var(--gold-bright);
+    background: var(--bg-surface);
+    margin: 0 0 6px 0;
+    padding: 6px 10px 8px;
+    font-family: var(--font-mono);
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.35);
+}
+.steer-pending-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 5px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border-dim);
+    user-select: none;
+}
+.steer-pending-title { color: var(--gold-bright); letter-spacing: 2px; font-size: 10px; }
+.steer-pending-count {
+    color: var(--gold-dim);
+    font-size: 9px;
+    letter-spacing: 1px;
+    padding: 0 4px;
+    border: 1px solid var(--border-dim);
+}
+.steer-pending-hint { color: var(--text-dead); font-size: 9px; letter-spacing: 1px; margin-left: auto; }
+.steer-pending-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 4px 0;
+}
+.steer-pending-item + .steer-pending-item {
+    border-top: 1px solid var(--border-dim);
+}
+.steer-pending-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--gold-normal);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 72px;
+    overflow-y: auto;
+}
+
+/* ── Queued follow-ups (pinned above the composer, same family as the directive manifest) ── */
 .queue-block {
     border: 1px solid var(--border-normal);
     border-left: 2px solid var(--gold-dim);
@@ -126,12 +175,26 @@
     margin-bottom: 5px;
     padding-bottom: 4px;
     border-bottom: 1px solid var(--border-dim);
-    cursor: pointer;
     user-select: none;
 }
 .queue-title { color: var(--gold-normal); letter-spacing: 2px; font-size: 10px; }
-.queue-header:hover .queue-title { color: var(--gold-bright); }
+.queue-count {
+    color: var(--gold-dim);
+    font-size: 9px;
+    letter-spacing: 1px;
+    padding: 0 4px;
+    border: 1px solid var(--border-dim);
+}
 .queue-hint { color: var(--text-dead); font-size: 9px; letter-spacing: 1px; margin-left: auto; }
+.queue-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 4px 0;
+}
+.queue-item + .queue-item {
+    border-top: 1px solid var(--border-dim);
+}
 .queue-cancel {
     background: none;
     border: none;
@@ -140,19 +203,76 @@
     font-size: 10px;
     cursor: pointer;
     padding: 0 2px;
+    flex-shrink: 0;
+    line-height: 1.5;
 }
 .queue-cancel:hover { color: #e07070; }
+.queue-steer {
+    background: none;
+    border: 1px solid var(--border-dim);
+    color: var(--gold-dim);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    padding: 1px 6px;
+    flex-shrink: 0;
+    line-height: 1.5;
+}
+.queue-steer:hover:not(:disabled) {
+    color: var(--gold-bright);
+    border-color: var(--gold-dim);
+}
+.queue-steer:disabled { opacity: 0.35; cursor: not-allowed; }
 .queue-text {
+    flex: 1;
+    min-width: 0;
     font-size: 12px;
     line-height: 1.5;
     color: var(--text-normal);
     white-space: pre-wrap;
     word-break: break-word;
-    max-height: 96px;
+    max-height: 72px;
     overflow-y: auto;
     cursor: pointer;
 }
 .queue-text:hover { color: var(--gold-bright); }
+
+/* ── Edit & replay banner (armed when EDIT is clicked on a prior user turn) ── */
+.replay-block {
+    border: 1px solid var(--border-normal);
+    border-left: 2px solid var(--gold-dim);
+    background: var(--bg-surface);
+    margin: 0 0 6px 0;
+    padding: 6px 10px 8px;
+    font-family: var(--font-mono);
+}
+.replay-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+}
+.replay-title { color: var(--gold-normal); letter-spacing: 2px; font-size: 10px; }
+.replay-hint { color: var(--text-dead); font-size: 9px; letter-spacing: 1px; margin-left: auto; }
+.replay-cancel {
+    background: none;
+    border: none;
+    color: var(--text-dead);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    cursor: pointer;
+    padding: 0 2px;
+}
+.replay-cancel:hover { color: #e07070; }
+.replay-note {
+    margin-top: 5px;
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+}
+.chat-input.input-replay { border-color: var(--gold-dim); }
+.transmit-btn.transmit-replay { border-color: var(--gold-dim); color: var(--gold-bright); }
 
 .transmit-btn {
     background: var(--bg-surface);

@@ -108,6 +108,26 @@ public partial class ModelBridgeRegistry
     public IReadOnlyCollection<NodeConnection> GetNodes(string userId) =>
         _nodes.TryGetValue(userId, out var m) ? m.Values.ToList() : [];
 
+    /// <summary>
+    /// Records a node's self-reported soul-key pin state so the Devices panel can warn about a
+    /// machine that still needs its pinning ceremony. Display only — never a trust input
+    /// (<see cref="Aria.Shared.SoulKeyPinState"/>). The node re-reports on every 60s knock, so
+    /// <see cref="NodesChanged"/> fires only on an actual transition rather than once a minute.
+    /// </summary>
+    public void SetNodeSoulKeyState(string connectionId, string state)
+    {
+        if (!_connToUser.TryGetValue(connectionId, out var userId)) return;
+        if (!_nodes.TryGetValue(userId, out var map)) return;
+        foreach (var (nodeId, conn) in map)
+        {
+            if (conn.ConnectionId != connectionId) continue;
+            if (conn.SoulKeyPinState == state) return;
+            map[nodeId] = conn with { SoulKeyPinState = state };
+            NodesChanged?.Invoke(userId);
+            return;
+        }
+    }
+
     public bool TryGetNode(string userId, string nodeId, out NodeConnection node)
     {
         node = default!;
@@ -260,4 +280,5 @@ public partial class ModelBridgeRegistry
 
 /// <summary>One connected bridge (node) for a soul. Label/Platform are blank until Phase 3 reports them.</summary>
 public sealed record NodeConnection(
-    string NodeId, string Label, string Platform, string ConnectionId, DateTime ConnectedAt);
+    string NodeId, string Label, string Platform, string ConnectionId, DateTime ConnectedAt,
+    string SoulKeyPinState = Aria.Shared.SoulKeyPinState.Unknown);

@@ -115,4 +115,57 @@ public class ContextGrantStoreTests : IDisposable
         // The rogue key is not in the trusted set, so the grant must be rejected.
         Assert.False(await ContextGrantStore.HasValidGrantAsync(_db, soul, ctxId));
     }
+
+    [Fact]
+    public async Task JoinedNode_AcceptsPrimarySignedGrant_AfterSoulKeyCached()
+    {
+        var soul = TestCrypto.GenerateSoul(out var soulKey);
+        var joined = TestCrypto.GenerateNode(out _);
+        joined.ServerSoulId = soul.ServerSoulId;
+        // Simulate SiblingRoster caching the soul master public key on a joined node.
+        joined.PublicKeyBase64 = soul.PublicKeyBase64;
+
+        var ctxId = ContextGrantStore.ContextId(soul.ServerSoulId!, "sess-windows");
+        var expiry = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds();
+        var payload = Aria.Shared.NodeCrypto.GrantPayload("context", ctxId, ctxId, expiry);
+        var signature = Convert.ToBase64String(
+            soulKey.SignData(payload, System.Security.Cryptography.HashAlgorithmName.SHA256));
+
+        _db.ContextGrants.Add(new ContextGrant
+        {
+            ContextId = ctxId,
+            GrantType = "context",
+            ExpiryUnix = expiry,
+            SignatureBase64 = signature,
+        });
+        await _db.SaveChangesAsync();
+
+        Assert.True(await ContextGrantStore.HasValidGrantForRequestAsync(_db, joined, "sess-windows"));
+    }
+
+    [Fact]
+    public async Task JoinedNode_WithoutSoulKeyCache_RejectsPrimarySignedGrant()
+    {
+        var soul = TestCrypto.GenerateSoul(out var soulKey);
+        var joined = TestCrypto.GenerateNode(out _);
+        joined.ServerSoulId = soul.ServerSoulId;
+        joined.PublicKeyBase64 = null;
+
+        var ctxId = ContextGrantStore.ContextId(soul.ServerSoulId!, "sess-windows");
+        var expiry = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds();
+        var payload = Aria.Shared.NodeCrypto.GrantPayload("context", ctxId, ctxId, expiry);
+        var signature = Convert.ToBase64String(
+            soulKey.SignData(payload, System.Security.Cryptography.HashAlgorithmName.SHA256));
+
+        _db.ContextGrants.Add(new ContextGrant
+        {
+            ContextId = ctxId,
+            GrantType = "context",
+            ExpiryUnix = expiry,
+            SignatureBase64 = signature,
+        });
+        await _db.SaveChangesAsync();
+
+        Assert.False(await ContextGrantStore.HasValidGrantForRequestAsync(_db, joined, "sess-windows"));
+    }
 }

@@ -11,7 +11,7 @@ public sealed class EncryptedValueConverter : ValueConverter<string, string>
     public EncryptedValueConverter(VaultEncryption vault)
         : base(
             plain => vault.Encrypt(plain) ?? string.Empty,
-            cipher => vault.Decrypt(cipher))
+            cipher => vault.Decrypt(cipher) ?? string.Empty)
     {
     }
 }

@@ -18,6 +18,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <PackageReference Include="LLamaSharp" Version="0.27.0" />
+        <PackageReference Include="LLamaSharp.Backend.Cpu" Version="0.27.0" />
+        <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.22.1" />
+        <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
         <PackageReference Include="ModelContextProtocol" Version="1.3.0" />
         <PackageReference Include="Microsoft.Playwright" Version="1.49.0" />
         <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.8" />
@@ -39,6 +43,11 @@
 
     <ItemGroup>
       <InternalsVisibleTo Include="Aria.Tests" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <!-- Template (white-on-transparent) glyph for MacMenuBarIcon; mirrored from aria-bridge.ico. -->
+      <EmbeddedResource Include="Assets/aria-bridge-menubar.png" LogicalName="Aria.Bridge.Assets.aria-bridge-menubar.png" />
     </ItemGroup>
 
     <ItemGroup>

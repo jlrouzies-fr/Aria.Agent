@@ -81,5 +81,6 @@ public partial class Chat
             TranscriptChars(),
             SessionState.AutoCompactThreshold,
             _messages.Count,
-            _messages.Sum(m => m.ToolCalls.Count));
+            _messages.Sum(m => m.ToolCalls.Count),
+            _effectiveContextWindow);
 }

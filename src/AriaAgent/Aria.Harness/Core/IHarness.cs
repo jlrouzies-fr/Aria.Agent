@@ -1,4 +1,5 @@
 using Aria.Agent;
+using Aria.Harness.Context;
 using Aria.Harness.Formats;
 using Aria.Harness.Governance;
 using Microsoft.Agents.AI;
@@ -46,6 +47,16 @@ public interface IHarness
     /// </summary>
     Task<ThinkingFormat> DetectThinkingFormatAsync(
         string? sourceName,
+        string? modelId,
+        HarnessContext context,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Resolve the effective context window for a source+model, using the precedence order:
+    /// channel override → cached provider discovery → well-known cloud catalog → assumed fallback.
+    /// </summary>
+    Task<ContextWindow> ResolveContextWindowAsync(
+        ModelSource? source,
         string? modelId,
         HarnessContext context,
         CancellationToken ct = default);

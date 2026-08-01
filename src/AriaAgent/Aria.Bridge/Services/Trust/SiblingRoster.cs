@@ -25,7 +25,6 @@ public sealed class SiblingRoster(IServiceScopeFactory scopes, Action<string, st
     public async Task RefreshAsync(HubConnection hub, BridgeSoul soul, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(soul.ServerSoulId)) return;
-        if (string.IsNullOrEmpty(soul.PublicKeyBase64)) return;
 
         var serverSoulId = soul.ServerSoulId;
         if (_lastRefresh.TryGetValue(serverSoulId, out var last)
@@ -37,9 +36,25 @@ public sealed class SiblingRoster(IServiceScopeFactory scopes, Action<string, st
         try
         {
             var roster = await hub.InvokeAsync<IReadOnlyList<SoulNodeRosterEntry>>(
-                "GetSoulNodeRoster", serverSoulId, ct);
+                "GetSoulNodeRoster", serverSoulId, ct) ?? [];
 
-            await VerifyAndStoreAsync(serverSoulId, soul.PublicKeyBase64, roster ?? []);
+            var soulPub = ResolveSoulMasterPublicKey(soul, roster, out var trust);
+            LastTrusts[serverSoulId] = trust;
+            if (string.IsNullOrEmpty(soulPub))
+            {
+                // Remember what the server is claiming so the LOCAL pinning ceremony can check a
+                // human-supplied fingerprint against it. The candidate is never trusted on its own.
+                RememberPinCandidate(serverSoulId, roster);
+                log("WARN", trust == SoulKeyTrust.PinMismatch
+                    ? $"[SiblingRoster] REFUSED roster for {serverSoulId}: the server presented a different " +
+                      "soul master key than the one pinned on this node. Sibling grants stay rejected until " +
+                      "a human re-pins at this machine (/soul/pin-key)."
+                    : $"[SiblingRoster] soul master key not pinned on this node for {serverSoulId} — " +
+                      "sibling/primary grants are refused until a human pins it at this machine (/soul/pin-key).");
+                return;
+            }
+
+            await VerifyAndStoreAsync(serverSoulId, soulPub, roster);
             _lastRefresh[serverSoulId] = DateTime.UtcNow;
             log("INFO", $"[SiblingRoster] refreshed for soul {serverSoulId}");
         }
@@ -48,6 +63,89 @@ public sealed class SiblingRoster(IServiceScopeFactory scopes, Action<string, st
             log("WARN", $"[SiblingRoster] refresh failed for soul {serverSoulId}: {ex.Message}");
         }
     }
+
+    /// <summary>Why a joined node does or doesn't have a usable soul master key.</summary>
+    public enum SoulKeyTrust
+    {
+        /// <summary>Primary bridge, or a joined bridge whose pin matches the roster's primary entry.</summary>
+        Trusted,
+        /// <summary>Joined bridge with no human-confirmed soul key — fail closed.</summary>
+        NotPinned,
+        /// <summary>The roster's primary key differs from what a human pinned here — fail closed.</summary>
+        PinMismatch,
+    }
+
+    /// <summary>
+    /// The soul master public key that context grants are verified under.
+    ///
+    /// The primary bridge holds the master private key, so its own copy is authoritative. A joined
+    /// bridge holds only a node keypair and has no cryptographic way to recognise the soul key on its
+    /// own: every candidate reaches it through the untrusted server. It therefore accepts one only
+    /// after a human at that machine confirmed the fingerprint out of band (see the pinning ceremony
+    /// in <c>SoulPinEndpoints</c>), and thereafter refuses any roster that presents a different
+    /// primary. Deriving the key from the roster — as an earlier build did — let a malicious server
+    /// nominate its own key as "primary", self-sign the node's enrollment certificate under it, and
+    /// forge context grants that bypass the Layer B approval gate entirely.
+    /// </summary>
+    public static string? ResolveSoulMasterPublicKey(
+        BridgeSoul soul, IReadOnlyList<SoulNodeRosterEntry> roster, out SoulKeyTrust trust)
+    {
+        // Primary bridge: it IS the soul key holder, nothing to resolve or confirm.
+        if (string.IsNullOrEmpty(soul.NodePublicKeyBase64))
+        {
+            trust = SoulKeyTrust.Trusted;
+            return soul.PublicKeyBase64;
+        }
+
+        // Joined node. A value with no pin timestamp was cached by an older build straight from the
+        // roster, so it is treated as unverified rather than grandfathered in.
+        if (soul.SoulKeyPinnedAt is null || string.IsNullOrEmpty(soul.PublicKeyBase64))
+        {
+            trust = SoulKeyTrust.NotPinned;
+            return null;
+        }
+
+        var primary = roster.FirstOrDefault(e => e.IsPrimary);
+        if (!string.IsNullOrEmpty(primary?.NodePublicKeyBase64)
+            && !string.Equals(primary.NodePublicKeyBase64, soul.PublicKeyBase64, StringComparison.Ordinal))
+        {
+            trust = SoulKeyTrust.PinMismatch;
+            return null;
+        }
+
+        trust = SoulKeyTrust.Trusted;
+        return soul.PublicKeyBase64;
+    }
+
+    // serverSoulId → the primary key the server most recently claimed. Held in memory only and never
+    // trusted by itself: the pinning ceremony accepts it only when a human types the matching
+    // fingerprint read off the primary device.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> PinCandidates = new();
+
+    private static void RememberPinCandidate(string serverSoulId, IReadOnlyList<SoulNodeRosterEntry> roster)
+    {
+        var primary = roster.FirstOrDefault(e => e.IsPrimary);
+        if (!string.IsNullOrEmpty(primary?.NodePublicKeyBase64))
+            PinCandidates[serverSoulId] = primary.NodePublicKeyBase64;
+    }
+
+    /// <summary>The soul master key the server currently claims for this soul, or null if the node
+    /// hasn't seen a roster yet. Only ever consumed by the local pinning ceremony.</summary>
+    public static string? PinCandidate(string serverSoulId) =>
+        PinCandidates.TryGetValue(serverSoulId, out var k) ? k : null;
+
+    // serverSoulId → the trust verdict from the last roster refresh. Read only to describe this
+    // node's state to the human (bridge status page, and the server's Devices panel via
+    // Aria.Shared.SoulKeyPinState); never an input to a trust decision.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SoulKeyTrust> LastTrusts = new();
+
+    /// <summary>The verdict from the most recent roster refresh, or null if none has run yet.</summary>
+    public static SoulKeyTrust? LastTrust(string serverSoulId) =>
+        LastTrusts.TryGetValue(serverSoulId, out var t) ? t : null;
+
+    /// <summary>Drops the cached verdict so a pin/unpin is reflected without waiting for the next
+    /// five-minute refresh. Called by the pinning ceremony.</summary>
+    public static void ForgetTrust(string serverSoulId) => LastTrusts.TryRemove(serverSoulId, out _);
 
     private async Task VerifyAndStoreAsync(
         string serverSoulId, string soulPublicKeyBase64, IReadOnlyList<SoulNodeRosterEntry> roster)

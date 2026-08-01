@@ -1,16 +1,20 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Aria.Bridge.Data;
+using Aria.Bridge.Services.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Aria.Bridge.Services.Noosphere;
 
-// LLM extraction (Inscribe → atomic facts/entities/relations) and contemplate-synthesis, both via a
-// single non-streaming chat/completions call over the configured extraction channel.
+// LLM extraction (Inscribe → atomic facts/entities/relations) and contemplate-synthesis. Prefers
+// opt-in built-in GGUF when enabled+ready; otherwise a non-streaming chat/completions call over the
+// configured extraction channel.
 public class NoosphereExtractor(
     NoosphereConfigService configService,
+    NoosphereBuiltinRuntime builtinRuntime,
     IOptions<NoosphereOptions> legacyOptions,
     IServiceScopeFactory scopeFactory)
 {
@@ -21,7 +25,13 @@ public class NoosphereExtractor(
     // error message — e.g. LM Studio's own "model not found" text — instead of a generic fallback.
     public string? LastError { get; private set; }
     public DateTime? LastErrorAt { get; private set; }
-    private void Fail(string reason) { LastError = reason; LastErrorAt = DateTime.UtcNow; }
+    private void Fail(string reason)
+    {
+        LastError = reason;
+        LastErrorAt = DateTime.UtcNow;
+        // Event Log panel reads BridgeLogger — ILogger alone never surfaces there.
+        BridgeLogger.Log("ERROR", $"Noosphere extraction: {reason}");
+    }
 
     public record ExtractedEntity(string Name, string? Kind);
     public record ExtractedRelation(string From, string Relation, string To);
@@ -33,29 +43,168 @@ public class NoosphereExtractor(
         IReadOnlyList<(string Name, string Description)> anchors,
         CancellationToken ct)
     {
-        var channel = await ResolveAsync(ct);
-        if (channel == null) return null;
+        var builtin = await configService.IsBuiltinActiveAsync(builtinRuntime, ct);
+        var system = BuildExtractSystemPrompt(knownEntities, anchors, compact: builtin);
+        var sourceLabel = "builtin";
+        string? raw;
+        string? error;
 
+        if (builtin)
+        {
+            // One retry — 1.2B Q4 occasionally emits broken JSON; a second draw is cheap vs raw fallback.
+            // First failure sets LastError so the Memory nav/banner lights up during the retry window;
+            // success clears it (a recovered attempt is not a sticky fault).
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                (raw, error) = await builtinRuntime.CompleteChatAsync(
+                    system, content, temperature: 0.1, maxTokens: 2048, ct, prefillJsonObject: true);
+                if (error != null) { Fail(error); return null; }
+                var parsed = TryParseFacts(raw, sourceLabel, out var failReason);
+                if (parsed is { Count: > 0 })
+                {
+                    if (attempt > 0)
+                        BridgeLogger.Log("INFO", "Noosphere builtin extract recovered on retry.");
+                    LastError = null;
+                    return parsed;
+                }
+                if (attempt == 0)
+                {
+                    // Surface on Memory UI while we retry (refreshMemoryHealth polls lastExtractionError).
+                    LastError = failReason;
+                    LastErrorAt = DateTime.UtcNow;
+                    BridgeLogger.Log("INFO", $"Noosphere builtin extract retrying — {failReason}");
+                }
+                else
+                {
+                    Fail(failReason ?? $"{sourceLabel} returned JSON without usable facts.");
+                    return null;
+                }
+            }
+            return null;
+        }
+
+        var channel = await ResolveAsync(ct);
+        if (channel == null)
+        {
+            // Without this, Inscribe still "succeeds" and ProcessIngest falls back to raw text with
+            // no LastError for BuiltinTools to elevate — the agent then claims the Archivum was sealed.
+            Fail("No extraction channel configured or resolvable on this node — open the bridge Memory tab and set a working local model (e.g. LM Studio), or enable built-in models.");
+            return null;
+        }
+        sourceLabel = $"'{channel.Model}' on {channel.Url}";
+        (raw, error) = await PostChatCompletionAsync(channel, system, content, temperature: 0.1, wantJsonMode: true, maxTokens: 2048, ct);
+        if (error != null) { Fail(error); return null; }
+
+        var result = TryParseFacts(raw, sourceLabel, out var reason);
+        if (result is { Count: > 0 })
+        {
+            LastError = null;
+            return result;
+        }
+        Fail(reason ?? $"{sourceLabel} returned JSON without usable facts.");
+        return null;
+    }
+
+    private static List<ExtractedFact>? TryParseFacts(string? raw, string sourceLabel, out string? failReason)
+    {
+        failReason = null;
+        var json = TryExtractJson(raw);
+        if (json == null)
+        {
+            failReason =
+                $"{sourceLabel} returned no usable JSON — check it's an instruct model, not a \"thinking\"/reasoning one. Snippet: {Snippet(raw)}";
+            return null;
+        }
+
+        // Soft-repair first — 1.2B models often emit trailing commas or bare kind enums
+        // (`"kind": person|place`) that JsonDocument rejects.
+        foreach (var candidate in new[] { json, SoftRepairJson(json) }.Distinct())
+        {
+            try
+            {
+                var result = ParseFacts(candidate);
+                if (result is { Count: > 0 })
+                    return result;
+                failReason = $"{sourceLabel} returned JSON without usable facts. Snippet: {Snippet(candidate)}";
+            }
+            catch (Exception ex)
+            {
+                failReason = $"{sourceLabel} returned unparseable JSON: {ex.Message}. Snippet: {Snippet(candidate)}";
+            }
+        }
+        return null;
+    }
+
+    public async Task<string?> ContemplateSynthesisAsync(string query, string probedText, CancellationToken ct)
+    {
+        const string system =
+            "You are the Noosphere contemplation cogitator of an Imperial archive. Answer the question " +
+            "drawing only on the probed engrams below. If the archive holds nothing relevant, say so " +
+            "plainly — do not invent facts.";
+        var user = $"Probed engrams:\n{probedText}\n\nQuestion: {query}";
+
+        string? text;
+        string? error;
+        if (await configService.IsBuiltinActiveAsync(builtinRuntime, ct))
+        {
+            (text, error) = await builtinRuntime.CompleteChatAsync(system, user, temperature: 0.3, maxTokens: 1024, ct);
+        }
+        else
+        {
+            var channel = await ResolveAsync(ct);
+            if (channel == null)
+            {
+                Fail("No extraction channel configured or resolvable on this node — open the bridge Memory tab and set a working local model (e.g. LM Studio), or enable built-in models.");
+                return null;
+            }
+            (text, error) = await PostChatCompletionAsync(channel, system, user, temperature: 0.3, wantJsonMode: false, maxTokens: 1024, ct);
+        }
+
+        if (error != null) { Fail(error); return null; }
+        LastError = null;
+        return text;
+    }
+
+    private static string BuildExtractSystemPrompt(
+        IReadOnlyList<(string Name, string? Kind)> knownEntities,
+        IReadOnlyList<(string Name, string Description)> anchors,
+        bool compact)
+    {
         // Known-entities + anchors go directly above the schema — small local models lose
         // instructions placed far from the thing they govern, so the "reuse EXACT names" rule sits
         // right next to the list it applies to.
         var knownBlock = knownEntities.Count == 0 ? "" : $"""
 
-            KNOWN ENTITIES already in the archive (reuse the EXACT name string when a mention refers
-            to the same thing; only create a new entity for genuinely new things):
+            KNOWN ENTITIES (reuse EXACT names when the same thing is mentioned):
             {string.Join("\n", knownEntities.Select(e => $"- {e.Name} ({e.Kind ?? "other"})"))}
 
             """;
         var anchorBlock = anchors.Count == 0 ? "" : $"""
 
-            ACTIVE PROJECTS (if the input concerns one of these projects, include the project itself
-            as an entity of kind "project", using its exact name, in the relevant facts — otherwise
-            do not mention it):
+            ACTIVE PROJECTS (include as kind "project" with exact name when relevant):
             {string.Join("\n", anchors.Select(a => $"- {a.Name} — {a.Description}"))}
 
             """;
 
-        var system = $$"""
+        // Compact prompt for the on-node 1.2B model — long Imperial framing + schema prose was
+        // producing well-formed JSON that ignored the facts[] contract.
+        if (compact)
+        {
+            // Avoid {{...}} object literals inside $$""" — the interpolator treats inner { as expressions.
+            return
+                "Extract atomic self-contained facts from the user text into JSON only.\n" +
+                $"Current UTC: {DateTime.UtcNow:yyyy-MM-dd HH:mm}.\n" +
+                "Rules: resolve pronouns; put ISO dates in timeAnchor when clear; " +
+                "entities MUST be objects {\"name\":\"...\",\"kind\":\"person\"} — never bare strings; " +
+                "kind is one of person,place,org,concept,thing,event,project,other; " +
+                "relations only between entities listed on the same fact. No markdown, no commentary.\n" +
+                knownBlock + anchorBlock +
+                "Schema:\n" +
+                "{\"facts\":[{\"content\":\"...\",\"entities\":[{\"name\":\"...\",\"kind\":\"person\"}]," +
+                "\"relations\":[{\"from\":\"...\",\"relation\":\"...\",\"to\":\"...\"}],\"timeAnchor\":\"YYYY-MM-DD\"}]}";
+        }
+
+        return $$"""
             You are the Noosphere ingestion cogitator of an Imperial archive. You convert raw
             intelligence into discrete memory engrams.
             Current date-time: {{DateTime.UtcNow:yyyy-MM-dd HH:mm}} UTC.
@@ -71,85 +220,117 @@ public class NoosphereExtractor(
 
             {"facts":[{"content":"string","entities":[{"name":"string","kind":"person|place|org|concept|thing|event|project|other"}],"relations":[{"from":"string","relation":"string","to":"string"}],"timeAnchor":"string (optional)"}]}
             """;
-
-        var (raw, error) = await PostChatCompletionAsync(channel, system, content, temperature: 0.1, wantJsonMode: true, maxTokens: 2048, ct);
-        if (error != null) { Fail(error); return null; }
-
-        var json = TryExtractJson(raw);
-        if (json == null)
-        {
-            Fail($"'{channel.Model}' on {channel.Url} returned no usable JSON — check it's an instruct model, not a \"thinking\"/reasoning one.");
-            return null;
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("facts", out var facts) || facts.ValueKind != JsonValueKind.Array)
-            {
-                Fail($"'{channel.Model}' on {channel.Url} returned JSON without a 'facts' array.");
-                return null;
-            }
-
-            var result = new List<ExtractedFact>();
-            foreach (var f in facts.EnumerateArray())
-            {
-                var factContent = f.TryGetProperty("content", out var c) ? c.GetString() : null;
-                if (string.IsNullOrWhiteSpace(factContent)) continue;
-
-                var entities = new List<ExtractedEntity>();
-                if (f.TryGetProperty("entities", out var ents) && ents.ValueKind == JsonValueKind.Array)
-                    foreach (var e in ents.EnumerateArray())
-                    {
-                        var name = e.TryGetProperty("name", out var n) ? n.GetString() : null;
-                        if (string.IsNullOrWhiteSpace(name)) continue;
-                        var kind = e.TryGetProperty("kind", out var k) ? k.GetString() : null;
-                        entities.Add(new ExtractedEntity(name.Trim(), string.IsNullOrWhiteSpace(kind) ? null : kind));
-                    }
-
-                var relations = new List<ExtractedRelation>();
-                if (f.TryGetProperty("relations", out var rels) && rels.ValueKind == JsonValueKind.Array)
-                    foreach (var r in rels.EnumerateArray())
-                    {
-                        var from = r.TryGetProperty("from", out var fr) ? fr.GetString() : null;
-                        var to   = r.TryGetProperty("to", out var to_) ? to_.GetString() : null;
-                        var rel  = r.TryGetProperty("relation", out var rl) ? rl.GetString() : null;
-                        if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to) || string.IsNullOrWhiteSpace(rel))
-                            continue;
-                        relations.Add(new ExtractedRelation(from.Trim(), rel.Trim(), to.Trim()));
-                    }
-
-                var timeAnchor = f.TryGetProperty("timeAnchor", out var ta) ? ta.GetString() : null;
-                result.Add(new ExtractedFact(factContent.Trim(), entities, relations,
-                    string.IsNullOrWhiteSpace(timeAnchor) ? null : timeAnchor));
-            }
-            if (result.Count == 0) return null;
-            LastError = null;
-            return result;
-        }
-        catch (Exception ex)
-        {
-            Fail($"'{channel.Model}' on {channel.Url} returned unparseable JSON: {ex.Message}");
-            return null;
-        }
     }
 
-    public async Task<string?> ContemplateSynthesisAsync(string query, string probedText, CancellationToken ct)
+    /// <summary>
+    /// Tolerant fact parse for channel + builtin models. Accepts root <c>facts</c>/<c>Facts</c>,
+    /// a bare array of fact objects, and <c>content</c>/<c>text</c>/<c>fact</c> for the body.
+    /// </summary>
+    internal static List<ExtractedFact>? ParseFacts(string json)
     {
-        var channel = await ResolveAsync(ct);
-        if (channel == null) return null;
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
 
-        const string system =
-            "You are the Noosphere contemplation cogitator of an Imperial archive. Answer the question " +
-            "drawing only on the probed engrams below. If the archive holds nothing relevant, say so " +
-            "plainly — do not invent facts.";
-        var user = $"Probed engrams:\n{probedText}\n\nQuestion: {query}";
+        JsonElement factsEl;
+        if (root.ValueKind == JsonValueKind.Array)
+            factsEl = root;
+        else if (root.ValueKind == JsonValueKind.Object)
+        {
+            if (!TryGetPropertyIgnoreCase(root, "facts", out factsEl)
+                || factsEl.ValueKind != JsonValueKind.Array)
+            {
+                // Single fact object at the root — wrap it.
+                if (ReadFactContent(root) != null)
+                    factsEl = root; // handled as one-shot below
+                else
+                    return null;
+            }
+        }
+        else
+            return null;
 
-        var (text, error) = await PostChatCompletionAsync(channel, system, user, temperature: 0.3, wantJsonMode: false, maxTokens: 1024, ct);
-        if (error != null) { Fail(error); return null; }
-        LastError = null;
-        return text;
+        var result = new List<ExtractedFact>();
+        if (factsEl.ValueKind == JsonValueKind.Object)
+        {
+            var one = ReadFact(factsEl);
+            if (one != null) result.Add(one);
+            return result.Count == 0 ? null : result;
+        }
+
+        foreach (var f in factsEl.EnumerateArray())
+        {
+            var one = ReadFact(f);
+            if (one != null) result.Add(one);
+        }
+        return result;
     }
+
+    private static ExtractedFact? ReadFact(JsonElement f)
+    {
+        var factContent = ReadFactContent(f);
+        if (string.IsNullOrWhiteSpace(factContent)) return null;
+
+        var entities = new List<ExtractedEntity>();
+        if (TryGetPropertyIgnoreCase(f, "entities", out var ents) && ents.ValueKind == JsonValueKind.Array)
+            foreach (var e in ents.EnumerateArray())
+            {
+                // 1.2B models often emit ["Alice","Berlin"] instead of [{name,kind},…].
+                if (e.ValueKind == JsonValueKind.String)
+                {
+                    var bare = e.GetString();
+                    if (!string.IsNullOrWhiteSpace(bare))
+                        entities.Add(new ExtractedEntity(bare.Trim(), null));
+                    continue;
+                }
+                var name = GetStringIgnoreCase(e, "name") ?? GetStringIgnoreCase(e, "entity");
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                var kind = GetStringIgnoreCase(e, "kind");
+                entities.Add(new ExtractedEntity(name.Trim(), string.IsNullOrWhiteSpace(kind) ? null : kind));
+            }
+
+        var relations = new List<ExtractedRelation>();
+        if (TryGetPropertyIgnoreCase(f, "relations", out var rels) && rels.ValueKind == JsonValueKind.Array)
+            foreach (var r in rels.EnumerateArray())
+            {
+                var from = GetStringIgnoreCase(r, "from");
+                var to = GetStringIgnoreCase(r, "to");
+                var rel = GetStringIgnoreCase(r, "relation") ?? GetStringIgnoreCase(r, "type");
+                if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to) || string.IsNullOrWhiteSpace(rel))
+                    continue;
+                relations.Add(new ExtractedRelation(from.Trim(), rel.Trim(), to.Trim()));
+            }
+
+        var timeAnchor = GetStringIgnoreCase(f, "timeAnchor") ?? GetStringIgnoreCase(f, "time_anchor");
+        return new ExtractedFact(factContent.Trim(), entities, relations,
+            string.IsNullOrWhiteSpace(timeAnchor) ? null : timeAnchor);
+    }
+
+    private static string? ReadFactContent(JsonElement f) =>
+        GetStringIgnoreCase(f, "content")
+        ?? GetStringIgnoreCase(f, "text")
+        ?? GetStringIgnoreCase(f, "fact");
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement obj, string name, out JsonElement value)
+    {
+        if (obj.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var p in obj.EnumerateObject())
+            {
+                if (string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = p.Value;
+                    return true;
+                }
+            }
+        }
+        value = default;
+        return false;
+    }
+
+    private static string? GetStringIgnoreCase(JsonElement obj, string name) =>
+        TryGetPropertyIgnoreCase(obj, name, out var el) && el.ValueKind == JsonValueKind.String
+            ? el.GetString()
+            : null;
 
     private async Task<NoosphereChannelResolver.ResolvedChannel?> ResolveAsync(CancellationToken ct)
     {
@@ -217,7 +398,7 @@ public class NoosphereExtractor(
         }
     }
 
-    private static string? TryExtractJson(string? raw)
+    internal static string? TryExtractJson(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
         var text = raw.Trim();
@@ -242,9 +423,75 @@ public class NoosphereExtractor(
             if (firstNewline >= 0) text = text[(firstNewline + 1)..];
             var fenceEnd = text.LastIndexOf("```", StringComparison.Ordinal);
             if (fenceEnd >= 0) text = text[..fenceEnd];
+            text = text.Trim();
         }
-        var start = text.IndexOf('{');
-        var end = text.LastIndexOf('}');
-        return start < 0 || end < 0 || end <= start ? null : text[start..(end + 1)];
+
+        // Prefer a root object; fall back to a root array (small models often emit [{...}] ).
+        // Use balanced scanning — first-{/last-} grabs trailing junk the 1.2B model sometimes
+        // appends after a valid object ("…} more text {…}"), which then fails JsonDocument.Parse.
+        var objStart = text.IndexOf('{');
+        var arrStart = text.IndexOf('[');
+        if (objStart < 0 && arrStart < 0) return null;
+
+        if (arrStart >= 0 && (objStart < 0 || arrStart < objStart))
+            return SliceBalanced(text, arrStart, '[', ']');
+
+        return SliceBalanced(text, objStart, '{', '}');
+    }
+
+    private static string? SliceBalanced(string text, int start, char open, char close)
+    {
+        var depth = 0;
+        var inString = false;
+        var escape = false;
+        for (var i = start; i < text.Length; i++)
+        {
+            var ch = text[i];
+            if (inString)
+            {
+                if (escape) { escape = false; continue; }
+                if (ch == '\\') { escape = true; continue; }
+                if (ch == '"') inString = false;
+                continue;
+            }
+            if (ch == '"') { inString = true; continue; }
+            if (ch == open) depth++;
+            else if (ch == close)
+            {
+                depth--;
+                if (depth == 0) return text[start..(i + 1)];
+            }
+        }
+        return null;
+    }
+
+    private static string Snippet(string? s)
+    {
+        if (string.IsNullOrEmpty(s)) return "(empty)";
+        var t = s.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return t.Length <= 180 ? t : t[..180] + "…";
+    }
+
+    /// <summary>
+    /// Best-effort fixes for common small-model JSON mistakes before System.Text.Json parses.
+    /// </summary>
+    internal static string SoftRepairJson(string json)
+    {
+        // Trailing commas: {"a":1,} or [1,2,]
+        var repaired = Regex.Replace(json, @",(\s*[\]}])", "$1");
+        // Bare values after ':' — "kind": person|place  or  "url": http://x — quote them.
+        repaired = Regex.Replace(
+            repaired,
+            @":\s*([A-Za-z_][A-Za-z0-9_/.|:-]*)\s*(?=[,}\]])",
+            m =>
+            {
+                var v = m.Groups[1].Value;
+                if (v is "true" or "false" or "null") return m.Value;
+                if (double.TryParse(v, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out _))
+                    return m.Value;
+                return ": \"" + v.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+            });
+        return repaired;
     }
 }

@@ -16,6 +16,53 @@ public class BridgeMemoryClient(ModelBridgeRegistry registry)
         return result?.Body != null ? JsonSerializer.Deserialize<MemoryStatsDto>(result.Value.Body, _json) : null;
     }
 
+    /// <summary>
+    /// Aggregates ingest health across every connected node. Inscribe returns immediately and the
+    /// worker extracts async — a failure on a secondary box (LM Studio down on Windows) must still
+    /// reach the nav warning even when the primary Mac would answer a bare GetStatsAsync first.
+    /// </summary>
+    public async Task<MemoryNavHealth> GetNavHealthAsync(string userId)
+    {
+        var nodes = registry.GetNodes(userId).ToList();
+        if (nodes.Count == 0)
+        {
+            var lone = await GetStatsAsync(userId);
+            return AggregateNavHealth([(lone, null)]);
+        }
+
+        var samples = new List<(MemoryStatsDto? Stats, string? NodeLabel)>(nodes.Count);
+        foreach (var n in nodes)
+        {
+            var label = !string.IsNullOrWhiteSpace(n.Label) ? n.Label
+                : !string.IsNullOrWhiteSpace(n.Platform) ? n.Platform
+                : n.NodeId;
+            samples.Add((await GetStatsAsync(userId, n.NodeId), label));
+        }
+        return AggregateNavHealth(samples);
+    }
+
+    /// <summary>Pure fold of per-node stats into the sidebar indicator. Prefers the most recent failure.</summary>
+    internal static MemoryNavHealth AggregateNavHealth(
+        IReadOnlyList<(MemoryStatsDto? Stats, string? NodeLabel)> samples)
+    {
+        var processing = false;
+        string? err = null;
+        DateTime? errAt = null;
+        string? errNode = null;
+        foreach (var (stats, label) in samples)
+        {
+            if (stats == null) continue;
+            if (stats.PendingIngests > 0) processing = true;
+            if (string.IsNullOrEmpty(stats.LastExtractionError)) continue;
+            if (errAt != null && (stats.LastExtractionErrorAt == null || stats.LastExtractionErrorAt <= errAt))
+                continue;
+            err = stats.LastExtractionError;
+            errAt = stats.LastExtractionErrorAt;
+            errNode = label;
+        }
+        return new MemoryNavHealth(processing, err, errAt, errNode);
+    }
+
     public async Task<List<EngramDto>> GetEngramsAsync(string userId, int offset = 0, int limit = 20, string? entityId = null, string? q = null, string? nodeId = null)
     {
         var query = $"?offset={offset}&limit={limit}"
@@ -112,7 +159,13 @@ public class BridgeMemoryClient(ModelBridgeRegistry registry)
 
 public record MemoryStatsDto(
     int Engrams, int Entities, int Links, int PendingIngests, int EmbeddedCount,
-    bool EmbeddingsConfigured, bool ExtractionConfigured);
+    bool EmbeddingsConfigured, bool ExtractionConfigured,
+    string? LastExtractionError = null, DateTime? LastExtractionErrorAt = null,
+    string? LastEmbeddingError = null, DateTime? LastEmbeddingErrorAt = null);
+
+/// <summary>Sidebar Noosphere indicator — pending queue and/or a live extraction-channel failure.</summary>
+public record MemoryNavHealth(
+    bool Processing, string? ExtractionError, DateTime? ExtractionErrorAt, string? ErrorNodeLabel);
 
 public record EngramDto(
     string Id, string Content, string? TimeAnchor, DateTime CreatedAt,

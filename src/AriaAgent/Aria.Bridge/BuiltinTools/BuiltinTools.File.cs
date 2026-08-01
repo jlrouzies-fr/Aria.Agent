@@ -140,7 +140,7 @@ public static partial class BuiltinTools
     }
 
     private static ToolCallResponse ReadFile(
-        Dictionary<string, JsonElement> args, SecurityPolicy? policy)
+        Dictionary<string, JsonElement> args, SecurityPolicy? policy, int? contextWindow)
     {
         var path = Expand(args.Str("path") ?? throw new ArgumentException("'path' is required"));
         policy?.EnforcePath(path);
@@ -152,35 +152,97 @@ public static partial class BuiltinTools
         if (!File.Exists(path))
             return Err($"File not found: {path}");
 
-        var lines     = File.ReadAllLines(path);
         var startLine = args.Int("start_line");
         var endLine   = args.Int("end_line");
 
-        var from = startLine.HasValue ? Math.Max(0, startLine.Value - 1) : 0;
-        var to   = endLine.HasValue   ? Math.Min(lines.Length - 1, endLine.Value - 1) : lines.Length - 1;
+        // Known-window guard: if the file would eat more than 25% of the budget, return only the first
+        // ~200 lines and guide the model toward range reads. With an assumed window, keep today's
+        // behaviour (whole file) so we do not silently change existing sessions.
+        if (contextWindow.HasValue && !startLine.HasValue && !endLine.HasValue)
+        {
+            var info = new FileInfo(path);
+            var estimatedTokens = (info.Length + 3) / 4; // chars/4, rounded up
+            var budget = contextWindow.Value / 4L;       // 25% of the window
+            if (estimatedTokens > budget)
+            {
+                var lines = File.ReadAllLines(path);
+                var cap = Math.Min(200, lines.Length);
+                var slice = lines[..cap];
+                var text = string.Join('\n', slice.Select((l, i) => $"{i + 1}\t{l}"));
+                return new ToolCallResponse(
+                    text + $"\n\n[FILE TRUNCATED] This file is estimated at ~{estimatedTokens:N0} tokens, " +
+                    $"which exceeds 25% of the known context window ({contextWindow.Value:N0} tokens). " +
+                    "Use start_line/end_line to read specific ranges rather than the whole file.",
+                    false);
+            }
+        }
 
-        var slice = lines[from..(to + 1)];
-        var text  = string.Join('\n', slice.Select((l, i) => $"{from + i + 1}\t{l}"));
-        return new ToolCallResponse(text, false);
+        var linesAll = File.ReadAllLines(path);
+
+        var from = startLine.HasValue ? Math.Max(0, startLine.Value - 1) : 0;
+        var to   = endLine.HasValue   ? Math.Min(linesAll.Length - 1, endLine.Value - 1) : linesAll.Length - 1;
+
+        var sliceAll = linesAll[from..(to + 1)];
+        var textAll  = string.Join('\n', sliceAll.Select((l, i) => $"{from + i + 1}\t{l}"));
+        return new ToolCallResponse(textAll, false);
     }
 
     private static ToolCallResponse WriteFile(
         Dictionary<string, JsonElement> args, SecurityPolicy? policy, BridgeDbContext? db)
     {
-        var path    = Expand(args.Str("path")    ?? throw new ArgumentException("'path' is required"));
-        var content = args.Str("content") ?? throw new ArgumentException("'content' is required");
-        policy?.EnforcePath(path);
-
-        var preContent = ReadPreImage(path, out var existed);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, content);
-        var metadata = BuildFileMutationMetadata(db, path, preContent, content, "write_file", out var _, created: !existed);
-        return new ToolCallResponse($"Wrote {content.Length} chars to {path}", false, MetadataJson: metadata);
+        var plan = PlanWriteFile(args, policy);
+        Directory.CreateDirectory(Path.GetDirectoryName(plan.Path)!);
+        File.WriteAllText(plan.Path, plan.PostContent);
+        var metadata = BuildFileMutationMetadata(db, plan.Path, plan.PreContent, plan.PostContent, "write_file",
+            out var _, out var diff, created: plan.PreContent == null);
+        return new ToolCallResponse(
+            AppendDiffFeedback($"Wrote {plan.PostContent.Length} chars to {plan.Path}", diff), false, MetadataJson: metadata);
     }
 
     private static ToolCallResponse EditFile(
         Dictionary<string, JsonElement> args, SecurityPolicy? policy, BridgeDbContext? db)
     {
+        if (TryPlanEditFile(args, policy, out var plan) is { } error)
+            return error;
+
+        File.WriteAllText(plan!.Path, plan.PostContent);
+        var metadata = BuildFileMutationMetadata(db, plan.Path, plan.PreContent, plan.PostContent, "edit_file",
+            out var _, out var diff);
+        return new ToolCallResponse(
+            AppendDiffFeedback($"Replaced 1 occurrence in {plan.Path}", diff), false, MetadataJson: metadata);
+    }
+
+    private static ToolCallResponse MultiEdit(
+        Dictionary<string, JsonElement> args, SecurityPolicy? policy, BridgeDbContext? db)
+    {
+        if (TryPlanMultiEdit(args, policy, out var plan, out var editCount) is { } error)
+            return error;
+
+        File.WriteAllText(plan!.Path, plan.PostContent);
+        var metadata = BuildFileMutationMetadata(db, plan.Path, plan.PreContent, plan.PostContent, "multi_edit",
+            out var _, out var diff);
+        return new ToolCallResponse(
+            AppendDiffFeedback($"Applied {editCount} edit(s) to {plan.Path}", diff), false, MetadataJson: metadata);
+    }
+
+    // ── Pure planners (shared by the mutation handlers above and /tools/preview) ──
+    // Each validates args + scope + the CURRENT file bytes and returns the pre/post images
+    // WITHOUT writing anything — the handler writes, the preview endpoint only diffs.
+
+    private sealed record MutationPlan(string Path, string? PreContent, string PostContent);
+
+    private static MutationPlan PlanWriteFile(Dictionary<string, JsonElement> args, SecurityPolicy? policy)
+    {
+        var path    = Expand(args.Str("path")    ?? throw new ArgumentException("'path' is required"));
+        var content = args.Str("content") ?? throw new ArgumentException("'content' is required");
+        policy?.EnforcePath(path);
+        return new MutationPlan(path, ReadPreImage(path, out _), content);
+    }
+
+    private static ToolCallResponse? TryPlanEditFile(
+        Dictionary<string, JsonElement> args, SecurityPolicy? policy, out MutationPlan? plan)
+    {
+        plan = null;
         var path   = Expand(args.Str("path")       ?? throw new ArgumentException("'path' is required"));
         var oldStr = args.Str("old_string") ?? throw new ArgumentException("'old_string' is required");
         var newStr = args.Str("new_string") ?? throw new ArgumentException("'new_string' is required");
@@ -194,16 +256,15 @@ public static partial class BuiltinTools
         if (count > 1)
             return Err($"old_string is ambiguous ({count} occurrences in {path}). Add more surrounding context to make it unique.");
 
-        var preContent = text;
-        var postContent = text.Replace(oldStr, newStr, StringComparison.Ordinal);
-        File.WriteAllText(path, postContent);
-        var metadata = BuildFileMutationMetadata(db, path, preContent, postContent, "edit_file", out var _);
-        return new ToolCallResponse($"Replaced 1 occurrence in {path}", false, MetadataJson: metadata);
+        plan = new MutationPlan(path, text, text.Replace(oldStr, newStr, StringComparison.Ordinal));
+        return null;
     }
 
-    private static ToolCallResponse MultiEdit(
-        Dictionary<string, JsonElement> args, SecurityPolicy? policy, BridgeDbContext? db)
+    private static ToolCallResponse? TryPlanMultiEdit(
+        Dictionary<string, JsonElement> args, SecurityPolicy? policy, out MutationPlan? plan, out int editCount)
     {
+        plan = null;
+        editCount = 0;
         var path = Expand(args.Str("path") ?? throw new ArgumentException("'path' is required"));
         policy?.EnforcePath(path);
 
@@ -238,9 +299,9 @@ public static partial class BuiltinTools
             working = working.Replace(edits[i].Old, edits[i].New, StringComparison.Ordinal);
         }
 
-        File.WriteAllText(path, working);
-        var metadata = BuildFileMutationMetadata(db, path, preContent, working, "multi_edit", out var _);
-        return new ToolCallResponse($"Applied {edits.Count} edit(s) to {path}", false, MetadataJson: metadata);
+        plan = new MutationPlan(path, preContent, working);
+        editCount = edits.Count;
+        return null;
     }
 
     private static ToolCallResponse UndoFile(
@@ -277,7 +338,7 @@ public static partial class BuiltinTools
         var restoredExists = File.Exists(path);
         var postContent = restoredExists ? File.ReadAllText(path) : "";
         var metadata = BuildFileMutationMetadata(db, path, preContent, postContent, "undo_file",
-            out var _, deleted: !restoredExists);
+            out var _, out var _, deleted: !restoredExists);
         return new ToolCallResponse(
             $"Restored {path} to its state before the {undo.ToolName} mutation from {undo.CreatedAt:u}",
             false, MetadataJson: metadata);
@@ -353,7 +414,7 @@ public static partial class BuiltinTools
 
         var preContent = File.ReadAllText(path);
         File.Delete(path);
-        var metadata = BuildFileMutationMetadata(db, path, preContent, "", "delete_file", out var _, deleted: true);
+        var metadata = BuildFileMutationMetadata(db, path, preContent, "", "delete_file", out var _, out var _, deleted: true);
         return new ToolCallResponse($"Deleted {path}", false, MetadataJson: metadata);
     }
 
@@ -393,7 +454,7 @@ public static partial class BuiltinTools
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
         File.Move(source, destination, overwrite);
         var postContent = File.ReadAllText(destination);
-        var metadata = BuildFileMutationMetadata(db, source, preContent, postContent, "move_path", out var undoToken, destination: destination);
+        var metadata = BuildFileMutationMetadata(db, source, preContent, postContent, "move_path", out var undoToken, out var _, destination: destination);
         return new ToolCallResponse($"Moved {source} → {destination}", false, MetadataJson: metadata);
     }
 
@@ -424,11 +485,13 @@ public static partial class BuiltinTools
         string postContent,
         string toolName,
         out string undoToken,
+        out DiffResult? diff,
         bool deleted = false,
         bool created = false,
         string? destination = null)
     {
         undoToken = "";
+        diff = null;
         if (db == null) return null;
 
         var capExceeded = ExceedsDiffCap(preContent);
@@ -441,6 +504,7 @@ public static partial class BuiltinTools
             : postContent.ReplaceLineEndings("\n").Split('\n').Cast<string?>().ToArray();
 
         var diffResult = DiffTools.ComputeUnifiedDiff(beforeLines, afterLines, Path.GetFileName(path));
+        if (!capExceeded) diff = diffResult;
 
         undoToken = Guid.NewGuid().ToString("N");
         db.FileUndos.Add(new FileUndo
@@ -451,6 +515,7 @@ public static partial class BuiltinTools
             PreContent = preContent,
             PostHash = deleted ? "" : ComputeContentHash(postContent),
             ToolName = toolName,
+            Checkpoint = CurrentCheckpoint.Value,
             CreatedAt = DateTime.UtcNow
         });
         db.SaveChanges();
@@ -471,6 +536,7 @@ public static partial class BuiltinTools
                 ? $"File exceeds the diff cap ({DiffTools.PreImageCap / 1024}KB): no diff preview is available for this mutation — undo via revert is still available."
                 : (string?)null,
             undoToken,
+            checkpoint = CurrentCheckpoint.Value,
             created,
             deleted
         }, MetadataJsonOptions);
@@ -484,5 +550,145 @@ public static partial class BuiltinTools
             .Select(u => u.Id)
             .ToList();
         db.FileUndos.Where(u => !keep.Contains(u.Id)).ExecuteDelete();
+    }
+
+    // ── Diff feedback (AgentTools:DiffFeedback) ──────────────────────────────
+    // Default ON: after a file mutation the unified diff is appended to the model-facing result
+    // text (head-truncated to the cap) so the model can self-verify the edit without spending a
+    // re-read. Off → exactly the old one-line confirmations. Surfaced read-only on the bridge
+    // status page next to the Projects toggle.
+
+    public sealed record DiffFeedbackOptions(bool Enabled = true, int MaxChars = 4000);
+
+    // Process-wide default — set once at bridge startup (and by WebApplicationFactory tests that boot
+    // Program). Tests that need a temporary value must NOT mutate this: every factory that starts the
+    // bridge re-enters ConfigureDiffFeedback and would clobber a mid-test change. Use PushDiffFeedback
+    // instead; the AsyncLocal override rides the test's execution context and is immune to that race.
+    private static DiffFeedbackOptions _diffFeedback = new();
+    private static readonly AsyncLocal<DiffFeedbackOptions?> DiffFeedbackOverride = new();
+
+    public static void ConfigureDiffFeedback(Microsoft.Extensions.Configuration.IConfiguration config)
+    {
+        var section = config.GetSection("AgentTools:DiffFeedback");
+        var cap = section.GetValue<int?>("MaxChars");
+        ConfigureDiffFeedback(
+            section.GetValue<bool?>("Enabled") ?? true,
+            cap is > 0 ? cap.Value : 4000);
+    }
+
+    // Sets the process-wide default. Prefer PushDiffFeedback in tests.
+    internal static void ConfigureDiffFeedback(bool enabled, int maxChars = 4000) =>
+        _diffFeedback = new DiffFeedbackOptions(enabled, maxChars);
+
+    /// <summary>Scoped override for tests. Dispose restores the previous override (not the process default).</summary>
+    internal static IDisposable PushDiffFeedback(bool enabled, int maxChars = 4000)
+    {
+        var previous = DiffFeedbackOverride.Value;
+        DiffFeedbackOverride.Value = new DiffFeedbackOptions(enabled, maxChars);
+        return new OverrideScope(() => DiffFeedbackOverride.Value = previous);
+    }
+
+    private sealed class OverrideScope(Action restore) : IDisposable
+    {
+        public void Dispose() => restore();
+    }
+
+    internal static DiffFeedbackOptions DiffFeedback => DiffFeedbackOverride.Value ?? _diffFeedback;
+
+    // The model-facing half of a mutation result: the confirmation line plus the same diff the
+    // UI card gets. Skipped when no diff was computed (pre-image cap, no bridge db) or the edit
+    // was a no-op (no hunks — the diff would be just the ---/+++ headers).
+    private static string AppendDiffFeedback(string text, DiffResult? diff)
+    {
+        var opts = DiffFeedback;
+        if (!opts.Enabled || diff == null || (diff.Adds == 0 && diff.Dels == 0))
+            return text;
+        return text + "\n\n" + TruncateDiff(diff.Diff, opts.MaxChars).Text;
+    }
+
+    // Head-biased truncation: keep whole diff lines while they fit the char cap, then a marker
+    // naming the elided line count — the model sees the start of the diff and knows it was cut.
+    internal static (string Text, bool Truncated) TruncateDiff(string diff, int maxChars)
+    {
+        var lines = diff.ReplaceLineEndings("\n").Split('\n');
+        // ComputeUnifiedDiff output ends with a trailing newline — drop the empty tail element.
+        if (lines.Length > 0 && lines[^1] == "") lines = lines[..^1];
+
+        var kept = 0;
+        var used = 0;
+        foreach (var line in lines)
+        {
+            var cost = line.Length + 1; // + the newline that separates it
+            if (kept > 0 && used + cost > maxChars) break;
+            used += cost;
+            kept++;
+        }
+
+        if (kept >= lines.Length)
+            return (string.Join('\n', lines), false);
+
+        return (string.Join('\n', lines[..kept]) + $"\n… diff truncated ({lines.Length - kept} more lines)", true);
+    }
+
+    // ── /tools/preview — prospective diff, nothing written ───────────────────
+
+    public sealed record ToolPreviewResponse(bool Ok, string? Diff, bool Truncated, string? Reason);
+
+    /// <summary>
+    /// Read-only twin of <see cref="InvokeAsync"/> for the file-mutation tools: runs the same arg
+    /// validation, scope enforcement and apply logic against an in-memory copy and returns the
+    /// unified diff the mutation WOULD produce. Nothing is written and no undo row is recorded —
+    /// a failure comes back exactly as the real call would report it. Any other tool answers
+    /// "no-preview" so the caller falls back to the plain args preview.
+    /// </summary>
+    public static ToolPreviewResponse Preview(
+        string toolName,
+        Dictionary<string, JsonElement>? args,
+        SecurityPolicy? policy)
+    {
+        args ??= [];
+        try
+        {
+            MutationPlan? plan;
+            switch (toolName)
+            {
+                case "write_file":
+                    plan = PlanWriteFile(args, policy);
+                    break;
+                case "edit_file":
+                    if (TryPlanEditFile(args, policy, out plan) is { } editError)
+                        return new ToolPreviewResponse(false, null, false, editError.Text);
+                    break;
+                case "multi_edit":
+                    if (TryPlanMultiEdit(args, policy, out plan, out _) is { } multiError)
+                        return new ToolPreviewResponse(false, null, false, multiError.Text);
+                    break;
+                default:
+                    return new ToolPreviewResponse(false, null, false, "no-preview");
+            }
+
+            if (ExceedsDiffCap(plan!.PreContent))
+                return new ToolPreviewResponse(false, null, false,
+                    $"File exceeds the diff cap ({DiffTools.PreImageCap / 1024}KB): no diff preview is available for this mutation.");
+
+            var beforeLines = plan.PreContent == null
+                ? Array.Empty<string?>()
+                : plan.PreContent.ReplaceLineEndings("\n").Split('\n').Cast<string?>().ToArray();
+            var afterLines = plan.PostContent == ""
+                ? Array.Empty<string?>()
+                : plan.PostContent.ReplaceLineEndings("\n").Split('\n').Cast<string?>().ToArray();
+
+            var diff = DiffTools.ComputeUnifiedDiff(beforeLines, afterLines, Path.GetFileName(plan.Path));
+            if (diff.Adds == 0 && diff.Dels == 0)
+                return new ToolPreviewResponse(true, "", false, null); // no-op edit — nothing to show
+
+            var (text, truncated) = TruncateDiff(diff.Diff, DiffFeedback.MaxChars);
+            return new ToolPreviewResponse(true, text, truncated, null);
+        }
+        catch (TerminalSecurityException ex)  { return new ToolPreviewResponse(false, null, false, $"BLOCKED: {ex.Message}"); }
+        catch (FileNotFoundException ex)      { return new ToolPreviewResponse(false, null, false, $"NOT FOUND: {ex.Message}"); }
+        catch (DirectoryNotFoundException ex) { return new ToolPreviewResponse(false, null, false, $"NOT FOUND: {ex.Message}"); }
+        catch (UnauthorizedAccessException ex){ return new ToolPreviewResponse(false, null, false, $"ACCESS DENIED: {ex.Message}"); }
+        catch (Exception ex)                  { return new ToolPreviewResponse(false, null, false, $"ERROR: {ex.Message}"); }
     }
 }

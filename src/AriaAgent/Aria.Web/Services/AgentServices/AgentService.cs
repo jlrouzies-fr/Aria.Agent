@@ -42,6 +42,10 @@ public sealed class AgentService
 
     public bool ForceFormatRecheck { get; private set; }
 
+    // Post-mutation verify nudge (Governance:VerifyNudge, default on) — layered onto every
+    // governance policy this service builds so the toggle applies to existing sessions too.
+    private readonly bool _verifyNudge;
+
     public AgentService(
         IConfiguration config,
         ILogger<AgentService> logger,
@@ -57,6 +61,7 @@ public sealed class AgentService
         _runtime        = runtime;
         _localSourceSvc = localSourceSvc;
         ForceFormatRecheck = config.GetValue<bool>("Debug:ForceFormatRecheck");
+        _verifyNudge    = config.GetValue<bool>("Governance:VerifyNudge", true);
     }
 
     public void SetBridge(ModelBridgeRegistry bridge) => _runtime.SetBridge(bridge);
@@ -150,7 +155,7 @@ public sealed class AgentService
             OnToolStart        = onToolStart,
             OnToolComplete     = onToolComplete,
             OnTodoUpdate       = onTodoUpdate,
-            Governance         = GovernancePolicy.FromMode(governanceMode) with { ApproveCrossNodeCalls = fleetApprovalRequired },
+            Governance         = GovernancePolicy.FromMode(governanceMode) with { ApproveCrossNodeCalls = fleetApprovalRequired, VerifyNudge = _verifyNudge },
             OnApprovalRequested = onApprovalRequested,
             OnAskUser          = onAskUser,
             ContextStatusProvider = contextStatusProvider,
@@ -187,7 +192,7 @@ public sealed class AgentService
     {
         var turnPolicy = governanceMode.HasValue
             ? GovernancePolicy.FromMode(governanceMode.Value)
-                .WithBudgetOverrides(budgetToolCalls, budgetFileReads) with { ApproveCrossNodeCalls = fleetApprovalRequired }
+                .WithBudgetOverrides(budgetToolCalls, budgetFileReads) with { ApproveCrossNodeCalls = fleetApprovalRequired, VerifyNudge = _verifyNudge }
             : null;
         var stream = _harness.StreamAsync(userMessage, agent, session, new HarnessContext { CancellationToken = ct }, turnScopePaths, turnPolicy, ct, onUsage);
         await using var enumerator = stream.GetAsyncEnumerator(ct);
@@ -258,6 +263,24 @@ public sealed class AgentService
         }
         context.BridgeNodeId = ResolveSourceNodeId(userId, selectedSourceName);
         return await _harness.DetectToolCallFormatAsync(selectedSourceName, modelId, context, ct);
+    }
+
+    /// <summary>
+    /// Resolves the effective context window for a source+model using the precedence order:
+    /// channel override → cached provider discovery → well-known cloud catalog → assumed fallback.
+    /// </summary>
+    public async Task<ContextWindow> ResolveContextWindowAsync(
+        string? selectedSourceName, string? modelId = null, string? userId = null, CancellationToken ct = default)
+    {
+        if (!string.IsNullOrEmpty(userId) && !_userLocalSources.ContainsKey(userId))
+        {
+            var dbSources = await _localSourceSvc.GetForUserAsync(userId);
+            _userLocalSources[userId] = dbSources.Select(UserLocalSourceService.ToModelSource).ToList();
+        }
+        var source = ResolveSource(userId, selectedSourceName);
+        var context = new HarnessContext { UserId = userId, BridgeUserId = userId };
+        context.BridgeNodeId = ResolveSourceNodeId(userId, selectedSourceName);
+        return await _harness.ResolveContextWindowAsync(source, modelId, context, ct);
     }
 
     /// <summary>

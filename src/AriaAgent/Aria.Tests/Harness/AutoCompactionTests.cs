@@ -70,4 +70,41 @@ public class AutoCompactionTests
         Assert.Equal(0, AutoCompaction.ResolveThreshold(0));
         Assert.Equal(42_000, AutoCompaction.ResolveThreshold(42_000));
     }
+
+    [Fact]
+    public void ResolveThreshold_KnownWindow_DerivesFromWindow()
+    {
+        // 128k * 0.8 = 102,400
+        Assert.Equal(102_400, AutoCompaction.ResolveThreshold(null, new ContextWindow(128_000, false)));
+    }
+
+    [Fact]
+    public void ResolveThreshold_KnownTinyWindow_ClampsToFloor()
+    {
+        Assert.Equal(AutoCompaction.MinimumDerivedThresholdTokens,
+            AutoCompaction.ResolveThreshold(null, new ContextWindow(2_048, false)));
+    }
+
+    [Fact]
+    public void ResolveThreshold_AssumedWindow_KeepsDefault100k()
+    {
+        Assert.Equal(AutoCompaction.DefaultThresholdTokens,
+            AutoCompaction.ResolveThreshold(null, new ContextWindow(128_000, true)));
+    }
+
+    [Fact]
+    public void ShouldCompact_KnownWindow_UsesDerivedThreshold()
+    {
+        // Known 10k window -> threshold 8k. Transcript of 8k*4=32k chars should trigger.
+        Assert.True(AutoCompaction.ShouldCompact(null, 32_000, null, new ContextWindow(10_000, false)));
+        Assert.False(AutoCompaction.ShouldCompact(null, 31_996, null, new ContextWindow(10_000, false)));
+    }
+
+    [Fact]
+    public void ShouldCompact_AssumedWindow_KeepsTodayBehaviour()
+    {
+        // 400k chars / 4 = 100k tokens — exactly the default threshold, regardless of assumed window size.
+        Assert.True(AutoCompaction.ShouldCompact(null, 400_000, null, new ContextWindow(128_000, true)));
+        Assert.False(AutoCompaction.ShouldCompact(null, 399_996, null, new ContextWindow(128_000, true)));
+    }
 }

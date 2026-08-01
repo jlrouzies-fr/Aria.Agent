@@ -14,6 +14,15 @@ public sealed class FakeHarnessRuntime : IHarnessRuntime
     public Dictionary<string, string> ApiKeys { get; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, string> OAuthTokens { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>When true, <see cref="IsBridgeAvailableAsync"/> reports the bridge as up.</summary>
+    public bool BridgeAvailable { get; set; }
+
+    /// <summary>
+    /// Optional handler for <see cref="BridgePostAsync"/>. When null, bridge posts throw
+    /// <see cref="NotSupportedException"/> (legacy stub behaviour).
+    /// </summary>
+    public Func<string, string, string?, CancellationToken, Task<string>>? BridgePostHandler { get; set; }
+
     public void AddSource(ModelSource source) => Sources.Add(source);
 
     public ModelSource? FindSource(string? name, HarnessContext context)
@@ -29,13 +38,15 @@ public sealed class FakeHarnessRuntime : IHarnessRuntime
         => Task.FromResult(OAuthTokens.TryGetValue(providerName, out var token) ? token : null);
 
     public Task<bool> IsBridgeAvailableAsync(HarnessContext context, CancellationToken ct = default)
-        => Task.FromResult(false);
+        => Task.FromResult(BridgeAvailable);
 
     public Task<IReadOnlyList<string>> GetBridgeNodeIdsAsync(HarnessContext context, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<string>>([]);
 
     public Task<string> BridgePostAsync(string url, string body, HarnessContext context, CancellationToken ct = default, string? keyRef = null, bool requireKey = false, string? nodeId = null)
-        => throw new NotSupportedException("Fake runtime does not support bridge calls");
+        => BridgePostHandler is { } handler
+            ? handler(url, body, nodeId, ct)
+            : throw new NotSupportedException("Fake runtime does not support bridge calls");
 
     public IAsyncEnumerable<string> BridgeStreamAsync(string url, string body, HarnessContext context, CancellationToken ct = default, string? keyRef = null, bool requireKey = false, string? nodeId = null)
         => throw new NotSupportedException("Fake runtime does not support bridge calls");

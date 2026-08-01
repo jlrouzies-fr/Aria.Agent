@@ -75,6 +75,13 @@ public static class TunnelAllowlist
         "/transcribe/local/",
     ];
 
+    // Paths that match an allowed prefix but must stay node-local (multi-hundred-MB model downloads
+    // / enable toggles). Checked before prefix matching so "/memory/" cannot smuggle them through.
+    private static readonly string[] DeniedPrefixes =
+    [
+        "/memory/builtin",
+    ];
+
     /// <summary>
     /// Returns true if <paramref name="path"/> may be forwarded through the direct tunnel.
     /// Normalises the path by stripping the query string, trimming a trailing slash, and lowercasing.
@@ -83,6 +90,11 @@ public static class TunnelAllowlist
     {
         var clean = Normalize(path);
         if (clean is null) return false;
+
+        foreach (var denied in DeniedPrefixes)
+            if (clean.Equals(denied, StringComparison.OrdinalIgnoreCase)
+                || clean.StartsWith(denied + "/", StringComparison.OrdinalIgnoreCase))
+                return false;
 
         if (ExactPaths.Contains(clean)) return true;
 

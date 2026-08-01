@@ -70,7 +70,7 @@ public static class LlmKeyEndpoints
             var keyB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(req.Key.Trim()));
             // Encrypt at rest under the bridge vault DEK when available.
             if (db.Vault != null)
-                keyB64 = db.Vault.Encrypt(keyB64);
+                keyB64 = db.Vault.Encrypt(keyB64) ?? keyB64;
 
             var conn = db.Database.GetDbConnection();
             await conn.OpenAsync();
@@ -364,8 +364,18 @@ public static class LlmKeyEndpoints
             var thinkingTask = Aria.Shared.FormatProber.ProbeThinkingAsync(targetUrl, req.Model, key);
             var toolCallTask = Aria.Shared.FormatProber.ProbeToolCallAsync(targetUrl, req.Model, key);
             var visionTask   = Aria.Shared.FormatProber.ProbeVisionAsync(targetUrl, req.Model, key);
-            await Task.WhenAll(thinkingTask, toolCallTask, visionTask);
-            return Results.Ok(new { thinking = thinkingTask.Result, toolCall = toolCallTask.Result, vision = visionTask.Result });
+            var contextTask  = Aria.Shared.ContextWindowProber.ProbeAsync(targetUrl, req.Model, key);
+            await Task.WhenAll(thinkingTask, toolCallTask, visionTask, contextTask);
+
+            int? contextWindow = contextTask.Result;
+            return Results.Ok(new
+            {
+                thinking = thinkingTask.Result,
+                toolCall = toolCallTask.Result,
+                vision = visionTask.Result,
+                contextWindow,
+                contextWindowAssumed = !contextWindow.HasValue,
+            });
         });
 
         // Voice transcription: the browser POSTs audio straight here (multipart). The bridge injects

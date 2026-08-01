@@ -1,4 +1,5 @@
 @using Aria.Agent
+@using Aria.Shared
 @using Aria.Web.Data
 @using Aria.Tools
 @using Aria.Web.Helpers
@@ -23,13 +24,20 @@
     }
     @foreach (var n in Menu._nodes)
     {
-        var nid = n.NodeId;
+        var nid      = n.NodeId;
+        var mismatch = n.PinState == SoulKeyPinState.Mismatch;
         <div class="source-row @(n.Online ? "" : "unavailable")">
             <span class="source-dot">@(n.Online ? "●" : "○")</span>
             <span class="source-icon">@(n.IsPrimary ? "★" : "⬡")</span>
             <span class="source-name">
                 @(string.IsNullOrWhiteSpace(n.Label) ? n.NodeId : n.Label)@(string.IsNullOrEmpty(n.Platform) ? "" : $" · {n.Platform}")
             </span>
+            @if (SoulKeyPinState.NeedsAttention(n.PinState))
+            {
+                <span class="device-key-dot" title="@(mismatch
+                        ? "This device was shown a different soul master key than the one confirmed on it"
+                        : "This device has not confirmed your soul master key — seals will not replicate to it")"></span>
+            }
             @if (!n.IsPrimary)
             {
                 <span class="tool-cfg-btn" title="Delete device (must re-pair to return)"
@@ -37,6 +45,28 @@
                       @onclick="() => Menu.RevokeNodeAsync(nid)">✕</span>
             }
         </div>
+        @* The node itself refuses cross-device seals until a human pins the key ON that machine; the
+           server can only point the human at it — the ceremony deliberately cannot be driven remotely. *@
+        @if (SoulKeyPinState.NeedsAttention(n.PinState))
+        {
+            <div class="source-warn device-key-warn">
+                @if (mismatch)
+                {
+                    <text>
+                        ⚠ SOUL KEY MISMATCH — this device is being offered a master key that is not the
+                        one you confirmed on it. Seals stay blocked. Do not re-pin until you know why.
+                    </text>
+                }
+                else
+                {
+                    <text>
+                        ⚠ JOIN NOT FINISHED — seals approved elsewhere will not reach this device yet.
+                        On that machine's bridge Soul panel, paste the fingerprint from your primary
+                        (Soul → <strong>▶ SHOW FINGERPRINT</strong>) and confirm the last join step.
+                    </text>
+                }
+            </div>
+        }
     }
     
     @* ── Just-approved device: reconnection takes a while, don't let it look broken ── *@
@@ -46,8 +76,9 @@
             <span class="dan-close" title="Dismiss"
                   @onclick="() => { Menu._justApprovedNodeId = null; Menu._justApprovedLabel = null; }">✕</span>
             ✓ Device @(string.IsNullOrWhiteSpace(Menu._justApprovedLabel) ? "" : $"\"{Menu._justApprovedLabel}\" ")approved.
-            It can take <strong>up to 5 minutes</strong> for it to reconnect and be detected by all
-            nodes — leave it running, no further action is needed. It will appear online above.
+            Finish joining on that machine: paste the primary bridge's master-key fingerprint
+            (primary bridge → Soul → <strong>▶ SHOW FINGERPRINT</strong>) into its last join step.
+            Reconnect can take <strong>up to 5 minutes</strong> — leave it running.
         </div>
     }
 
@@ -77,8 +108,8 @@
     }
     
     <div class="device-pairing-hint">
-        To add a machine: run Aria.Bridge there and join this soul. It appears above as a
-        pending device with a code to confirm.
+        To add a machine: run Aria.Bridge there and join this soul. Approve its code here, then
+        finish on that machine by pasting this primary's master-key fingerprint (Soul → ▶ SHOW FINGERPRINT).
     </div>
     @if (!string.IsNullOrEmpty(Menu._nodeError))
     {

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Aria.Web.Services.Cogitations;
 
@@ -21,6 +22,10 @@ public sealed class ContextApprovalService(
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1.5);
     private static readonly TimeSpan MaxWait      = TimeSpan.FromMinutes(3);
+
+    // Concurrent chat tabs / chat+Explorer races all call RequestGrantAsync for the same session.
+    // Share one in-flight ceremony so we don't POST /context/approve/request twice (double popup).
+    private static readonly ConcurrentDictionary<string, Task<bool>> InFlightGrants = new();
 
     /// <summary>
     /// How long a pre-authorised vigil's grant stays live, measured from its scheduled slot start: the
@@ -53,9 +58,15 @@ public sealed class ContextApprovalService(
         }
 
         var retried = runRegistry.RetryContextApproval(cogitationId);
-        if (retried == null)
-            logger.LogWarning("Context approval retry failed to start for cogitation {CogitationId}", cogitationId);
-        return retried != null;
+        if (retried != null) return true;
+
+        // A parallel waiter (second tab) already consumed the pending retry — succeed if that run is live.
+        if (runRegistry.TryGet(cogitationId) is { Status: CogitationRunStatus.Streaming
+                or CogitationRunStatus.Persisting or CogitationRunStatus.Completed })
+            return true;
+
+        logger.LogWarning("Context approval retry failed to start for cogitation {CogitationId}", cogitationId);
+        return false;
     }
 
     /// <summary>
@@ -69,8 +80,38 @@ public sealed class ContextApprovalService(
     /// returns immediately without re-prompting.
     /// Returns true when a grant is live for the session; false if rejected, expired, or unreachable.
     /// </summary>
-    public async Task<bool> RequestGrantAsync(
+    public Task<bool> RequestGrantAsync(
         string userId, string? sessionId, CancellationToken ct = default)
+    {
+        var key = userId + "\0" + (sessionId ?? "");
+        while (true)
+        {
+            if (InFlightGrants.TryGetValue(key, out var existing))
+                return AwaitSharedGrantAsync(existing, ct);
+
+            // Shared ceremony must not be cancelled by one caller's token — siblings still waiting.
+            var task = RequestGrantCoreAsync(userId, sessionId, CancellationToken.None);
+            if (!InFlightGrants.TryAdd(key, task))
+                continue;
+
+            _ = task.ContinueWith(
+                static (t, state) => InFlightGrants.TryRemove((string)state!, out _),
+                key,
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            return AwaitSharedGrantAsync(task, ct);
+        }
+    }
+
+    private static async Task<bool> AwaitSharedGrantAsync(Task<bool> shared, CancellationToken ct)
+    {
+        if (!ct.CanBeCanceled) return await shared.ConfigureAwait(false);
+        return await shared.WaitAsync(ct).ConfigureAwait(false);
+    }
+
+    private async Task<bool> RequestGrantCoreAsync(
+        string userId, string? sessionId, CancellationToken ct)
     {
         // Already covered? Then there is nothing to ask for. (Also the fast path when a parallel
         // ceremony from another surface approved between our blocked call and this request.)

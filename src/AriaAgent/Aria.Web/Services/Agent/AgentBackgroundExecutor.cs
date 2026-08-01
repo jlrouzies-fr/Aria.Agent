@@ -235,8 +235,19 @@ public class AgentBackgroundExecutor(
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(30));
         using var linked  = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
 
-        await foreach (var chunk in agentService.StreamAsync(prompt, agent, session, linked.Token))
-            sb.Append(chunk);
+        // Same turn-checkpoint stamping as interactive cogitations — spawned children / headless
+        // runs get their own FileUndo checkpoint so /rewind can name them explicitly later.
+        var previousCheckpoint = Aria.Harness.Core.HarnessContext.CurrentTurnCheckpoint;
+        Aria.Harness.Core.HarnessContext.CurrentTurnCheckpoint = Guid.NewGuid().ToString("N");
+        try
+        {
+            await foreach (var chunk in agentService.StreamAsync(prompt, agent, session, linked.Token))
+                sb.Append(chunk);
+        }
+        finally
+        {
+            Aria.Harness.Core.HarnessContext.CurrentTurnCheckpoint = previousCheckpoint;
+        }
 
         return (sb.ToString(), thinkingSb.Length > 0 ? thinkingSb.ToString() : null);
     }
@@ -399,8 +410,17 @@ public class AgentBackgroundExecutor(
             using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(30));
             using var linked  = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
 
-            await foreach (var chunk in agentService.StreamAsync(job.TaskPrompt, agent, session, linked.Token))
-                sb.Append(chunk);
+            var previousCheckpoint = Aria.Harness.Core.HarnessContext.CurrentTurnCheckpoint;
+            Aria.Harness.Core.HarnessContext.CurrentTurnCheckpoint = Guid.NewGuid().ToString("N");
+            try
+            {
+                await foreach (var chunk in agentService.StreamAsync(job.TaskPrompt, agent, session, linked.Token))
+                    sb.Append(chunk);
+            }
+            finally
+            {
+                Aria.Harness.Core.HarnessContext.CurrentTurnCheckpoint = previousCheckpoint;
+            }
 
             var response = sb.ToString();
             var assistantMsgOk = await bridgeCogitation.AddMessageAsync(

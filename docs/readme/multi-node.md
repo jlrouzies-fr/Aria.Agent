@@ -10,6 +10,7 @@ where" — most multi-node confusion comes from one fact:
 > server (Blazor circuit) → SignalR tunnel → *some* bridge. Which bridge is chosen by explicit
 > binding rules, never by which machine your browser is on.
 
+- [Joining a second node](#joining-a-second-node)
 - [Routing rules](#routing-rules)
 - [Channels and node binding](#channels-and-node-binding)
 - [Provider keys: per-node vaults + encrypted mesh sync](#provider-keys-per-node-vaults--encrypted-mesh-sync)
@@ -18,6 +19,33 @@ where" — most multi-node confusion comes from one fact:
 - [Error surfacing in the chat](#error-surfacing-in-the-chat)
 - [Access gate and knocks](#access-gate-and-knocks)
 - [Diagnostics](#diagnostics)
+
+---
+
+## Joining a second node
+
+Adding a machine is one join flow with two human checks — approve the device, then confirm the
+soul's master-key fingerprint on the new machine. The fingerprint is **not** a separate "security
+chore"; without it the new node refuses grants signed elsewhere (so seals/approvals will not
+replicate to it). That is intentional: every candidate key reaches a joined node through the
+hosted server, so the anchor has to come from the primary bridge out of band. See
+[Security](security.md) and the Layer B trust-anchor note in
+[`docs/security/phase2-context-grants-remaining.md`](../security/phase2-context-grants-remaining.md).
+
+1. On the **new** machine, open the bridge status page ([http://localhost:5741](http://localhost:5741)) → **Soul**.
+2. Under **Join an existing soul**, paste the **Server Soul ID** from Aria.Web → **Devices** (not a local bridge ID), set a label, and click **JOIN**.
+3. **JOIN · STEP 1 — APPROVE THIS DEVICE** — note the pairing code on the new machine. In Aria.Web → **Devices** (from a browser that already trusts your primary), enter the code and **APPROVE**.
+4. On the **primary** bridge → **Soul**, click **▶ SHOW FINGERPRINT**
+   (`abcd-efgh-ijkl-mnop`). Read it from that machine's own bridge — never from Aria.Web.
+5. Back on the **new** machine, the Soul panel shows **JOIN · CONFIRM MASTER KEY**. Paste the
+   fingerprint and click **CONFIRM & FINISH JOIN**.
+
+Until step 5, Aria.Web → Devices may pulse a **JOIN NOT FINISHED** warning on that device. After a
+successful confirm, sibling grants and seal replication work on the new node. Reconnect after
+approval can take up to a few minutes — leave the bridge running.
+
+If the fingerprint keeps failing to match, stop and investigate: the server may be presenting a
+key that is not your primary's. Do not pin a value you cannot read from the primary bridge itself.
 
 ---
 

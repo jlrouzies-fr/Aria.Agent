@@ -164,21 +164,41 @@ public class BridgeCogitationClient(ModelBridgeRegistry registry)
         catch { return false; }
     }
 
-    /// <summary>Replaces all of a bridge cogitation's messages with a single summary message
-    /// (used by "/compact"). Returns false on failure.</summary>
-    public async Task<bool> CompactAsync(
-        string userId, int serverCogitationId, string summary, string? originNodeId = null)
+    /// <summary>Replaces the bridge cogitation's full transcript with <paramref name="messages"/>
+    /// in order. Shared by Compact and edit-and-replay. Returns false on failure.</summary>
+    public async Task<bool> ReplaceMessagesAsync(
+        string userId, int serverCogitationId,
+        IReadOnlyList<TranscriptMessageWrite> messages, string? originNodeId = null)
     {
         try
         {
-            var body = JsonSerializer.Serialize(new { summary }, _json);
+            var payload = new
+            {
+                messages = messages.Select(m => new
+                {
+                    role            = m.Role,
+                    content         = m.Content,
+                    thinkingContent = m.ThinkingContent,
+                    sectionsJson    = m.SectionsJson,
+                    imageBase64     = m.ImageBase64,
+                    imageMediaType  = m.ImageMediaType,
+                }).ToList()
+            };
+            var body = JsonSerializer.Serialize(payload, _json);
             var result = await registry.SendLocalRestAsync(
-                userId, "POST", $"/cogitations/{BridgeId(serverCogitationId)}/compact", body,
+                userId, "POST", $"/cogitations/{BridgeId(serverCogitationId)}/messages/replace", body,
                 nodeId: originNodeId);
             return result?.StatusCode is 200 or 201;
         }
         catch { return false; }
     }
+
+    /// <summary>Replaces all of a bridge cogitation's messages with a single summary message
+    /// (used by "/compact"). Returns false on failure.</summary>
+    public Task<bool> CompactAsync(
+        string userId, int serverCogitationId, string summary, string? originNodeId = null) =>
+        ReplaceMessagesAsync(userId, serverCogitationId,
+            [new TranscriptMessageWrite("assistant", summary)], originNodeId);
 
     /// <summary>
     /// Copies a cogitation's content from its origin node to another node so the conversation can be

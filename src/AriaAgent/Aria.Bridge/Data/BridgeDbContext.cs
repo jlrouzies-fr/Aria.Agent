@@ -124,6 +124,7 @@ public class BridgeDbContext(DbContextOptions<BridgeDbContext> options, VaultEnc
             e.ToTable("FileUndo");
             e.HasKey(u => u.Id);
             e.HasIndex(u => u.CreatedAt);
+            e.HasIndex(u => u.Checkpoint);
         });
 
         b.Entity<BridgeHiveCollective>(e =>
@@ -368,6 +369,11 @@ public class BridgeSoul
     public string?  NodePrivateKeyBase64 { get; set; }
     public string?  NodeId               { get; set; }
     public string?  NodeLabel            { get; set; }
+    // When a human standing at THIS machine confirmed the soul master public key above. Joined nodes
+    // only; null on the primary, which holds the master private key and is self-authenticating.
+    // A joined node treats PublicKeyBase64 as untrusted while this is null: the soul key can only be
+    // established by the local pinning ceremony, never adopted from the server-relayed node roster.
+    public DateTime? SoulKeyPinnedAt     { get; set; }
     // The soul's Data Encryption Key (AES-256, base64) for E2E data sync (§11). Minted by the primary
     // bridge; delivered to additional nodes ECDH-wrapped at enrollment, unwrapped here on first connect.
     [Encrypted]
@@ -558,6 +564,9 @@ public class FileUndo
     public string?  PreContent      { get; set; }                // null when the file did not exist (create)
     public string   PostHash        { get; set; } = "";
     public string   ToolName        { get; set; } = "";
+    /// <summary>Optional turn id that caused this mutation (cogitation run checkpoint). Null for
+    /// older rows, Explorer user edits, and Quick Exec — excluded from <c>/rewind</c>.</summary>
+    public string?  Checkpoint      { get; set; }
     public DateTime CreatedAt       { get; set; } = DateTime.UtcNow;
     public DateTime? RevertedAt     { get; set; }
 }
@@ -627,6 +636,12 @@ public class BridgeChannel
     public string ModelsJson { get; set; } = "[]";
     public bool   IsBridged  { get; set; } = true;
     public int    SortOrder  { get; set; }
+
+    /// <summary>
+    /// Optional user override for the context window of models served by this channel, in tokens.
+    /// Wins over provider discovery and the fallback assumption.
+    /// </summary>
+    public int?   ContextWindow { get; set; }
 }
 
 /// <summary>
@@ -647,6 +662,10 @@ public class NoosphereConfig
     // Same override for extraction: without this, extraction silently always uses whichever model
     // happens to be first in the channel's model list, with no way to pick a different one.
     public string? ExtractionModel         { get; set; }
+    // Opt-in built-in MiniLM + LFM2.5 on this node (downloaded into app-data). When enabled and both
+    // models are verified on disk, Extractor/Embedder short-circuit past HTTP channels.
+    public bool       BuiltinEnabled            { get; set; }
+    public DateTime?  BuiltinLicenseAcceptedAt  { get; set; }
 }
 
 /// <summary>

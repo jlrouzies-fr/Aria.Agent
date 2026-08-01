@@ -37,6 +37,8 @@ public static class TerminalEndpoints
                 pty       = ptyOn,
                 ptyMinutes = soul?.PtySealMinutes is > 0 ? soul.PtySealMinutes : 10,
                 ptyRemainingSeconds = ptyOn ? (int)(until!.Value - DateTime.UtcNow).TotalSeconds : 0,
+                // AgentTools:DiffFeedback (appsettings) — surfaced read-only next to the Projects toggle.
+                diffFeedback = new { enabled = BuiltinTools.DiffFeedback.Enabled, maxChars = BuiltinTools.DiffFeedback.MaxChars },
             });
         });
 

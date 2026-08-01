@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Numerics.Tensors;
 using System.Threading.Channels;
 using Aria.Bridge.Data;
+using Aria.Bridge.Services.Logging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -16,6 +17,7 @@ public class NoosphereService(
     NoosphereExtractor extractor,
     NoosphereEmbedder embedder,
     NoosphereConfigService configService,
+    NoosphereBuiltinRuntime builtinRuntime,
     ILogger<NoosphereService> logger)
 {
     private readonly Channel<string> _ingestChannel = Channel.CreateUnbounded<string>();
@@ -56,6 +58,8 @@ public class NoosphereService(
         db.MemoryIngests.Add(ingest);
         await db.SaveChangesAsync(ct);
         await _ingestChannel.Writer.WriteAsync(ingest.Id, ct);
+        BridgeLogger.Log("INFO",
+            $"Noosphere Inscribe queued ({content.Length} chars, bank={bank}, id={ingest.Id[..Math.Min(8, ingest.Id.Length)]})");
         return ingest.Id;
     }
 
@@ -87,7 +91,11 @@ public class NoosphereService(
             facts = await extractor.ExtractAsync(ingest.Content, known,
                 anchors.Select(a => (a.Name, a.Description)).ToList(), ct);
         }
-        catch (Exception ex) { logger.LogWarning(ex, "[Noosphere] Extraction threw for ingest {Id}", ingestId); }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[Noosphere] Extraction threw for ingest {Id}", ingestId);
+            BridgeLogger.Log("ERROR", $"Noosphere extraction threw for ingest {ingestId[..Math.Min(8, ingestId.Length)]}: {ex.Message}");
+        }
 
         try
         {
@@ -99,6 +107,9 @@ public class NoosphereService(
                 await db.SaveChangesAsync(ct);
                 await EmbedEngramsAsync(db, [raw], ct);
                 ingest.Status = "raw";
+                var why = extractor.LastError ?? "no usable facts";
+                BridgeLogger.Log("WARN",
+                    $"Noosphere ingest {ingestId[..Math.Min(8, ingestId.Length)]} stored as raw — {why}");
             }
             else
             {
@@ -155,6 +166,8 @@ public class NoosphereService(
                 await db.SaveChangesAsync(ct);
                 await EmbedEngramsAsync(db, newEngrams, ct);
                 ingest.Status = "done";
+                BridgeLogger.Log("INFO",
+                    $"Noosphere ingest {ingestId[..Math.Min(8, ingestId.Length)]} done — {facts.Count} fact(s), {newEngrams.Count} engram(s)");
             }
         }
         catch (Exception ex)
@@ -162,6 +175,7 @@ public class NoosphereService(
             ingest.Status = "error";
             ingest.Error = ex.Message;
             logger.LogError(ex, "[Noosphere] Ingest {Id} failed", ingestId);
+            BridgeLogger.Log("ERROR", $"Noosphere ingest {ingestId[..Math.Min(8, ingestId.Length)]} failed: {ex.Message}");
         }
 
         ingest.UpdatedAt = DateTime.UtcNow;
@@ -252,10 +266,17 @@ public class NoosphereService(
         if (!embedder.Enabled) return [];
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeDbContext>();
-        var channel = await NoosphereChannelResolver.ResolveAsync(await configService.GetEmbeddingOptionsAsync(ct), db, ct);
-        if (channel == null) return [];
+        string? modelId;
+        if (await configService.IsBuiltinActiveAsync(builtinRuntime, ct))
+            modelId = NoosphereBuiltinCatalog.ModelIdFor(NoosphereBuiltinCatalog.RoleEmbed);
+        else
+        {
+            var channel = await NoosphereChannelResolver.ResolveAsync(await configService.GetEmbeddingOptionsAsync(ct), db, ct);
+            if (channel == null) return [];
+            modelId = channel.Model;
+        }
         return await db.Engrams.AsNoTracking()
-            .Where(e => e.Embedding == null || e.EmbeddingModel != channel.Model)
+            .Where(e => e.Embedding == null || e.EmbeddingModel != modelId)
             .Select(e => e.Id)
             .ToListAsync(ct);
     }
@@ -844,10 +865,13 @@ public class NoosphereService(
         // Ingests that fell back to raw/unstructured storage — eligible for ReprocessRawIngestsAsync.
         var rawCount = await db.MemoryIngests.CountAsync(i => i.SoulId == soulId && i.Bank == bank && i.Status == "raw", ct);
 
-        var embeddingsChannel = embedder.Enabled ? await NoosphereChannelResolver.ResolveAsync(await configService.GetEmbeddingOptionsAsync(ct), db, ct) : null;
-        var extractionChannel = await NoosphereChannelResolver.ResolveAsync(await configService.GetExtractionOptionsAsync(ct), db, ct);
+        var builtinActive = await configService.IsBuiltinActiveAsync(builtinRuntime, ct);
+        var embeddingsConfigured = embedder.Enabled && (builtinActive
+            || await NoosphereChannelResolver.ResolveAsync(await configService.GetEmbeddingOptionsAsync(ct), db, ct) is not null);
+        var extractionConfigured = builtinActive
+            || await NoosphereChannelResolver.ResolveAsync(await configService.GetExtractionOptionsAsync(ct), db, ct) is not null;
 
         return new NoosphereStats(engramsCount, entitiesCount, linksCount, pendingCount, embeddedCount,
-            embeddingsChannel != null, extractionChannel != null, rawCount);
+            embeddingsConfigured, extractionConfigured, rawCount);
     }
 }

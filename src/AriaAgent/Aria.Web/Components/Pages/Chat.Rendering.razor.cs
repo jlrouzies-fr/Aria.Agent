@@ -25,12 +25,23 @@ public partial class Chat
 
     private void CloseImageModal() => _imageModalSrc = null;
 
-    // The blinking block cursor means "preparing to reply" — it must disappear the moment the
-    // streaming message shows any output (thinking, a tool call, a todo list, or text).
-    private static bool StreamingHasOutput(MessageEntry msg) =>
-        msg.Sections.Any(s =>
-            s.Type is MessageSection.SectionType.ToolActivity or MessageSection.SectionType.TodoList
-            || !string.IsNullOrEmpty(s.Text));
+    // The blinking block cursor means "the agent is doing something but nothing is visibly
+    // changing right now". It shows before the very first token, and it reappears whenever the
+    // most recent section is tool activity or a todo list — those render as a static card/list
+    // (no char-by-char growth), so without the cursor a running tool, or the gap between one
+    // tool call finishing and the next one (or the final answer) starting, looks like nothing is
+    // happening. It stays hidden while content or thinking text is actively streaming in, since
+    // the growing text itself already conveys activity.
+    private static bool ShouldShowStreamingCursor(MessageEntry msg)
+    {
+        var last = msg.Sections.LastOrDefault();
+        if (last is null) return true;
+        if (last.Type is MessageSection.SectionType.ToolActivity or MessageSection.SectionType.TodoList) return true;
+        // A brand-new message always has an empty placeholder Content section (added by the
+        // MessageEntry constructor) — that's not "output" yet, just an unfilled slot, so it must
+        // count the same as no sections at all.
+        return string.IsNullOrEmpty(last.Text);
+    }
 
     // ── Chat timeline rail ────────────────────────────────────────────────
 
@@ -134,6 +145,71 @@ public partial class Chat
 
     private static string CollapseNewlines(string s) =>
         string.IsNullOrEmpty(s) ? s : _excessNewlines.Replace(s, "\n\n");
+
+    // ── Copy answer ───────────────────────────────────────────────────────
+    // Hover actions on completed assistant turns: COPY (plain text) and MD (raw markdown).
+
+    private int?    _copyFeedbackIndex;
+    private string? _copyFeedbackKind;   // "plain" | "md"
+    private CancellationTokenSource? _copyFeedbackCts;
+
+    private static bool CanCopyAnswer(MessageEntry msg) =>
+        msg.Role == "assistant" && !string.IsNullOrWhiteSpace(msg.Content);
+
+    private async Task CopyAnswerAsync(int index, bool asMarkdown)
+    {
+        if (index < 0 || index >= _messages.Count) return;
+        var msg = _messages[index];
+        if (!CanCopyAnswer(msg) || msg == _streamingMsg) return;
+
+        var markdown = msg.Content;
+        var text = asMarkdown ? markdown : MarkdownToPlainText(markdown);
+        try
+        {
+            await JS.InvokeVoidAsync("ariaInterop.copyText", text);
+        }
+        catch
+        {
+            return;
+        }
+
+        _copyFeedbackIndex = index;
+        _copyFeedbackKind  = asMarkdown ? "md" : "plain";
+        StateHasChanged();
+
+        _copyFeedbackCts?.Cancel();
+        _copyFeedbackCts?.Dispose();
+        _copyFeedbackCts = new CancellationTokenSource();
+        var ct = _copyFeedbackCts.Token;
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                await Task.Delay(1500, ct);
+                if (_copyFeedbackIndex == index)
+                {
+                    _copyFeedbackIndex = null;
+                    _copyFeedbackKind  = null;
+                    StateHasChanged();
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
+    }
+
+    /// <summary>Renders markdown to HTML then strips tags — readable plain text for the clipboard.</summary>
+    private static string MarkdownToPlainText(string markdown)
+    {
+        if (string.IsNullOrEmpty(markdown)) return "";
+        // Use SafePipeline directly (not MarkdownHelper.ToHtml) so code-block COPY buttons
+        // are not baked into the HTML we are about to strip.
+        var html = global::Markdig.Markdown.ToHtml(markdown, MarkdownHelper.SafePipeline);
+        var text = System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", "");
+        text = System.Net.WebUtility.HtmlDecode(text);
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"[ \t]+\r?\n", "\n");
+        text = _excessNewlines.Replace(text, "\n\n");
+        return text.Trim();
+    }
 
     // Collapse every thinking section of a message — called once the agent finishes cogitating
     // (content begins, streaming ends, or when loading history). User can re-expand by clicking.
@@ -254,6 +330,7 @@ public partial class Chat
         int Adds,
         int Dels,
         string UndoToken,
+        string? Checkpoint,
         bool Created,
         bool Deleted,
         bool Reverted = false);
@@ -298,19 +375,7 @@ public partial class Chat
         var updatedMetadata = metadata with { Reverted = true };
         tc.MetadataJson = System.Text.Json.JsonSerializer.Serialize(updatedMetadata, MetadataJsonOptions);
 
-        var sectionsJson = System.Text.Json.JsonSerializer.Serialize(msg.Sections, SectionJsonOptions);
-        var persisted = false;
-        if (_cogitationId.HasValue)
-        {
-            if (_cogitationOriginNodeId == null && msg.DbMessageId.HasValue)
-            {
-                persisted = await CogitationService.UpdateMessageSectionsAsync(_cogitationId.Value, msg.DbMessageId.Value, sectionsJson);
-            }
-            else if (_cogitationOriginNodeId != null && !string.IsNullOrEmpty(msg.BridgeMessageId))
-            {
-                persisted = await BridgeCogitation.UpdateMessageAsync(userId, _cogitationId.Value, msg.BridgeMessageId, sectionsJson, _cogitationOriginNodeId);
-            }
-        }
+        var persisted = await PersistToolCardStateAsync(msg, userId);
 
         if (!persisted)
         {
@@ -321,6 +386,20 @@ public partial class Chat
         var refreshArgs = System.Text.Json.JsonSerializer.Serialize(new { path = metadata.Path });
         await HandleFileToolCompletedAsync("write_file", refreshArgs);
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task<bool> PersistToolCardStateAsync(MessageEntry msg, string userId)
+    {
+        var sectionsJson = System.Text.Json.JsonSerializer.Serialize(msg.Sections, SectionJsonOptions);
+        if (_cogitationId.HasValue)
+        {
+            if (_cogitationOriginNodeId == null && msg.DbMessageId.HasValue)
+                return await CogitationService.UpdateMessageSectionsAsync(_cogitationId.Value, msg.DbMessageId.Value, sectionsJson);
+            if (_cogitationOriginNodeId != null && !string.IsNullOrEmpty(msg.BridgeMessageId))
+                return await BridgeCogitation.UpdateMessageAsync(userId, _cogitationId.Value, msg.BridgeMessageId, sectionsJson, _cogitationOriginNodeId);
+        }
+
+        return false;
     }
 
     private static string FormatResult(string toolName, string argsJson, string result)
@@ -496,7 +575,11 @@ public partial class Chat
         if (run != null && _attachedRun == run && _streamingMsg != null)
         {
             _pendingRunUpdate = null;
-            SyncMirrorFromRun(_streamingMsg, run);
+            // Promote steers the injector has drained before syncing the live bubble — so the
+            // transcript can seal/rotate and the new Reply is what we mirror into.
+            await PromoteConsumedSteersAsync();
+            if (_streamingMsg != null)
+                SyncMirrorFromRun(_streamingMsg, run);
             // Only replace the manifest list when the contents actually changed. Replacing it
             // on every throttled flush restarts the CSS pulse animation on the in-progress item
             // and can make the checklist appear to blink or jump.
@@ -652,6 +735,12 @@ public partial class Chat
         {
             _ptyNeedsCreation = false;
             await CreatePtyAsync();
+        }
+        // KaTeX mutates MarkupString DOM inside .math nodes — only typeset when not streaming so
+        // per-token re-renders don't desync Blazor (see docs/troubleshooting/math-rendering.md).
+        if (!_isStreaming)
+        {
+            try { await JS.InvokeVoidAsync("ariaInterop.typesetMath", "chatMessages"); } catch { }
         }
         if (firstRender)
         {

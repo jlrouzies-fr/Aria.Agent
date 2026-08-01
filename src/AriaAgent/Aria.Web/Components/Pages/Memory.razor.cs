@@ -37,6 +37,13 @@ public partial class Memory : IDisposable
     internal bool _loading = true;
     internal ElementReference _canvasRef;
     internal bool _canvasJsInit;
+    // Set when the world we're painting changed under the canvas (node switch): the JS pan/zoom state
+    // survives the re-render, so it has to be told to re-centre on the new world.
+    private bool _canvasRecenterPending;
+
+    // Empty-world defaults, mirrored from MemoryGraphLayout's fallback so a node with no engrams
+    // paints a clean canvas instead of the previous node's world box.
+    private const double EmptyWorldWidth = 2800, EmptyWorldHeight = 2200;
 
     protected override async Task OnInitializedAsync()
     {
@@ -50,8 +57,15 @@ public partial class Memory : IDisposable
         if (_graph.Nodes.Count > 0 && !_canvasJsInit)
         {
             _canvasJsInit = true;
+            _canvasRecenterPending = false;
             try { await JS.InvokeVoidAsync("ariaInterop.initMemoryCanvas", ".mem-canvas-wrap", _worldCenterX, _worldCenterY); }
             catch (Exception ex) { Logger.LogWarning(ex, "[MemoryUI] canvas init failed"); _canvasJsInit = false; }
+        }
+        else if (_canvasRecenterPending && _canvasJsInit)
+        {
+            _canvasRecenterPending = false;
+            try { await JS.InvokeVoidAsync("ariaInterop.recenterMemoryCanvas", ".mem-canvas-wrap", _worldCenterX, _worldCenterY); }
+            catch (Exception ex) { Logger.LogWarning(ex, "[MemoryUI] canvas recenter failed"); }
         }
     }
 
@@ -81,6 +95,7 @@ public partial class Memory : IDisposable
         _selectedNodeId = nodeId;
         CloseEntityDrawer();
         _searchResults = null;
+        _canvasRecenterPending = true;
         await RefreshAsync();
     }
 
@@ -104,6 +119,18 @@ public partial class Memory : IDisposable
             _worldHeight = layout.Height;
             _worldCenterX = layout.CenterX;
             _worldCenterY = layout.CenterY;
+        }
+        else
+        {
+            // MemoryCanvas paints hulls and positions independently of _graph.Nodes, so leaving the
+            // previous node's layout in place drew its cluster halos and titles behind the "archivum
+            // is silent" empty state after switching to a node with no engrams.
+            _positions = [];
+            _clusters = [];
+            _worldWidth = EmptyWorldWidth;
+            _worldHeight = EmptyWorldHeight;
+            _worldCenterX = EmptyWorldWidth / 2;
+            _worldCenterY = EmptyWorldHeight / 2;
         }
 
         _loading = false;

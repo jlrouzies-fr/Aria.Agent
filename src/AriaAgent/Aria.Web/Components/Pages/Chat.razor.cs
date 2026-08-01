@@ -1,4 +1,5 @@
 using Aria.Agent;
+using Aria.Harness.Context;
 using Aria.Shared;
 using Aria.Web.Data;
 using Aria.Web.Services.Chat;
@@ -85,6 +86,8 @@ public partial class Chat : ICogitationStreamSink
     private CancellationTokenSource? _greetingCts;
     private string?       _agentSource;
     private string?       _agentModel;
+    private ContextWindow? _effectiveContextWindow;
+    private string?       _contextWindowWarning;
     private string?       _lastUserId;
     private int?          _lastSubAgentId;
     // Owns the currently-open cogitation (reopen path). Distinct from the globally active sub-agent.
@@ -115,7 +118,11 @@ public partial class Chat : ICogitationStreamSink
     private string?       _attachError;
     private DateTime      _streamStart;
     private bool          _smartScrollPending;
-    private string        _queuedInput      = "";
+    // Follow-ups typed while a turn is streaming. FIFO — drained one-at-a-time after each run completes.
+    private readonly List<string> _queuedMessages = [];
+    // Mid-turn steers submitted to MessageInjectingChatClient but not yet drained into the model.
+    // Shown in the STEERING strip above the composer; promoted into the transcript on drain.
+    private readonly List<string> _pendingSteers = [];
     private bool          _compactConfirmOpen;
 
     // Dossier defaults applied at session build for new chats; preserved across soft rebuilds.
@@ -374,6 +381,8 @@ public partial class Chat : ICogitationStreamSink
         _session          = null;
         _agentSource      = null;
         _agentModel       = null;
+        _effectiveContextWindow = null;
+        _contextWindowWarning   = null;
         _activeCogAgent   = null;
         _lastSubAgentId   = SessionState.ActiveSubAgent?.Id;
         _isStreaming      = false;
@@ -405,6 +414,9 @@ public partial class Chat : ICogitationStreamSink
         _suggestedFolderId      = null;
         _suggestedFolderName    = null;
         _suggestedFolderColor   = null;
+        _queuedMessages.Clear();
+        _pendingSteers.Clear();
+        ClearReplayState();
         SessionState.ActiveCogitationId = null;
     }
 

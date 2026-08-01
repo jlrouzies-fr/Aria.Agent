@@ -111,6 +111,7 @@ Full structure with key files:
 | `│   │   ├── BuiltinTools.Web.cs` | Node-side web search / fetch |
 | `│   │   ├── BuiltinTools.Screenshot.cs` | Headless capture of localhost pages |
 | `│   │   ├── BuiltinTools.CommandsIndex.cs` | commands_index knowledge base |
+| `│   │   ├── BuiltinTools.RunTests.cs` | run_tests builtin (+ `TestOutputParsers.cs`: per-ecosystem output parsers) |
 | `│   │   └── BuiltinTools.Memory.cs` | Persistent memory via Noosphere (bridge-local SQLite + vector search) |
 | `│   ├── Services/` | Feature services |
 | `│   │   ├── Logging/BridgeLogger.cs` | In-memory + file logging, version, uptime anchor |
@@ -119,7 +120,7 @@ Full structure with key files:
 | `│   │   ├── Llm/LlmKeyStore.cs` | Cloud API key storage |
 | `│   │   ├── Diagnostics/EgressLog.cs` | Ring buffer of recent LLM egress (`/debug/llm-log`) |
 | `│   │   ├── Metrics/` | `BridgeMetricsCollector`, `BridgeMetricsHostedService`, `PowermetricsTelemetrySource` |
-| `│   │   ├── Noosphere/` | Memory engine: `NoosphereService`, embedder, extractor, ingest worker, config, channel resolver, capabilities, options |
+| `│   │   ├── Noosphere/` | Memory engine: `NoosphereService`, embedder, extractor, ingest worker, config, channel resolver, capabilities, options, `NoosphereBuiltinRuntime` (opt-in MiniLM ONNX + LFM2.5 GGUF) |
 | `│   │   ├── Security/SecurityAuditLog.cs` | Node security audit trail |
 | `│   │   ├── Trust/SiblingRoster.cs` | Sibling-node trust roster (multi-node mesh) |
 | `│   │   └── Vault/` | F-7 value encryption: `VaultEncryption`, `AesGcmHelper`, `EncryptedValueConverter`, per-OS protectors (DPAPI / Keychain / Secret Service) |
@@ -131,6 +132,7 @@ Full structure with key files:
 | `│       ├── LocalWhisperEndpoints.cs` | On-device Whisper: `/transcribe/local` + model status/download/delete |
 | `│       ├── ChannelEndpoints.cs` | `/channels` — node-authoritative channel CRUD |
 | `│       ├── MemoryEndpoints.cs` | `/memory/*` — inscribe/probe/contemplate/synthesize + engram CRUD |
+| `│       ├── MemoryBuiltinEndpoints.cs` | `/memory/builtin/*` — opt-in model download/enable (local-origin only; not tunnel-allowlisted) |
 | `│       ├── McpEndpoints.cs` | `/mcps` CRUD + probe |
 | `│       ├── OAuthEndpoints.cs` | `/oauth/{provider}/connect|callback`, `/oauth-config` |
 | `│       ├── SealEndpoints.cs` | `/seal/*` — Inquisitorial Seal request/poll/approve/reject |
@@ -141,7 +143,8 @@ Full structure with key files:
 | `│       ├── CogitationEndpoints.cs` | Local cogitation + message storage |
 | `│       ├── ContactEndpoints.cs` | Local contact storage |
 | `│       ├── NodeEndpoints.cs` | Node enrollment attestation, join/session codes, `/soul/join` |
-| `│       ├── ToolEndpoints.cs` | MCP server `/tools/list` and `/tools/call` |
+| `│       ├── SoulPinEndpoints.cs` | Last join step — primary fingerprint + pin ceremony (`/soul/fingerprint`, `/soul/pin-key`); off tunnel allowlist |
+| `│       ├── ToolEndpoints.cs` | MCP server `/tools/list` and `/tools/call`, plus read-only `/tools/preview` (prospective diffs) |
 | `│       ├── ProjectFileEndpoints.cs` | Local project file listing + reading |
 | `│       ├── StatusEndpoints.cs` | `/`, `/status`, `/logs`, `/metrics` — status dashboard + live bridge performance metrics |
 | `│       ├── DbAdminEndpoints.cs` | `/db-info`, wipe cogitations/messages/soul |
@@ -235,11 +238,12 @@ The agentic orchestration logic that used to live inside `Aria.Web.Services.Agen
 
 | Contract | Responsibility |
 |---|---|
-| `IHarness` | Main entry point: `CreateSessionAsync`, `StreamAsync`, `DetectThinkingFormatAsync`, `DetectToolCallFormatAsync`, `ForceRedetectAsync`. |
+| `IHarness` | Main entry point: `CreateSessionAsync`, `StreamAsync`, `DetectThinkingFormatAsync`, `DetectToolCallFormatAsync`, `ForceRedetectAsync`, `ResolveContextWindowAsync`. |
 | `IHarnessRuntime` | Host-provided capabilities: resolve sources / API keys / OAuth tokens, check bridge availability, post/stream through the bridge, and access the `IFormatCache`. |
 | `HarnessOptions` | Host-agnostic session config: selected source/model, thinking format, enabled tools, MCP servers, callbacks for thinking/tool progress. |
-| `HarnessContext` | Per-operation context: `UserId`, `BridgeUserId`, cancellation token. Deliberately small — heavy state lives in the runtime. |
-| `IFormatCache` | Thinking/tool-call format cache abstraction. Web uses SQLite (`WebFormatCache`); Console uses in-memory (`ConsoleFormatCache`). |
+| `HarnessContext` | Per-operation context: `UserId`, `BridgeUserId`, resolved `ContextWindow`, cancellation token. Deliberately small — heavy state lives in the runtime. |
+| `IFormatCache` | Thinking/tool-call format cache abstraction, now also stores per-source+model `ContextWindow`. Web uses SQLite (`WebFormatCache`); Console uses in-memory (`ConsoleFormatCache`). |
+| `ContextWindow` | A discovered or configured context-window size (`Tokens`, `Assumed`). Used to derive auto-compaction thresholds, populate `context_status`, and guard oversized `read_file` calls. |
 
 ### Host adapters
 
@@ -280,6 +284,23 @@ graph LR
 - It still exposes the same public methods used by Blazor pages (`CreateSessionAsync`, `StreamAsync`, `DetectThinkingFormatAsync`, etc.).
 - Internally it maps web state (`userId`, `bridgeUserId`, enabled tools, MCP servers) into `HarnessOptions`/`HarnessContext` and delegates to `IHarness`.
 - Web-specific data access moved into `WebHarnessRuntime`, so the harness itself has no knowledge of EF Core or SignalR.
+
+### Context window discovery
+
+Every model has a context-window budget. Aria resolves it per source+model with this precedence:
+
+1. **User override** — an optional `ContextWindow` value on the bridge channel configuration (`BridgeChannel.ContextWindow`), surfaced on the bridge status page.
+2. **Provider discovery** — the bridge's `/llm/detect-format` endpoint probes local endpoints (Ollama `/api/show` first, then OpenAI-compatible `/models/{id}`) and returns the discovered size, which the harness stores in `IFormatCache`.
+3. **Well-known cloud catalog** — `ContextWindowCatalog` maps common public model ids (GPT-4o, Claude 3.5 Sonnet, Gemini 1.5 Pro, etc.).
+4. **Assumed fallback** — `100_000` tokens, explicitly marked `Assumed = true` so it preserves today's behaviour.
+
+A *known* window changes three things:
+
+- **Auto-compaction threshold** becomes `window × 0.8`, clamped to a 4k floor (`AutoCompaction.ResolveThreshold`).
+- **`context_status`** reports the window, estimated % used, and whether it is known or assumed (`ContextStatusReport`).
+- **`read_file` guard** — when a file is estimated to exceed 25% of a known window, the bridge returns the first ~200 lines plus guidance to read ranges (`BuiltinTools.ReadFile`).
+
+Assumed windows keep the legacy 100k threshold and leave `read_file` uncapped, so existing sessions are unaffected until a model is re-probed or an override is set.
 
 ### Tests
 
@@ -336,11 +357,14 @@ This means a user who sets up agents and channels in the web UI can open the ter
 | `GetWarSituationReport` | WargameTools | Strategic report: turn, factions, units, resources, buildings, battle log |
 | `update_task_manifest` | TodoTools | Posts/updates the agent's live task checklist (pinned in the UI) |
 | `list_chat_capabilities` | ChatCapabilitiesTools | Lists the UI's `/` commands and `#` context references, so the agent can answer "how do I do X" questions |
+| `run_tests` | BuiltinTools.RunTests | Structured build/test/lint runs: infers the project command (or takes an explicit one), maps a filter to the native flag, parses dotnet/pytest/jest/vitest/cargo/go output into counts + failing tests with file:line; bash_exec's governance class |
 | *(dynamic)* | McpTools | All tools exposed by enabled MCP servers |
 
 ### Governance wrapper
 
-Every tool above is wrapped at session-build time by a `GovernedTool` (`Aria.Harness/Governance/`) — invisible to the model (name/description/schema delegate to the inner tool). Before a call runs, a per-session `GovernanceContext` + `ToolClassifier` apply the active mode's policy: per-turn tool-call/read budgets, a scope-lock to the active project paths plus `#`-referenced files, and loop detection. A refused call returns a **synthetic result** the model self-corrects on (never a throw), a gated call pauses for an in-chat approval, and a high-stakes call in Paranoid mode escalates to the node-signed **Inquisitorial Seal** (see [Security guarantees](#security-guarantees)). The mode is re-read each turn, so changes apply to an existing chat on the next message.
+Every tool above is wrapped at session-build time by a `GovernedTool` (`Aria.Harness/Governance/`) — invisible to the model (name/description/schema delegate to the inner tool). Before a call runs, a per-session `GovernanceContext` + `ToolClassifier` apply the active mode's policy: per-turn tool-call/read budgets, a scope-lock to the active project paths plus `#`-referenced files, and loop detection. A refused call returns a **synthetic result** the model self-corrects on (never a throw), a gated call pauses for an in-chat approval, and a high-stakes call in Paranoid mode escalates to the node-signed **Inquisitorial Seal** (see [Security guarantees](#security-guarantees)). The mode is re-read each turn, so changes apply to an existing chat on the next message. When a file mutation (`edit_file`/`multi_edit`/`write_file`) pauses for approval, the harness fetches a **prospective diff** from the bridge's read-only `POST /tools/preview` endpoint and the approval card renders it; after the mutation the same diff is appended to the model-facing result text (bridge `AgentTools:DiffFeedback` knob, on by default).
+
+After a successful file mutation (`write_file`/`edit_file`/`multi_edit`/`delete_*`/`move_path`/`create_dir`), the wrapper also counts it against the turn's **verify nudge**: while no build/test verification has run, the mutation's own result earns a one-line reminder — at the first mutation, then every five — `◈ N file(s) mutated this turn, no build/test run yet — consider verifying (run_tests, or project_info to infer the command).` A PASSED `run_tests` (recognised by its structured `◈ TEST RUN … — PASSED` header) or a `bash_exec` command matching the build/test pattern list (`dotnet test|build`, `pytest`, `npm test|run build`, `cargo test`, `go test`, `make test`) marks the turn verified and silences it; both counters reset in `BeginTurn`. Advisory only — never blocks, never fails a call, never counts against budgets (`Governance:VerifyNudge` knob, on by default). Success/failure comes from the bridge's own `ToolCallResponse.IsError` flag, surfaced harness-side on the result wrappers (`BridgeToolResult`, `FileMutationToolResult.IsError`) — bridge error texts have no uniform prefix.
 
 ---
 

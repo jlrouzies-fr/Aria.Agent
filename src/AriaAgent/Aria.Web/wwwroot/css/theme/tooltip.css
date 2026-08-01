@@ -37,3 +37,33 @@ button[data-tip]:disabled { cursor: default; }
     0%, 100% { box-shadow: 0 0 8px color-mix(in srgb, var(--border-glow, #e07070) 45%, transparent), 0 2px 6px rgba(0,0,0,0.6); }
     50%       { box-shadow: 0 0 14px color-mix(in srgb, var(--border-glow, #e07070) 75%, transparent), 0 2px 6px rgba(0,0,0,0.6); }
 }
+
+/* Message-action variant — opt in via data-tip-variant="action". Terminal chrome for icon buttons
+   (copy / edit & replay): uppercase tracking, gold rail, slightly wider. */
+#aria-tip.aria-tip-action {
+    max-width: 320px;
+    padding: 7px 12px 7px 10px;
+    border-left: 2px solid var(--gold-dim, #c0ae82);
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--gold-bright, #e8d5a3);
+    background: color-mix(in srgb, var(--bg-panel, #14110a) 92%, var(--gold-dim, #c0ae82));
+    box-shadow: var(--glow-sm, 0 0 6px rgba(192,174,130,0.35)), 0 4px 14px rgba(0,0,0,0.55);
+}
+
+/* Failure / alert variant — opt in via data-tip-variant="warn". Used for live-broken state
+   indicators (Noosphere extraction down, etc.): red rail + soft pulse so it matches the icon. */
+#aria-tip.aria-tip-warn {
+    max-width: 300px;
+    padding: 7px 11px 7px 10px;
+    border-color: #d04040;
+    border-left: 2px solid #d04040;
+    color: #f0c0c0;
+    background: color-mix(in srgb, var(--bg-panel, #14110a) 88%, #d04040);
+    box-shadow: 0 0 8px rgba(208, 64, 64, 0.45), 0 2px 8px rgba(0, 0, 0, 0.6);
+    animation: ariaTipWarnPulse 1.4s ease-in-out infinite;
+}
+@keyframes ariaTipWarnPulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(208, 64, 64, 0.45), 0 2px 8px rgba(0, 0, 0, 0.6); }
+    50%       { box-shadow: 0 0 14px rgba(208, 64, 64, 0.75), 0 2px 8px rgba(0, 0, 0, 0.6); }
+}

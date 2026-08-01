@@ -5,6 +5,7 @@ public static class EndpointsMapper
     public static WebApplication MapBridgeEndpoints(this WebApplication app)
     {
         app.MapSoulEndpoints();
+        app.MapSoulPinEndpoints();
         app.MapCogitationEndpoints();
         app.MapHiveEndpoints();
         app.MapContactEndpoints();
@@ -23,6 +24,7 @@ public static class EndpointsMapper
         app.MapContextEndpoints();
         app.MapOAuthEndpoints();
         app.MapMemoryEndpoints();
+        app.MapMemoryBuiltinEndpoints();
         app.MapTerminalEndpoints();
         app.MapChannelEndpoints();
 #if DEBUG

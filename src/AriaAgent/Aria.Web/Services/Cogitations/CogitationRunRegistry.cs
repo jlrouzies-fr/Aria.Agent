@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Aria.Harness.Core;
 using Aria.Shared;
 using Aria.Web.Services.AgentServices;
 using Aria.Web.Services.Chat;
@@ -167,6 +168,12 @@ public sealed class CogitationRunRegistry(
 
         var haltedForContextApproval = false;
 
+        // Mint a per-turn checkpoint so every file mutation in this run can be batch-reverted by
+        // /rewind. Flows into BridgeMcpTool via HarnessContext.CurrentTurnCheckpoint (AsyncLocal).
+        var previousCheckpoint = HarnessContext.CurrentTurnCheckpoint;
+        HarnessContext.CurrentTurnCheckpoint = Guid.NewGuid().ToString("N");
+        run.CheckpointId = HarnessContext.CurrentTurnCheckpoint;
+
         try
         {
             var outgoing = req.IsContextRetry ? ContextRetryNudge : req.AiMessage;
@@ -226,22 +233,29 @@ public sealed class CogitationRunRegistry(
             run.AppendNote($"\n// COGITATOR FAULT: {StreamingErrorHelper.FriendlyError(ex.Message, req.AgentSourceName)} //");
             run.MarkInterrupted();
         }
-        if (!haltedForContextApproval)
+        try
         {
-            try { await FinishRunAsync(run, req); }
-            catch (Exception ex)
+            if (!haltedForContextApproval)
             {
-                logger.LogError(ex, "Cogitation run finalize failed for cogitation {CogitationId}", run.CogitationId);
-            }
+                try { await FinishRunAsync(run, req); }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Cogitation run finalize failed for cogitation {CogitationId}", run.CogitationId);
+                }
 
-            run.SetStatus(CogitationRunStatus.Completed);
-            // Checked BEFORE RaiseCompleted() notifies (and detaches) any attached viewer — reflects
-            // whether someone was watching live as this run actually finished.
-            if (!run.HasAttachedViewer)
-                MarkUnseen(req.UserId, req.CogitationId);
-            _runs.TryRemove(run.CogitationId, out _);
-            run.RaiseCompleted();
-            RunsChanged?.Invoke(req.UserId, req.CogitationId);
+                run.SetStatus(CogitationRunStatus.Completed);
+                // Checked BEFORE RaiseCompleted() notifies (and detaches) any attached viewer — reflects
+                // whether someone was watching live as this run actually finished.
+                if (!run.HasAttachedViewer)
+                    MarkUnseen(req.UserId, req.CogitationId);
+                _runs.TryRemove(run.CogitationId, out _);
+                run.RaiseCompleted();
+                RunsChanged?.Invoke(req.UserId, req.CogitationId);
+            }
+        }
+        finally
+        {
+            HarnessContext.CurrentTurnCheckpoint = previousCheckpoint;
         }
     }
 

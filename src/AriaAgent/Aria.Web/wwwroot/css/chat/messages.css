@@ -39,6 +39,17 @@
     border-bottom: 1px dashed var(--border-dim);
 }
 
+/* ── Context-window warning (shown when estimated usage exceeds a known window) ────── */
+.context-window-warning {
+    margin: 8px 0;
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    color: var(--danger, #c05050);
+    background: color-mix(in srgb, var(--danger, #c05050) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--danger, #c05050) 35%, transparent);
+    border-radius: 2px;
+}
+
 /* ── Chat timeline rail (jump to your past messages) ────── */
 .chat-timeline {
     flex-shrink: 0;
@@ -186,20 +197,31 @@
     line-height: 1.6;
 }
 
+/* Per-message footer: tokens on the left, action icons on the right (same row). */
+.msg-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 10px;
+    width: 100%;
+}
+.msg--soul .msg-footer { width: 88%; }
+.msg-footer-spacer { flex: 1; }
+
 /* Per-message token footer — rendered under an assistant reply (ChatGPT / Open WebUI style). */
 .msg-tokens {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
     gap: 10px;
-    margin-top: 14px;
     padding-left: 2px;
     font-size: 10px;
     font-family: var(--font-mono);
     color: var(--text-muted);
     transition: color 0.15s ease;
 }
-.msg-tokens:hover { color: var(--text-normal); }
+.msg-footer:hover .msg-tokens { color: var(--text-normal); }
 .tk-group {
     display: inline-flex;
     align-items: baseline;
@@ -220,6 +242,51 @@
 .msg--soul { align-items: flex-end; }
 .msg--soul .msg-content { width: 88%; text-align: right; }
 .msg--soul .msg-prefix { justify-content: flex-end; }
+
+/* Compact icon actions — right side of the footer (copy / edit & replay). */
+.msg-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 3px;
+    margin-left: auto;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+.msg:hover .msg-actions,
+.msg--editing .msg-actions { opacity: 1; }
+.msg-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-dead);
+    cursor: pointer;
+    transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.msg-action-btn:hover {
+    color: var(--gold-bright);
+    border-color: var(--border-dim);
+    background: color-mix(in srgb, var(--gold-dim) 10%, transparent);
+}
+.msg-action-btn--done {
+    color: var(--gold-bright);
+}
+.msg-action-icon {
+    width: 11px;
+    height: 11px;
+    display: block;
+}
+.msg--editing {
+    outline: 1px solid var(--gold-dim);
+    outline-offset: 2px;
+    background: color-mix(in srgb, var(--gold-dim) 8%, transparent);
+}
 
 .msg.system .msg-prefix { display: none; }
 .msg.system .msg-content {
@@ -309,6 +376,11 @@
 .msg-content.markdown table   { border-collapse: collapse; margin: 6px 0; }
 .msg-content.markdown th      { color: var(--text-bright); border: 1px solid var(--border-normal); padding: 3px 8px; background: var(--bg-surface); }
 .msg-content.markdown td      { color: var(--text-body); border: 1px solid var(--border-dim); padding: 3px 8px; }
+
+/* KaTeX (client typeset of Markdig .math fences). Inherit chat colours; display blocks breathe. */
+.msg-content.markdown .math,
+.msg-content.markdown .katex { color: inherit; }
+.msg-content.markdown .katex-display { margin: 8px 0; overflow-x: auto; overflow-y: hidden; }
 
 /* Streaming cursor blink */
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }

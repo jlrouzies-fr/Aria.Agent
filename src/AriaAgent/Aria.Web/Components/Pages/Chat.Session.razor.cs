@@ -1,3 +1,4 @@
+using Aria.Harness.Context;
 using Aria.Harness.Formats;
 using Aria.Web.Data;
 using Aria.Web.Helpers;
@@ -241,6 +242,7 @@ public partial class Chat
 
             _agentSource    = sourceName;
             _agentModel     = modelId;
+            _effectiveContextWindow = await AgentService.ResolveContextWindowAsync(sourceName, modelId, userId);
             _lastSubAgentId = subAgent?.Id;
             var sessionLabel = subAgent != null
                 ? $"// SESSION ESTABLISHED — AGENT: {subAgent.GeneratedName.ToUpperInvariant()} //"

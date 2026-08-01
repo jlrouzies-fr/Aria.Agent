@@ -73,11 +73,15 @@ public static class BridgeDatabaseInitializer
                 PreContent TEXT,
                 PostHash TEXT NOT NULL,
                 ToolName TEXT NOT NULL,
+                Checkpoint TEXT,
                 CreatedAt TEXT NOT NULL DEFAULT (datetime('now')),
                 RevertedAt TEXT
             );
             CREATE INDEX IF NOT EXISTS IX_FileUndo_CreatedAt ON FileUndo (CreatedAt);
         """);
+        // IX_FileUndo_Checkpoint is created further below, after the ALTER TABLE migration that adds
+        // the Checkpoint column to pre-existing databases (creating the index here would fail on
+        // those, since CREATE TABLE IF NOT EXISTS is a no-op when the table already exists).
 
         // Cloud-provider API keys, held locally so the server never stores them.
         await db.Database.ExecuteSqlRawAsync("""
@@ -270,6 +274,7 @@ public static class BridgeDatabaseInitializer
             ("NodePrivateKeyBase64", "TEXT"),
             ("NodeId",               "TEXT"),
             ("NodeLabel",            "TEXT"),
+            ("SoulKeyPinnedAt",      "TEXT"),
             ("DataKeyBase64",        "TEXT"),
             ("TerminalEnabled",            "INTEGER NOT NULL DEFAULT 0"),
             ("TerminalAllowedPathsJson",   "TEXT"),
@@ -344,7 +349,14 @@ public static class BridgeDatabaseInitializer
         }
 
         // Embeddings/extraction model: free-text, independent of the channel's own chat-model list.
-        foreach (var col in new[] { ("EmbeddingsModel", "TEXT"), ("ExtractionModel", "TEXT") })
+        // Builtin*: opt-in on-node models (see docs/ideas/noosphere-builtin-models-plan.md).
+        foreach (var col in new[]
+                 {
+                     ("EmbeddingsModel", "TEXT"),
+                     ("ExtractionModel", "TEXT"),
+                     ("BuiltinEnabled", "INTEGER NOT NULL DEFAULT 0"),
+                     ("BuiltinLicenseAcceptedAt", "TEXT")
+                 })
         {
             await using var chk = dbConn.CreateCommand();
             chk.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('NoosphereConfig') WHERE name='{col.Item1}'";
@@ -354,6 +366,32 @@ public static class BridgeDatabaseInitializer
                 await chk.ExecuteNonQueryAsync();
             }
         }
+
+        // Context-window discovery: per-channel user override for model context budgets.
+        foreach (var col in new[] { ("ContextWindow", "INTEGER") })
+        {
+            await using var chk = dbConn.CreateCommand();
+            chk.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('Channels') WHERE name='{col.Item1}'";
+            if ((long)(await chk.ExecuteScalarAsync())! == 0)
+            {
+                chk.CommandText = $"ALTER TABLE Channels ADD COLUMN {col.Item1} {col.Item2};";
+                await chk.ExecuteNonQueryAsync();
+            }
+        }
+
+        // Turn checkpoints for /rewind: tag FileUndo rows with the cogitation-run id that caused them.
+        foreach (var col in new[] { ("Checkpoint", "TEXT") })
+        {
+            await using var chk = dbConn.CreateCommand();
+            chk.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('FileUndo') WHERE name='{col.Item1}'";
+            if ((long)(await chk.ExecuteScalarAsync())! == 0)
+            {
+                chk.CommandText = $"ALTER TABLE FileUndo ADD COLUMN {col.Item1} {col.Item2};";
+                await chk.ExecuteNonQueryAsync();
+            }
+        }
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS IX_FileUndo_Checkpoint ON FileUndo (Checkpoint);");
 
         // Server link history: one active link remains mirrored on Souls.ServerUrl/ServerSoulId,
         // but multiple saved links can be stored for quick switching.

@@ -343,6 +343,32 @@ public class ToolClassifierTests
         Assert.Equal(GovernancePolicy.FromMode(GovernanceMode.Strict), policy);
     }
 
+    // ── run_tests: exactly bash_exec's classification ───────────────────────────
+
+    [Fact]
+    public void Strict_RunTests_NeedsApproval()
+    {
+        var ctx = Ctx(GovernanceMode.Strict);
+        var v = ToolClassifier.Classify(ctx, "run_tests", Args(new { cwd = "/x", kind = "test" }), "run_tests");
+        Assert.Equal(ToolSeverity.NeedsApproval, v.Severity);
+    }
+
+    [Fact]
+    public void Paranoid_RunTests_NeedsSeal()
+    {
+        var ctx = Ctx(GovernanceMode.Paranoid);
+        var v = ToolClassifier.Classify(ctx, "run_tests", Args(new { cwd = "/x" }), "run_tests");
+        Assert.Equal(ToolSeverity.NeedsSeal, v.Severity);
+    }
+
+    [Fact]
+    public void Strict_RunTests_CwdOutsideScope_Blocked()
+    {
+        var ctx = Ctx(GovernanceMode.Strict, scope: new[] { "/home/user/project" });
+        var v = ToolClassifier.Classify(ctx, "run_tests", Args(new { cwd = "/etc" }), "/etc");
+        Assert.Equal(ToolSeverity.Blocked, v.Severity);
+    }
+
     [Fact]
     public void ModeSwitch_MidSession_TakesEffectNextTurn()
     {

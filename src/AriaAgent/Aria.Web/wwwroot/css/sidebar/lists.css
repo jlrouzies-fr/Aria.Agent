@@ -215,6 +215,16 @@
     animation: warnPulse 2s ease-in-out infinite;
 }
 
+/* Soul-key warning attached to a device row: red rather than the amber of an ordinary source-warn,
+   and it wraps because it carries the URL the human has to open on that machine. */
+.device-key-warn {
+    color: #e08080;
+    line-height: 1.6;
+    padding-bottom: 6px;
+    white-space: normal;
+}
+.device-key-warn strong { color: #f0a0a0; }
+
 .source-row .source-dot  { font-size: 10px; color: var(--text-muted); }
 .source-row.active .source-dot  { color: var(--border-glow); }
 .source-row .source-icon { font-size: 11px; width: 16px; flex-shrink: 0; }

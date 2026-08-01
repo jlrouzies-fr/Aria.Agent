@@ -270,6 +270,91 @@ public static class ProjectFileEndpoints
                 return Results.Problem($"Revert failed: {ex.Message}");
             }
         });
+
+        // POST /project-files/revert-checkpoint — restore every unreverted file mutation captured
+        // under one checkpoint (usually one agent turn). Each file reports its own outcome so a
+        // hash mismatch on one path does not hide successful reverts on the others.
+        app.MapPost("/project-files/revert-checkpoint", async (RevertCheckpointRequest req, BridgeDbContext db, HttpRequest http) =>
+        {
+            if (string.IsNullOrWhiteSpace(req.Checkpoint))
+                return Results.BadRequest("checkpoint required");
+
+            var policy = await NodeTerminalPolicy.ResolveAsync(db, req.AllowedPaths, SessionOf(http));
+            var undos = await db.FileUndos
+                .Where(u => u.Checkpoint == req.Checkpoint && u.RevertedAt == null)
+                .OrderByDescending(u => u.CreatedAt)
+                .ToListAsync();
+            if (undos.Count == 0)
+                return Results.NotFound(new { error = "Checkpoint not found or already fully reverted" });
+
+            var rewindCheckpoint = Guid.NewGuid().ToString("N");
+            var results = new List<RevertCheckpointEntry>(undos.Count);
+
+            foreach (var undo in undos)
+            {
+                var path = undo.Path;
+                try { policy.EnforcePath(path); }
+                catch (TerminalSecurityException ex)
+                {
+                    results.Add(new(undo.Id, path, "skipped", $"Blocked by path policy: {ex.Message}"));
+                    continue;
+                }
+
+                var currentExists = File.Exists(path);
+                var currentHash = currentExists ? ComputeHash(File.ReadAllText(path)) : "";
+                if (currentHash != undo.PostHash)
+                {
+                    results.Add(new(undo.Id, path, "skipped", "File has changed since this mutation."));
+                    continue;
+                }
+
+                var preContent = currentExists ? File.ReadAllText(path) : null;
+                try
+                {
+                    FileReverter.Apply(undo);
+                    undo.RevertedAt = DateTime.UtcNow;
+
+                    var restoredExists = File.Exists(path);
+                    var postContent = restoredExists ? File.ReadAllText(path) : "";
+                    db.FileUndos.Add(new FileUndo
+                    {
+                        Id = Guid.NewGuid().ToString("N"),
+                        Path = path,
+                        DestinationPath = undo.DestinationPath,
+                        PreContent = preContent,
+                        PostHash = restoredExists ? ComputeHash(postContent) : "",
+                        ToolName = "rewind_checkpoint",
+                        Checkpoint = rewindCheckpoint,
+                        CreatedAt = DateTime.UtcNow
+                    });
+
+                    results.Add(new(undo.Id, path, "reverted", $"Reverted {undo.ToolName} from {undo.CreatedAt:u}"));
+                }
+                catch (FileNotFoundException)
+                {
+                    results.Add(new(undo.Id, path, "missing", "File was missing and could not be restored."));
+                }
+                catch (DirectoryNotFoundException)
+                {
+                    results.Add(new(undo.Id, path, "missing", "Parent directory was missing and could not be restored."));
+                }
+                catch (Exception ex)
+                {
+                    results.Add(new(undo.Id, path, "skipped", ex.Message));
+                }
+            }
+
+            await db.SaveChangesAsync();
+            PruneFileUndos(db);
+
+            return Results.Ok(new RevertCheckpointResponse(
+                req.Checkpoint,
+                rewindCheckpoint,
+                results.Count(x => x.Status == "reverted"),
+                results.Count(x => x.Status == "skipped"),
+                results.Count(x => x.Status == "missing"),
+                results));
+        });
     }
 
     private static string ComputeHash(string content) =>
@@ -290,7 +375,16 @@ public record ProjectFilesListRequest(string Root, string? Filter, int? Limit, s
 public record ProjectFilesTreeRequest(string Root, string[]? AllowedPaths);
 public record ProjectFileReadRequest(string Path, string[]? AllowedPaths);
 public record RevertRequest(string UndoToken, string[]? AllowedPaths, bool Force = false);
+public record RevertCheckpointRequest(string Checkpoint, string[]? AllowedPaths);
 public record ProjectFileWriteRequest(string Path, string Content, string BaseHash, string[]? AllowedPaths);
 public record ReadResponse(string Path, string Content, bool Truncated, string Hash);
 public record WriteResponse(string Path, string Hash);
 public record WriteConflictResponse(string Path, string Content, string Hash, string Error, string? Diff);
+public record RevertCheckpointEntry(string UndoToken, string Path, string Status, string Detail);
+public record RevertCheckpointResponse(
+    string Checkpoint,
+    string RewindCheckpoint,
+    int Reverted,
+    int Skipped,
+    int Missing,
+    List<RevertCheckpointEntry> Results);

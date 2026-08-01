@@ -115,6 +115,25 @@
     50%       { opacity: 0.25; }
 }
 
+/* Red warning when any connected node's last Noosphere extraction failed (e.g. LM Studio down).
+   Separate from the gold processing blink — Inscribe does not wait for extraction, so this is how
+   a silent channel failure stays visible after the agent has already moved on. */
+.mem-fail-warn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    flex-shrink: 0;
+    color: #d04040;
+    filter: drop-shadow(0 0 4px rgba(208, 64, 64, 0.85));
+    animation: memFailBlink 1.1s ease-in-out infinite;
+}
+.mem-fail-warn svg { display: block; width: 12px; height: 12px; }
+@keyframes memFailBlink {
+    0%, 100% { opacity: 1;    filter: drop-shadow(0 0 5px rgba(208, 64, 64, 0.95)); }
+    50%       { opacity: 0.2;  filter: drop-shadow(0 0 1px rgba(208, 64, 64, 0.3)); }
+}
+
 /* nav icon: always visible */
 .nav-icon { display: flex; align-items: center; flex-shrink: 0; width: 15px; height: 15px; opacity: 0.7; }
 .nav-icon svg { display: block; width: 15px; height: 15px; }
@@ -169,7 +188,9 @@
 .sidebar-collapsed .nav-item-label { display: none; }
 .sidebar-collapsed .nav-sub-label-count { display: none; }
 .sidebar-collapsed .vigil-unseen-dot { position: absolute; top: 6px; right: 6px; }
-.sidebar-collapsed .device-pending-dot { position: absolute; top: 6px; right: 6px; }
+.sidebar-collapsed .device-pending-dot,
+.sidebar-collapsed .device-key-dot,
+.sidebar-collapsed .mem-fail-warn { position: absolute; top: 6px; right: 6px; margin-left: 0; }
 .sidebar-collapsed .sidebar-nav-item { position: relative; }
 .sidebar-collapsed .nav-agent-active { display: none; }
 
@@ -204,6 +225,25 @@
 @keyframes devicePendingPulse {
     0%, 100% { opacity: 1;   box-shadow: 0 0 6px rgba(224,123,57,0.9); }
     50%       { opacity: 0.3; box-shadow: 0 0 2px rgba(224,123,57,0.3); }
+}
+
+/* Red pulse for a device that hasn't confirmed the soul master key — on "// DEVICES" and on the
+   offending row inside the panel. Deliberately not the amber of a pending pairing: that one is a
+   routine chore, this one means cross-device seals are silently not working on that machine. */
+.device-key-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #d04040;
+    box-shadow: 0 0 6px rgba(208,64,64,0.9);
+    margin-left: auto;
+    flex-shrink: 0;
+    animation: deviceKeyPulse 1.2s ease-in-out infinite;
+}
+@keyframes deviceKeyPulse {
+    0%, 100% { opacity: 1;   box-shadow: 0 0 6px rgba(208,64,64,0.9); }
+    50%       { opacity: 0.25; box-shadow: 0 0 2px rgba(208,64,64,0.3); }
 }
 
 /* ── Section panel overlay ──────────────────────────────── */

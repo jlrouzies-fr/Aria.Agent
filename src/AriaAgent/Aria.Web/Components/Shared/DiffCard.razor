@@ -19,7 +19,14 @@
             }
         </span>
         <span class="diff-card-actions">
-            <button class="diff-card-btn" @onclick="OnOpenAsync" title="Open in explorer">OPEN</button>
+            @if (ShowOpen)
+            {
+                <button class="diff-card-btn" @onclick="OnOpenAsync" title="Open in explorer">OPEN</button>
+            }
+            @if (ShowRewind && !Reverted)
+            {
+                <button class="diff-card-btn diff-card-btn--revert" @onclick="OnRewindAsync">REVERT TURN</button>
+            }
             @if (ShowRevert)
             {
                 @if (Reverted)
@@ -78,9 +85,12 @@
     [Parameter] public bool Deleted { get; set; }
     [Parameter] public bool Reverted { get; set; }
     [Parameter] public bool ShowRevert { get; set; } = true;
+    [Parameter] public bool ShowRewind { get; set; }
+    [Parameter] public bool ShowOpen { get; set; } = true;
     [Parameter] public EventCallback<bool> RevertedChanged { get; set; }
     [Parameter] public EventCallback OnOpen { get; set; }
     [Parameter] public EventCallback OnRevert { get; set; }
+    [Parameter] public EventCallback OnRewind { get; set; }
 
     private static string GetLineClass(string line) => line switch
     {
@@ -100,5 +110,11 @@
     {
         if (OnRevert.HasDelegate)
             await OnRevert.InvokeAsync();
+    }
+
+    private async Task OnRewindAsync()
+    {
+        if (OnRewind.HasDelegate)
+            await OnRewind.InvokeAsync();
     }
 }

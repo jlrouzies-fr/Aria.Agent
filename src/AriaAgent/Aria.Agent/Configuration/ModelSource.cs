@@ -17,6 +17,12 @@ public class ModelSource
     // keyRef must stay the real channel name the node stored, not the "Name · Label" display string.
     public string? ChannelName  { get; set; }
 
+    /// <summary>
+    /// Optional user override for this channel's context window, in tokens. Wins over provider
+    /// discovery and the fallback assumption. Set from the bridge channel configuration.
+    /// </summary>
+    public int? ContextWindow { get; set; }
+
     public string GetApiKey()
     {
         if (string.IsNullOrEmpty(ApiKeyFile)) return string.Empty;
