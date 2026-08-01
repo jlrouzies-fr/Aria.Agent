@@ -15,22 +15,36 @@ public partial class NavMenu
     }
 
     // True while the bridge's Noosphere ingest worker still has inscribes queued for extraction —
-    // drives the "PROCESSING" spinner next to the nav item so it's clear memories are still being
-    // written in the background (extraction is async: Inscribe returns immediately, a bridge worker
-    // does the LLM extraction + embedding after). Polled rather than pushed since the bridge has no
-    // channel back to the web circuit for this.
+    // drives the gold blink on the nav icon. Extraction is async (Inscribe returns immediately);
+    // polled rather than pushed since the bridge has no channel back to the web circuit for this.
     internal bool _memoryProcessing;
-    internal Timer? _memoryPollTimer;
+    // Red warning when any connected node's last extraction failed (LM Studio down, bad URL, …).
+    // Survives until that node successfully extracts again — Inscribe itself does not wait, so this
+    // is how a human (or a later session) notices a silent failure.
+    internal bool    _memoryExtractionFailed;
+    internal string? _memoryExtractionFailTip;
+    internal Timer?  _memoryPollTimer;
 
     internal async Task RefreshMemoryProcessingAsync(string userId)
     {
-        var stats = await MemoryClient.GetStatsAsync(userId);
-        var processing = stats is { PendingIngests: > 0 };
-        if (processing != _memoryProcessing)
-        {
-            _memoryProcessing = processing;
-            await InvokeAsync(StateHasChanged);
-        }
+        var health = await MemoryClient.GetNavHealthAsync(userId);
+        var processing = health.Processing;
+        var failed = !string.IsNullOrEmpty(health.ExtractionError);
+        var tip = failed
+            ? "Noosphere extraction failing"
+              + (string.IsNullOrEmpty(health.ErrorNodeLabel) ? "" : $" on \"{health.ErrorNodeLabel}\"")
+              + $": {health.ExtractionError}. Open Noosphere / the bridge Memory tab — structured recall will stay broken until the local model is reachable again."
+            : null;
+
+        if (processing == _memoryProcessing
+            && failed == _memoryExtractionFailed
+            && tip == _memoryExtractionFailTip)
+            return;
+
+        _memoryProcessing = processing;
+        _memoryExtractionFailed = failed;
+        _memoryExtractionFailTip = tip;
+        await InvokeAsync(StateHasChanged);
     }
 
     // Leads Noosphere extraction toward Terminal projects (docs/ideas/noosphere-archive-aware-extraction-plan.md):

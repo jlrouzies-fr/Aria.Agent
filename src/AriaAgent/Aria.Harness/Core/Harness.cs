@@ -67,6 +67,20 @@ public sealed partial class Harness : IHarness
         if (hasMemoryTools)
             baseInstructions += BuildMemoryAddendum();
 
+        // Active-project AGENTS.md — Benign read_file, fail-soft. Reloaded on every session build
+        // (including /project switches) so a cleared project drops the charter automatically.
+        if (!string.IsNullOrWhiteSpace(options.ActiveProjectPath) &&
+            await _runtime.IsBridgeAvailableAsync(context, ct))
+        {
+            var agentsText = await TryLoadAgentsMdAsync(
+                options.ActiveProjectPath, terminalProjects, llmNodeId, context, ct);
+            if (AgentsMdPrompt.BuildAddendum(agentsText) is { } agentsAddendum)
+            {
+                baseInstructions += agentsAddendum;
+                options.OnProgress?.Invoke("// AGENTS:  Project charter loaded");
+            }
+        }
+
         // Always wrap every tool in a governance decorator (even when the initial mode is Off) so a
         // later mode change applies to this existing session — the per-turn policy is refreshed in
         // StreamAsync. The wrapper is invisible to the model (name/description/schema delegate to the

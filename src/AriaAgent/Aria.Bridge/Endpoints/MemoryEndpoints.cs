@@ -85,12 +85,17 @@ public static class MemoryEndpoints
         app.MapGet("/memory/stats", async (string? bank, NoosphereService svc, CancellationToken ct) =>
         {
             var stats = await svc.StatsAsync(bank, ct);
+            // lastExtractionError is in-process (cleared on the next successful extract) — the web nav
+            // polls it so a silent LM-Studio-down failure still lights a warning after Inscribe returns.
+            var (extractErr, extractAt) = svc.LastExtractionFailure;
             return Results.Ok(new
             {
                 engrams = stats.Engrams, entities = stats.Entities, links = stats.Links,
                 pendingIngests = stats.PendingIngests, embeddedCount = stats.EmbeddedCount,
                 embeddingsConfigured = stats.EmbeddingsConfigured, extractionConfigured = stats.ExtractionConfigured,
-                rawIngests = stats.RawIngests
+                rawIngests = stats.RawIngests,
+                lastExtractionError = extractErr,
+                lastExtractionErrorAt = extractAt
             });
         });
 
