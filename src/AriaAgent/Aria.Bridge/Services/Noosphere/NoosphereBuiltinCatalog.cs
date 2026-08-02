@@ -9,11 +9,11 @@ public static class NoosphereBuiltinCatalog
     public const string RoleExtract = "extract";
     public const string RoleEmbed = "embed";
 
-    /// <summary>Legacy / smallest default — keeps existing downloads working.</summary>
-    public const string DefaultExtractModelId = "lfm25-1.2b-q4km";
+    /// <summary>Smallest default — keeps cold installs light until the user picks a larger quant.</summary>
+    public const string DefaultExtractModelId = "qwen25-1.5b-q4km";
 
-    public const string WarnTip1p2B =
-        "1.2B extract — weak at entity kinds and relations. Q5/Q6 help a little vs Q4, but prefer LFM2-2.6B when RAM allows.";
+    public const string WarnTip1p5B =
+        "1.5B extract — weaker at entity kinds and long Inscribes. Prefer Qwen2.5-3B when RAM allows.";
 
     public sealed record ModelFile(string FileName, string Url, string Sha256Hex, long ApproxBytes);
 
@@ -28,42 +28,43 @@ public static class NoosphereBuiltinCatalog
 
     public sealed record EmbedRole(string Role, string Label, string License, IReadOnlyList<ModelFile> Files);
 
-    private const string Lfm25Repo =
-        "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/resolve/main/";
-    private const string Lfm26Repo =
-        "https://huggingface.co/LiquidAI/LFM2-2.6B-GGUF/resolve/main/";
+    // Official Qwen GGUF repos — LFS oid is the file SHA256.
+    private const string Qwen15Repo =
+        "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/";
+    private const string Qwen3BRepo =
+        "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/";
 
     public static readonly IReadOnlyList<ExtractVariant> ExtractVariants =
     [
-        new("lfm25-1.2b-q4km", "LFM2.5-1.2B-Instruct Q4_K_M", "LFM Open License",
-            "LFM2.5-1.2B-Instruct-Q4_K_M", WarnTip1p2B, Recommended: false,
-            [File(Lfm25Repo, "LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
-                "b1b3de114215d9507409a662a501a631095a479a419584e8a2ded6304b19b4f5", 730_895_168L)]),
+        new("qwen25-1.5b-q4km", "Qwen2.5-1.5B-Instruct Q4_K_M", "Apache-2.0",
+            "Qwen2.5-1.5B-Instruct-Q4_K_M", WarnTip1p5B, Recommended: false,
+            [File(Qwen15Repo, "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+                "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e", 1_117_320_736L)]),
 
-        new("lfm25-1.2b-q5km", "LFM2.5-1.2B-Instruct Q5_K_M", "LFM Open License",
-            "LFM2.5-1.2B-Instruct-Q5_K_M", WarnTip1p2B, Recommended: false,
-            [File(Lfm25Repo, "LFM2.5-1.2B-Instruct-Q5_K_M.gguf",
-                "fa03f3ac4da941a53a0cd4450aacf6a80804c6a1ff885d2fdcbe9406c03215c4", 843_354_944L)]),
+        new("qwen25-1.5b-q5km", "Qwen2.5-1.5B-Instruct Q5_K_M", "Apache-2.0",
+            "Qwen2.5-1.5B-Instruct-Q5_K_M", WarnTip1p5B, Recommended: false,
+            [File(Qwen15Repo, "qwen2.5-1.5b-instruct-q5_k_m.gguf",
+                "b46661073c18e5b56a41fa320975f866a00def1ff08feef4718e013258896f8c", 1_285_494_304L)]),
 
-        new("lfm25-1.2b-q6k", "LFM2.5-1.2B-Instruct Q6_K", "LFM Open License",
-            "LFM2.5-1.2B-Instruct-Q6_K", WarnTip1p2B, Recommended: false,
-            [File(Lfm25Repo, "LFM2.5-1.2B-Instruct-Q6_K.gguf",
-                "c5e895c191a066f6b26a8f09f10e94cdb799e579216f87df61a7e27beacd9a2b", 962_843_456L)]),
+        new("qwen25-1.5b-q6k", "Qwen2.5-1.5B-Instruct Q6_K", "Apache-2.0",
+            "Qwen2.5-1.5B-Instruct-Q6_K", WarnTip1p5B, Recommended: false,
+            [File(Qwen15Repo, "qwen2.5-1.5b-instruct-q6_k.gguf",
+                "e16d94f3b1eb243f6f6be9eee51090ef5dfd741324394fd5b6e0e425c33df5c7", 1_464_178_720L)]),
 
-        new("lfm2-2.6b-q4km", "LFM2-2.6B Q4_K_M", "LFM Open License",
-            "LFM2-2.6B-Q4_K_M", WarnTip: null, Recommended: false,
-            [File(Lfm26Repo, "LFM2-2.6B-Q4_K_M.gguf",
-                "384bc877b6c37064982f96885bef69e4475919f5969218ed4e3b9399ae0340df", 1_563_668_704L)]),
+        new("qwen25-3b-q4km", "Qwen2.5-3B-Instruct Q4_K_M", "Apache-2.0",
+            "Qwen2.5-3B-Instruct-Q4_K_M", WarnTip: null, Recommended: true,
+            [File(Qwen3BRepo, "qwen2.5-3b-instruct-q4_k_m.gguf",
+                "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d", 2_104_932_768L)]),
 
-        new("lfm2-2.6b-q5km", "LFM2-2.6B Q5_K_M", "LFM Open License",
-            "LFM2-2.6B-Q5_K_M", WarnTip: null, Recommended: true,
-            [File(Lfm26Repo, "LFM2-2.6B-Q5_K_M.gguf",
-                "1f1d46904e25f1b67b538bd658ee4e11ed311864e5e8247b22ea5ab7488c83ee", 1_828_958_432L)]),
+        new("qwen25-3b-q5km", "Qwen2.5-3B-Instruct Q5_K_M", "Apache-2.0",
+            "Qwen2.5-3B-Instruct-Q5_K_M", WarnTip: null, Recommended: false,
+            [File(Qwen3BRepo, "qwen2.5-3b-instruct-q5_k_m.gguf",
+                "2c63dde5f2c9ab1fd64d47dee2d34dade6ba9ff62442d1d20b5342310c982081", 2_438_740_384L)]),
 
-        new("lfm2-2.6b-q6k", "LFM2-2.6B Q6_K", "LFM Open License",
-            "LFM2-2.6B-Q6_K", WarnTip: null, Recommended: false,
-            [File(Lfm26Repo, "LFM2-2.6B-Q6_K.gguf",
-                "9de6f14a0dc6be851d0a1ca60acc76fc98ae59ba92921c6da90dea95159a8f85", 2_110_828_768L)]),
+        new("qwen25-3b-q6k", "Qwen2.5-3B-Instruct Q6_K", "Apache-2.0",
+            "Qwen2.5-3B-Instruct-Q6_K", WarnTip: null, Recommended: false,
+            [File(Qwen3BRepo, "qwen2.5-3b-instruct-q6_k.gguf",
+                "12da1a5d3fa6905111d8798b00ed49e0f6425441598c8c41bb37a2c36d49d0f3", 2_793_410_976L)]),
     ];
 
     public static readonly EmbedRole Embed = new(RoleEmbed, "all-MiniLM-L6-v2 (embeddings)", "Apache-2.0",
@@ -104,7 +105,7 @@ public static class NoosphereBuiltinCatalog
         role.ToLowerInvariant() switch
         {
             RoleExtract => (LookupExtract(ResolveExtractId(extractModelId))?.ModelId)
-                           ?? "LFM2.5-1.2B-Instruct-Q4_K_M",
+                           ?? "Qwen2.5-1.5B-Instruct-Q4_K_M",
             RoleEmbed => "all-MiniLM-L6-v2",
             _ => role
         };

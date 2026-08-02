@@ -13,18 +13,19 @@ using Microsoft.ML.Tokenizers;
 namespace Aria.Bridge.Services.Noosphere;
 
 /// <summary>
-/// Opt-in on-node Noosphere models (MiniLM ONNX embeddings + LFM GGUF extraction variants). Mirrors
-/// <see cref="Speech.LocalWhisperService"/>: catalog download into app-data, progress poll, SHA256
-/// verify, lazy load. Never involves Aria.Web.
+/// Opt-in on-node Noosphere models (MiniLM ONNX embeddings + Qwen2.5 Instruct GGUF extract variants).
+/// Mirrors <see cref="Speech.LocalWhisperService"/>: catalog download into app-data, progress poll,
+/// SHA256 verify, lazy load. Never involves Aria.Web.
 /// </summary>
 public sealed class NoosphereBuiltinRuntime : IDisposable
 {
-    // LFM GGUFs support far more; 8k keeps RAM reasonable on CPU while fitting compact extract prompts
-    // + a long Inscribe body. LLamaSharp defaults to ThrowException on overflow — we opt into truncate.
+    // Qwen2.5 GGUFs support far more; 8k keeps RAM reasonable on CPU while fitting compact extract
+    // prompts + an Inscribe body. LLamaSharp defaults to ThrowException on overflow — we opt into truncate.
     internal const uint ExtractContextSize = 8192;
-    // Rough char budget for the user turn (~3–4 chars/token) so the *initial* prefill fits; generation
-    // uses TruncateAndReprefill if the reply still presses the window.
-    internal const int MaxExtractUserChars = 14_000;
+    // Char budget for the user turn (~3–4 chars/token). Kept well under the window so generation can
+    // finish a JSON object without TruncateAndReprefill chewing the partial reply (that yielded
+    // "no usable JSON" on long Inscribes even after the overflow exception was gone).
+    internal const int MaxExtractUserChars = 6_000;
     private readonly ConcurrentDictionary<string, int> _progress = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _errors = new(StringComparer.OrdinalIgnoreCase);
     // SHA256 of a multi-GB GGUF is multi-second — cache by (path, length, mtime) so Status polls and
@@ -219,7 +220,7 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
             || NoosphereBuiltinCatalog.IsKnownExtractId(role))
         {
             if (!licenseAccepted)
-                return "Accept the LFM Open License before downloading the extraction model.";
+                return "Accept the Apache-2.0 license notice before downloading the extraction model.";
             var id = NoosphereBuiltinCatalog.IsKnownExtractId(role)
                 ? role
                 : NoosphereBuiltinCatalog.ResolveExtractId(extractModelId);
@@ -391,7 +392,7 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
 
     /// <param name="prefillJsonObject">
     /// When true, seeds the assistant turn with <c>{</c> so a small model stays on a JSON object
-    /// (Liquid's recommended structured-output prefill). Caller must treat the returned text as a
+    /// (Qwen ChatML structured-output prefill). Caller must treat the returned text as a
     /// full object (leading brace is restored).
     /// </param>
     public async Task<(string? Text, string? Error)> CompleteChatAsync(
@@ -409,24 +410,26 @@ public sealed class NoosphereBuiltinRuntime : IDisposable
             var modelParams = _extractParams!;
 
             var user = TruncateForExtractContext(userContent);
-            // LFM requires <|startoftext|> before the first turn — omitting it degrades instruct
-            // following (we saw valid-looking JSON with no usable facts).
+            // Qwen2.5 ChatML — llama.cpp injects BOS; do not also prefix <|endoftext|> / start tokens.
             var prompt =
-                "<|startoftext|><|im_start|>system\n" + systemPrompt + "<|im_end|>\n" +
+                "<|im_start|>system\n" + systemPrompt + "<|im_end|>\n" +
                 "<|im_start|>user\n" + user + "<|im_end|>\n" +
                 "<|im_start|>assistant\n" + (prefillJsonObject ? "{" : "");
 
-            // Cap completion so prompt+reply has headroom inside ExtractContextSize; LLamaSharp's
-            // default ThrowException surfaces as a sticky Memory warning otherwise.
-            var cappedMax = Math.Clamp(maxTokens, 64, 1536);
+            // Leave headroom for the reply. Long user turns get a smaller completion budget so the
+            // model finishes a short facts[] instead of streaming until max_tokens mid-object.
+            var replyCap = user.Length > 3_000 ? 768 : 1024;
+            var cappedMax = Math.Clamp(maxTokens, 64, replyCap);
             var executor = new StatelessExecutor(weights, modelParams);
             var inf = new InferenceParams
             {
                 MaxTokens = cappedMax,
-                AntiPrompts = ["<|im_end|>", "<|startoftext|>"],
+                AntiPrompts = ["<|im_end|>", "<|endoftext|>"],
                 SamplingPipeline = new DefaultSamplingPipeline { Temperature = (float)temperature },
                 OverflowStrategy = ContextOverflowStrategy.TruncateAndReprefill,
-                ContextTruncationPercentage = 0.2f
+                ContextTruncationPercentage = 0.2f,
+                // Keep the system turn when truncating so instruct rules survive a reprefills.
+                TokensKeep = 256
             };
 
             var sb = new StringBuilder();

@@ -120,7 +120,7 @@ Full structure with key files:
 | `│   │   ├── Llm/LlmKeyStore.cs` | Cloud API key storage |
 | `│   │   ├── Diagnostics/EgressLog.cs` | Ring buffer of recent LLM egress (`/debug/llm-log`) |
 | `│   │   ├── Metrics/` | `BridgeMetricsCollector`, `BridgeMetricsHostedService`, `PowermetricsTelemetrySource` |
-| `│   │   ├── Noosphere/` | Memory engine: `NoosphereService`, embedder, extractor, ingest worker, config, channel resolver, capabilities, options, `NoosphereBuiltinRuntime` (opt-in MiniLM ONNX + LFM2.5 GGUF) |
+| `│   │   ├── Noosphere/` | Memory engine: `NoosphereService`, embedder, extractor, ingest worker, config, channel resolver, capabilities, options, `NoosphereBuiltinRuntime` (opt-in MiniLM ONNX + Qwen2.5 Instruct GGUF) |
 | `│   │   ├── Security/SecurityAuditLog.cs` | Node security audit trail |
 | `│   │   ├── Trust/SiblingRoster.cs` | Sibling-node trust roster (multi-node mesh) |
 | `│   │   └── Vault/` | F-7 value encryption: `VaultEncryption`, `AesGcmHelper`, `EncryptedValueConverter`, per-OS protectors (DPAPI / Keychain / Secret Service) |

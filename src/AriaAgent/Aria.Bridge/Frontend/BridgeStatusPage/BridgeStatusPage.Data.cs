@@ -247,7 +247,7 @@ public static partial class BridgeStatusPage
         // Download keys (extract:<id> or embed) already kicked off — disables the button immediately
         // (before the first status poll reports downloading) so a double-click can't re-fire.
         const _builtinDownloadStarted = new Set();
-        let _selectedExtractModelId = 'lfm25-1.2b-q4km';
+        let _selectedExtractModelId = 'qwen25-1.5b-q4km';
 
         function formatBytes(n) {
           if (n >= 1e9) return (n / 1e9).toFixed(1) + ' GB';

@@ -13,7 +13,7 @@ public class NoosphereBuiltinIntegrationTests
     {
         var env = Environment.GetEnvironmentVariable("ARIA_BUILTIN_MODELS_DIR");
         if (!string.IsNullOrWhiteSpace(env) && Directory.Exists(env)) return env;
-        // App-data auto-detect is opt-in — cold LFM load is multi-second and would inflate every local run.
+        // App-data auto-detect is opt-in — cold GGUF load is multi-second and would inflate every local run.
         if (!string.Equals(Environment.GetEnvironmentVariable("ARIA_BUILTIN_LIVE"), "1", StringComparison.Ordinal))
             return null;
         var appData = Path.Combine(
@@ -61,7 +61,7 @@ public class NoosphereBuiltinIntegrationTests
         const string user = "Alice works at Acme Corp in Berlin.";
 
         var (raw, error) = await runtime.CompleteChatAsync(
-            system, user, temperature: 0.1, maxTokens: 512, CancellationToken.None, prefillJsonObject: true);
+            system, user, temperature: 0.1, maxTokens: 512, CancellationToken.None, prefillJsonObject: false);
         Assert.Null(error);
         Assert.False(string.IsNullOrWhiteSpace(raw), "model returned empty text");
 

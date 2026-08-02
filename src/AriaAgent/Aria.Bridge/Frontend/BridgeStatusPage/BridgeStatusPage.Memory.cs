@@ -17,9 +17,10 @@ public static partial class BridgeStatusPage
             <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
               <div style="font-size:11px;color:var(--text-dead)">
                 Optional on-node models so Noosphere works without a third-party inference engine
-                (LM Studio, Ollama, …). Pick an LFM extract GGUF (1.2B or 2.6B, Q4/Q5/Q6) plus MiniLM
-                embeddings (~23&nbsp;MB). Each extract quant downloads separately; only the selected
-                one loads into RAM on first Inscribe/Probe. Unload frees RAM (files stay on disk).
+                (LM Studio, Ollama, …). Pick a Qwen2.5 Instruct extract GGUF (1.5B or 3B, Q4/Q5/Q6)
+                plus MiniLM embeddings (~23&nbsp;MB). Each extract quant downloads separately; only
+                the selected one loads into RAM on first Inscribe/Probe. Unload frees RAM (files stay
+                on disk). Prefer a real channel when available — built-in is the offline fallback.
                 When built-in is on, the channel pickers are hidden — turn it off to configure an
                 external inference channel again.
               </div>
@@ -30,7 +31,7 @@ public static partial class BridgeStatusPage
               </div>
               <label style="display:flex;align-items:flex-start;gap:8px;font-size:11px;color:var(--text-muted);cursor:pointer">
                 <input type="checkbox" id="noosphere-builtin-license" style="accent-color:var(--accent);margin-top:2px">
-                <span>I accept the LFM Open License for LiquidAI extract models (LFM2.5-1.2B-Instruct / LFM2-2.6B). Embeddings use Apache-2.0 MiniLM.</span>
+                <span>I acknowledge Apache-2.0 for Qwen2.5-Instruct extract models (1.5B / 3B) and Apache-2.0 MiniLM embeddings.</span>
               </label>
               <div id="noosphere-builtin-roles" style="display:flex;flex-direction:column;gap:10px"></div>
               <div id="noosphere-builtin-status" style="font-size:11px;color:var(--text-muted);min-height:16px"></div>

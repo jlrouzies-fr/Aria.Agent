@@ -57,9 +57,11 @@ public class NoosphereExtractor(
             // success clears it (a recovered attempt is not a sticky fault).
             for (var attempt = 0; attempt < 2; attempt++)
             {
+                // No JSON brace-prefill for Qwen — it already follows ChatML JSON well, and prefilling
+                // "{" made it emit {["facts":… which System.Text.Json rejects.
                 (raw, error) = await builtinRuntime.CompleteChatAsync(
                     system, content, temperature: 0.1, maxTokens: 2048, ct,
-                    prefillJsonObject: true, extractModelId: extractId);
+                    prefillJsonObject: false, extractModelId: extractId);
                 if (error != null) { Fail(error); return null; }
                 var parsed = TryParseFacts(raw, sourceLabel, out var failReason);
                 if (parsed is { Count: > 0 })
@@ -118,8 +120,9 @@ public class NoosphereExtractor(
             return null;
         }
 
-        // Soft-repair first — 1.2B models often emit trailing commas or bare kind enums
-        // (`"kind": person|place`) that JsonDocument rejects.
+        // Soft-repair second — small models often emit trailing commas or bare kind enums
+        // (`"kind": person|place`) that JsonDocument rejects. Prefer the original fail reason when
+        // SoftRepair turns valid-but-empty JSON into something unparseable.
         foreach (var candidate in new[] { json, SoftRepairJson(json) }.Distinct())
         {
             try
@@ -127,11 +130,11 @@ public class NoosphereExtractor(
                 var result = ParseFacts(candidate);
                 if (result is { Count: > 0 })
                     return result;
-                failReason = $"{sourceLabel} returned JSON without usable facts. Snippet: {Snippet(candidate)}";
+                failReason ??= $"{sourceLabel} returned JSON without usable facts. Snippet: {Snippet(candidate)}";
             }
             catch (Exception ex)
             {
-                failReason = $"{sourceLabel} returned unparseable JSON: {ex.Message}. Snippet: {Snippet(candidate)}";
+                failReason ??= $"{sourceLabel} returned unparseable JSON: {ex.Message}. Snippet: {Snippet(candidate)}";
             }
         }
         return null;
@@ -198,10 +201,12 @@ public class NoosphereExtractor(
             return
                 "Extract atomic self-contained facts from the user text into JSON only.\n" +
                 $"Current UTC: {DateTime.UtcNow:yyyy-MM-dd HH:mm}.\n" +
-                "Rules: resolve pronouns; put ISO dates in timeAnchor when clear; " +
+                "Rules: emit at most 8 facts — prefer durable preferences, decisions, and named entities; " +
+                "resolve pronouns; put ISO dates in timeAnchor when clear; " +
                 "entities MUST be objects {\"name\":\"...\",\"kind\":\"person\"} — never bare strings; " +
                 "kind is one of person,place,org,concept,thing,event,project,other; " +
-                "relations only between entities listed on the same fact. No markdown, no commentary.\n" +
+                "relations only between entities listed on the same fact. " +
+                "Close every brace/bracket. No markdown, no commentary.\n" +
                 knownBlock + anchorBlock +
                 "Schema:\n" +
                 "{\"facts\":[{\"content\":\"...\",\"entities\":[{\"name\":\"...\",\"kind\":\"person\"}]," +
@@ -228,7 +233,8 @@ public class NoosphereExtractor(
 
     /// <summary>
     /// Tolerant fact parse for channel + builtin models. Accepts root <c>facts</c>/<c>Facts</c>,
-    /// a bare array of fact objects, and <c>content</c>/<c>text</c>/<c>fact</c> for the body.
+    /// a bare array of fact objects, Qwen-style <c>[{"facts":[…]}]</c> wrappers, and
+    /// <c>content</c>/<c>text</c>/<c>fact</c> for the body.
     /// </summary>
     internal static List<ExtractedFact>? ParseFacts(string json)
     {
@@ -263,6 +269,20 @@ public class NoosphereExtractor(
 
         foreach (var f in factsEl.EnumerateArray())
         {
+            // Small instruct models often wrap the contract: [{"facts":[{…},…]}]. Treating the
+            // wrapper as a fact finds no content → empty parse → raw ingest.
+            if (ReadFactContent(f) == null
+                && TryGetPropertyIgnoreCase(f, "facts", out var nested)
+                && nested.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var inner in nested.EnumerateArray())
+                {
+                    var nestedFact = ReadFact(inner);
+                    if (nestedFact != null) result.Add(nestedFact);
+                }
+                continue;
+            }
+
             var one = ReadFact(f);
             if (one != null) result.Add(one);
         }
@@ -441,10 +461,53 @@ public class NoosphereExtractor(
         var arrStart = text.IndexOf('[');
         if (objStart < 0 && arrStart < 0) return null;
 
+        string? balanced;
         if (arrStart >= 0 && (objStart < 0 || arrStart < objStart))
-            return SliceBalanced(text, arrStart, '[', ']');
+            balanced = SliceBalanced(text, arrStart, '[', ']');
+        else
+            balanced = SliceBalanced(text, objStart, '{', '}');
 
-        return SliceBalanced(text, objStart, '{', '}');
+        if (balanced != null) return balanced;
+
+        // max_tokens / overflow often cuts mid-object. Salvage any complete fact objects so a long
+        // Inscribe still yields engrams instead of falling through to raw storage.
+        return SalvageTruncatedFactsJson(text);
+    }
+
+    /// <summary>
+    /// Rebuild <c>{"facts":[…]}</c> from a truncated stream by collecting only complete object
+    /// elements inside a facts array (or a bare array of fact objects).
+    /// </summary>
+    internal static string? SalvageTruncatedFactsJson(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        var factsKey = text.IndexOf("\"facts\"", StringComparison.OrdinalIgnoreCase);
+        var arrStart = -1;
+        if (factsKey >= 0)
+        {
+            var colon = text.IndexOf(':', factsKey + 7);
+            if (colon >= 0) arrStart = text.IndexOf('[', colon);
+        }
+        if (arrStart < 0)
+            arrStart = text.IndexOf('[');
+        if (arrStart < 0) return null;
+
+        var complete = new List<string>();
+        var i = arrStart + 1;
+        while (i < text.Length)
+        {
+            while (i < text.Length && (char.IsWhiteSpace(text[i]) || text[i] == ',')) i++;
+            if (i >= text.Length || text[i] == ']') break;
+            if (text[i] != '{') break;
+            var obj = SliceBalanced(text, i, '{', '}');
+            if (obj == null) break; // truncated mid-object — drop it, keep earlier completes
+            complete.Add(obj);
+            i += obj.Length;
+        }
+
+        if (complete.Count == 0) return null;
+        return "{\"facts\":[" + string.Join(",", complete) + "]}";
     }
 
     private static string? SliceBalanced(string text, int start, char open, char close)
@@ -552,8 +615,15 @@ public class NoosphereExtractor(
     /// </summary>
     internal static string SoftRepairJson(string json)
     {
+        // Brace-prefill artifact: model continues with ["facts":… → {["facts":…
+        var repaired = Regex.Replace(json, @"^\{\s*\[\s*""facts""\s*:", "{\"facts\":");
+        // Accidental double-open: {{"facts":… (also seen from wrapper confusion)
+        repaired = Regex.Replace(repaired, @"^\{\s*\{\s*""facts""\s*:", "{\"facts\":");
+        // Missing commas between adjacent objects/arrays — common LLM slip in pretty-printed output.
+        repaired = Regex.Replace(repaired, @"\}\s*\{", "},{");
+        repaired = Regex.Replace(repaired, @"\]\s*\[", "],[");
         // Trailing commas: {"a":1,} or [1,2,]
-        var repaired = Regex.Replace(json, @",(\s*[\]}])", "$1");
+        repaired = Regex.Replace(repaired, @",(\s*[\]}])", "$1");
         // Bare values after ':' — "kind": person|place  or  "url": http://x — quote them.
         repaired = Regex.Replace(
             repaired,

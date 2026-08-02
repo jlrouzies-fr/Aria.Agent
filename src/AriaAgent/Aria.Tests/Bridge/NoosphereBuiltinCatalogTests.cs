@@ -19,8 +19,11 @@ public class NoosphereBuiltinCatalogTests
         Assert.True(NoosphereBuiltinCatalog.IsKnownRole("extract"));
         Assert.False(NoosphereBuiltinCatalog.IsKnownExtractId("nope"));
         Assert.Contains(NoosphereBuiltinCatalog.ExtractVariants, v => v.Recommended);
+        Assert.Equal(
+            "qwen25-3b-q4km",
+            Assert.Single(NoosphereBuiltinCatalog.ExtractVariants, v => v.Recommended).Id);
         Assert.All(
-            NoosphereBuiltinCatalog.ExtractVariants.Where(v => v.Id.StartsWith("lfm25-")),
+            NoosphereBuiltinCatalog.ExtractVariants.Where(v => v.Id.StartsWith("qwen25-1.5b-")),
             v => Assert.False(string.IsNullOrEmpty(v.WarnTip)));
     }
 
@@ -29,7 +32,8 @@ public class NoosphereBuiltinCatalogTests
     {
         Assert.Equal(NoosphereBuiltinCatalog.DefaultExtractModelId, NoosphereBuiltinCatalog.ResolveExtractId(null));
         Assert.Equal(NoosphereBuiltinCatalog.DefaultExtractModelId, NoosphereBuiltinCatalog.ResolveExtractId("bogus"));
-        Assert.Equal("lfm2-2.6b-q5km", NoosphereBuiltinCatalog.ResolveExtractId("lfm2-2.6b-q5km"));
+        Assert.Equal(NoosphereBuiltinCatalog.DefaultExtractModelId, NoosphereBuiltinCatalog.ResolveExtractId("lfm2-2.6b-q5km"));
+        Assert.Equal("qwen25-3b-q5km", NoosphereBuiltinCatalog.ResolveExtractId("qwen25-3b-q5km"));
     }
 
     [Fact]
@@ -77,8 +81,8 @@ public class NoosphereBuiltinCatalogTests
         try
         {
             using var runtime = new NoosphereBuiltinRuntime(dir);
-            Assert.False(runtime.IsExtractOnDisk("lfm2-2.6b-q5km"));
-            Assert.False(runtime.IsReady("lfm2-2.6b-q5km"));
+            Assert.False(runtime.IsExtractOnDisk("qwen25-3b-q5km"));
+            Assert.False(runtime.IsReady("qwen25-3b-q5km"));
         }
         finally
         {
@@ -94,7 +98,7 @@ public class NoosphereBuiltinCatalogTests
         try
         {
             using var runtime = new NoosphereBuiltinRuntime(dir);
-            var err = runtime.StartDownload("extract", licenseAccepted: false, extractModelId: "lfm2-2.6b-q5km");
+            var err = runtime.StartDownload("extract", licenseAccepted: false, extractModelId: "qwen25-3b-q5km");
             Assert.Contains("license", err, StringComparison.OrdinalIgnoreCase);
         }
         finally
@@ -128,10 +132,10 @@ public class NoosphereBuiltinCatalogTests
         try
         {
             using var runtime = new NoosphereBuiltinRuntime(dir);
-            var status = runtime.Status(enabled: true, licenseAcceptedAt: DateTime.UtcNow, selectedExtractModelId: "lfm2-2.6b-q5km");
+            var status = runtime.Status(enabled: true, licenseAcceptedAt: DateTime.UtcNow, selectedExtractModelId: "qwen25-3b-q5km");
             var json = System.Text.Json.JsonSerializer.Serialize(status);
             using var doc = System.Text.Json.JsonDocument.Parse(json);
-            Assert.Equal("lfm2-2.6b-q5km", doc.RootElement.GetProperty("selectedExtractModelId").GetString());
+            Assert.Equal("qwen25-3b-q5km", doc.RootElement.GetProperty("selectedExtractModelId").GetString());
             Assert.False(doc.RootElement.GetProperty("ready").GetBoolean());
             Assert.Equal(6, doc.RootElement.GetProperty("extractVariants").GetArrayLength());
         }

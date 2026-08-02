@@ -123,7 +123,7 @@ How it works:
 **Setup — built-in models (recommended if you do not want a third-party inference engine for memory):**
 
 1. Open the bridge status page ([http://localhost:5741](http://localhost:5741)) → **Memory** tab.
-2. Under **// Built-in models**, accept the LFM Open License, pick an extract GGUF (LFM2.5-1.2B or LFM2-2.6B, Q4/Q5/Q6 — recommended **2.6B Q5**), download it plus MiniLM embeddings, enable built-in, and **APPLY**.
+2. Under **// Built-in models**, acknowledge Apache-2.0, pick a Qwen2.5 Instruct extract GGUF (1.5B or 3B, Q4/Q5/Q6 — recommended **3B Q4**), download it plus MiniLM embeddings, enable built-in, and **APPLY**.
 3. Expected RAM while both models are loaded: roughly **~1.2–1.7&nbsp;GB** (~1.0–1.5&nbsp;GB extract + ~100–200&nbsp;MB embed). Channel pickers are hidden while built-in is on.
 4. Enable **Memory (Noosphere)** in `Aria.Web`'s `// TOOLS` section.
 

@@ -1,8 +1,10 @@
 # Noosphere — built-in extract + embed models on Aria.Bridge
 
-> **Status: implemented.** Opt-in built-in models live on the bridge Memory tab
-> (`NoosphereBuiltinRuntime`, `/memory/builtin/*`). User-facing setup:
+> **Status: implemented (catalog now Qwen2.5 — see bakeoff).** Opt-in built-in models live on the
+> bridge Memory tab (`NoosphereBuiltinRuntime`, `/memory/builtin/*`). User-facing setup:
 > [docs/readme/setup.md — Memory (Noosphere)](../../readme/setup.md#memory-noosphere).
+>
+> **Live quality / resume notes:** [noosphere-builtin-qwen-bakeoff.md](../noosphere-builtin-qwen-bakeoff.md).
 
 ## Context
 
@@ -11,10 +13,11 @@ channel (LM Studio, Ollama, cloud). If that engine is down, Inscribe still queue
 memory fails silently from the agent's POV (async worker). Users who do not want to run a separate
 inference app can opt into small on-node models.
 
-**User decisions (fixed):**
-- Extract choice: LiquidAI LFM family (same ChatML-like template) — **LFM2.5-1.2B** and **LFM2-2.6B**,
-  each as Q4_K_M / Q5_K_M / Q6_K (six independently downloadable GGUFs). Recommended: 2.6B Q5_K_M.
-  1.2B rows show a warn tooltip (weak at kinds/relations even at higher quants).
+**User decisions (current):**
+- Extract choice: **Qwen2.5-Instruct** (ChatML) — **1.5B** and **3B**, each as Q4_K_M / Q5_K_M /
+  Q6_K (six independently downloadable GGUFs from official Qwen HF repos). Recommended: 3B Q4_K_M
+  (bakeoff-proven; Q5/Q6 optional). 1.5B rows show a warn tooltip. (Earlier LFM lineup was dropped —
+  too weak for structured extract.)
 - Embeddings: `all-MiniLM-L6-v2` ONNX (quantized ~23 MB + vocab) via ONNX Runtime (not choosable).
 - Opt-in only; download from the bridge Memory tab (Whisper pattern). Not shipped in the installer.
 - External channels remain available when built-in is off or models are missing.
@@ -38,17 +41,17 @@ See `NoosphereBuiltinCatalog.ExtractVariants` for full URL + SHA256 pins.
 
 | Id | File | Approx | UI |
 |---|---|---|---|
-| `lfm25-1.2b-q4km` | `LFM2.5-1.2B-Instruct-Q4_K_M.gguf` | ~731 MB | default (existing installs); warn |
-| `lfm25-1.2b-q5km` | `LFM2.5-1.2B-Instruct-Q5_K_M.gguf` | ~843 MB | warn |
-| `lfm25-1.2b-q6k` | `LFM2.5-1.2B-Instruct-Q6_K.gguf` | ~963 MB | warn |
-| `lfm2-2.6b-q4km` | `LFM2-2.6B-Q4_K_M.gguf` | ~1.56 GB | |
-| `lfm2-2.6b-q5km` | `LFM2-2.6B-Q5_K_M.gguf` | ~1.83 GB | **recommended** |
-| `lfm2-2.6b-q6k` | `LFM2-2.6B-Q6_K.gguf` | ~2.11 GB | highest quality |
+| `qwen25-1.5b-q4km` | `qwen2.5-1.5b-instruct-q4_k_m.gguf` | ~1.12 GB | default; warn |
+| `qwen25-1.5b-q5km` | `qwen2.5-1.5b-instruct-q5_k_m.gguf` | ~1.29 GB | warn |
+| `qwen25-1.5b-q6k` | `qwen2.5-1.5b-instruct-q6_k.gguf` | ~1.46 GB | warn |
+| `qwen25-3b-q4km` | `qwen2.5-3b-instruct-q4_k_m.gguf` | ~2.10 GB | **recommended** |
+| `qwen25-3b-q5km` | `qwen2.5-3b-instruct-q5_k_m.gguf` | ~2.44 GB | |
+| `qwen25-3b-q6k` | `qwen2.5-3b-instruct-q6_k.gguf` | ~2.79 GB | highest quality |
 | embed | `all-MiniLM-L6-v2-quantized.onnx` + `vocab.txt` | ~23 MB | |
 
 Store under `%AppData%/aria-bridge/noosphere-models/`. Refuse load on hash mismatch.
 
-**License:** LFM Open License — UI requires accept before extract download. Embeddings Apache-2.0.
+**License:** Apache-2.0 for Qwen2.5 ≤3B Instruct + MiniLM — UI requires acknowledge before extract download.
 
 ---
 
@@ -65,7 +68,7 @@ No fake localhost OpenAI server.
 ### Config columns on `NoosphereConfig`
 - `BuiltinEnabled` INTEGER NOT NULL DEFAULT 0
 - `BuiltinLicenseAcceptedAt` TEXT NULL (ISO UTC)
-- `BuiltinExtractModelId` TEXT NULL (catalog id; null → `lfm25-1.2b-q4km`)
+- `BuiltinExtractModelId` TEXT NULL (catalog id; null → `qwen25-1.5b-q4km`)
 
 ### Runtime API
 - `Status(enabled, license, selectedExtractId)` — `extractVariants[]` + embed role, ready for selection
@@ -86,7 +89,7 @@ No fake localhost OpenAI server.
 
 ### UI
 Bridge Memory tab card **// Built-in models**: enable toggle, license checkbox, six extract rows
-(radio = active, warn tip on 1.2B, recommended on 2.6B Q5), MiniLM embed row, per-row
+(radio = active, warn tip on 1.5B, recommended on 3B Q4), MiniLM embed row, per-row
 download/progress/delete/unload.
 
 ### Resolution

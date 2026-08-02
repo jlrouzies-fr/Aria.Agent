@@ -17,8 +17,8 @@ public class NoosphereBuiltinResolutionTests
         try
         {
             using var runtime = new NoosphereBuiltinRuntime(dir);
-            Assert.False(runtime.IsReady("lfm2-2.6b-q5km"));
-            Assert.False(runtime.IsExtractOnDisk("lfm2-2.6b-q5km"));
+            Assert.False(runtime.IsReady("qwen25-3b-q5km"));
+            Assert.False(runtime.IsExtractOnDisk("qwen25-3b-q5km"));
             Assert.False(runtime.IsEmbedOnDisk());
         }
         finally
@@ -32,8 +32,8 @@ public class NoosphereBuiltinResolutionTests
     {
         // Engrams store EmbeddingModel; backfill compares against this string when builtin is active.
         Assert.Equal("all-MiniLM-L6-v2", NoosphereBuiltinCatalog.ModelIdFor("embed"));
-        Assert.Equal("LFM2.5-1.2B-Instruct-Q4_K_M", NoosphereBuiltinCatalog.ModelIdFor("extract"));
-        Assert.Equal("LFM2-2.6B-Q5_K_M", NoosphereBuiltinCatalog.ModelIdFor("extract", "lfm2-2.6b-q5km"));
+        Assert.Equal("Qwen2.5-1.5B-Instruct-Q4_K_M", NoosphereBuiltinCatalog.ModelIdFor("extract"));
+        Assert.Equal("Qwen2.5-3B-Instruct-Q5_K_M", NoosphereBuiltinCatalog.ModelIdFor("extract", "qwen25-3b-q5km"));
     }
 
     [Fact]

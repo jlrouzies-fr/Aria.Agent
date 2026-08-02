@@ -35,6 +35,34 @@ public class NoosphereExtractionJsonTests
     }
 
     [Fact]
+    public void ParseFacts_UnwrapsArrayWrappedFactsObject()
+    {
+        // Qwen2.5-3B Q4 live failure: root array holding one {"facts":[…]} object — ReadFact
+        // saw no content and Inscribe fell through to raw.
+        var facts = NoosphereExtractor.ParseFacts(
+            """[{"facts":[{"content":"Project Aria.Agent Noosphere extracts with Qwen2.5-3B-Instruct.","entities":[{"name":"Aria.Agent","kind":"project"},{"name":"Qwen2.5-3B-Instruct","kind":"concept"}],"relations":[]}]}]""");
+
+        Assert.NotNull(facts);
+        Assert.Single(facts!);
+        Assert.Contains("Aria.Agent", facts[0].Content, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, facts[0].Entities.Count);
+        Assert.Equal("project", facts[0].Entities[0].Kind);
+    }
+
+    [Fact]
+    public void ParseFacts_UnwrapsMultipleArrayWrappedFactsObjects()
+    {
+        var facts = NoosphereExtractor.ParseFacts(
+            """[{"facts":[{"content":"one","entities":[]}]},{"facts":[{"content":"two","entities":[{"name":"X","kind":"thing"}]}]}]""");
+
+        Assert.NotNull(facts);
+        Assert.Equal(2, facts!.Count);
+        Assert.Equal("one", facts[0].Content);
+        Assert.Equal("two", facts[1].Content);
+        Assert.Single(facts[1].Entities);
+    }
+
+    [Fact]
     public void ParseFacts_AcceptsSingleRootFactObject()
     {
         var facts = NoosphereExtractor.ParseFacts(
@@ -123,5 +151,49 @@ public class NoosphereExtractionJsonTests
         Assert.NotNull(facts);
         Assert.Single(facts!);
         Assert.Equal("person", facts[0].Entities[0].Kind);
+    }
+
+    [Fact]
+    public void SoftRepairJson_FixesPrefillArrayArtifact()
+    {
+        var repaired = NoosphereExtractor.SoftRepairJson(
+            """{["facts": [{"content":"Spectra.MLX runs locally","entities":[{"name":"Spectra.MLX","kind":"project"}],"relations":[]}]}""");
+        var facts = NoosphereExtractor.ParseFacts(repaired);
+        Assert.NotNull(facts);
+        Assert.Single(facts!);
+        Assert.Contains("Spectra", facts[0].Content, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SoftRepairJson_InsertsMissingCommasBetweenObjects()
+    {
+        var repaired = NoosphereExtractor.SoftRepairJson(
+            """[{"content":"one","entities":[]}{"content":"two","entities":[]}]""");
+        var facts = NoosphereExtractor.ParseFacts(repaired);
+        Assert.NotNull(facts);
+        Assert.Equal(2, facts!.Count);
+    }
+
+    [Fact]
+    public void TryExtractJson_SalvagesCompleteFactsFromTruncatedStream()
+    {
+        // Mimics max_tokens cutting mid-second-fact (the sticky "no usable JSON" case on long Inscribes).
+        var truncated =
+            """{"facts": [ {"content": "Alice prefers dark mode", "entities":[{"name":"Alice","kind":"person"}], "relations":[]}, {"content": "JeanLaurent configured node Windows-RTX2 and JeanLaurentsMBP as sibling bridges sharing soul identity, with tunnel allowlist and local-origin middlew""";
+
+        var json = NoosphereExtractor.TryExtractJson(truncated);
+        Assert.NotNull(json);
+        var facts = NoosphereExtractor.ParseFacts(json!);
+        Assert.NotNull(facts);
+        Assert.Single(facts!);
+        Assert.Contains("Alice", facts[0].Content, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SalvageTruncatedFactsJson_DropsIncompleteTrailingObject()
+    {
+        var salvaged = NoosphereExtractor.SalvageTruncatedFactsJson(
+            """{"facts":[{"content":"one","entities":[]},{"content":"two""");
+        Assert.Equal("""{"facts":[{"content":"one","entities":[]}]}""", salvaged);
     }
 }
